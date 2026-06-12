@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import type { Character, GameEvent, PlayerEmoteEvent, Room, RoomListItem } from "@career-war/shared";
+import type { Character, GameEvent, PlayerEmoteEvent, Room, RoomListItem, RoomSettings } from "@career-war/shared";
 import { getClientId, resetClientId, socket, type Ack } from "./socket";
 import HomePage from "./components/HomePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
@@ -145,6 +145,10 @@ function startGame(): void {
   emitWithAck("startGame", {});
 }
 
+function updateRoomSettings(settings: Partial<RoomSettings>): void {
+  emitWithAck("updateRoomSettings", settings);
+}
+
 function selectTarget(targetId: string): void {
   emitWithAck("selectTarget", { targetId });
 }
@@ -210,6 +214,7 @@ function showError(message: string): void {
       :player-id="playerId"
       :characters="characters"
       @choose-character="chooseCharacter"
+      @update-room-settings="updateRoomSettings"
       @start-game="startGame"
     />
     <BattlePage

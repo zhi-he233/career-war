@@ -132,6 +132,9 @@ function chooseCharacter(characterId) {
 function startGame() {
     emitWithAck("startGame", {});
 }
+function updateRoomSettings(settings) {
+    emitWithAck("updateRoomSettings", settings);
+}
 function selectTarget(targetId) {
     emitWithAck("selectTarget", { targetId });
 }
@@ -232,6 +235,7 @@ else if (__VLS_ctx.page === 'lobby' && __VLS_ctx.room) {
     // @ts-ignore
     const __VLS_8 = __VLS_asFunctionalComponent1(__VLS_7, new __VLS_7({
         ...{ 'onChooseCharacter': {} },
+        ...{ 'onUpdateRoomSettings': {} },
         ...{ 'onStartGame': {} },
         room: (__VLS_ctx.room),
         playerId: (__VLS_ctx.playerId),
@@ -239,6 +243,7 @@ else if (__VLS_ctx.page === 'lobby' && __VLS_ctx.room) {
     }));
     const __VLS_9 = __VLS_8({
         ...{ 'onChooseCharacter': {} },
+        ...{ 'onUpdateRoomSettings': {} },
         ...{ 'onStartGame': {} },
         room: (__VLS_ctx.room),
         playerId: (__VLS_ctx.playerId),
@@ -248,6 +253,8 @@ else if (__VLS_ctx.page === 'lobby' && __VLS_ctx.room) {
     const __VLS_13 = {
         ...{ chooseCharacter: {} },
         onChooseCharacter: (__VLS_ctx.chooseCharacter),
+        ...{ updateRoomSettings: {} },
+        onUpdateRoomSettings: (__VLS_ctx.updateRoomSettings),
         ...{ startGame: {} },
         onStartGame: (__VLS_ctx.startGame),
     };
@@ -286,6 +293,6 @@ else if (__VLS_ctx.room) {
     var __VLS_18;
 }
 // @ts-ignore
-[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, page, page, inviteRoomId, roomList, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, startGame, lastEvent, lastEmote, selectTarget, rollDice,];
+[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, page, page, inviteRoomId, roomList, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, updateRoomSettings, startGame, lastEvent, lastEmote, selectTarget, rollDice,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

@@ -1,9 +1,12 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 import { socket } from "../socket";
+import RuleGuideDialog from "./RuleGuideDialog.vue";
 const props = defineProps();
 const emit = defineEmits();
 const MAX_RENDERED_LOG = 50;
 const EMOTE_DISPLAY_MS = 1500;
+const HIGHLIGHT_DISPLAY_MS = 1500;
+const SKILL_HINT_DISPLAY_MS = 1300;
 const EMOTE_OPTIONS = [
     { id: "cry", label: "大哭", emoji: "😭" },
     { id: "surprise", label: "惊讶", emoji: "😮" },
@@ -24,11 +27,18 @@ const activeFloatingEffects = ref([]);
 const animatedRollIds = new Set();
 const rollRequestLocked = ref(false);
 const activeEmotes = ref({});
+const activeHighlight = ref(null);
+const activeSkillHints = ref([]);
+const showRuleGuide = ref(false);
 const emoteLocked = ref(false);
 let rollingTimer;
 let emoteUnlockTimer;
+let highlightTimer;
+let skillHintTimer;
 const timers = [];
 const emoteTimers = new Map();
+const playedHighlightKeys = new Set();
+const playedSkillHintIds = new Set();
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
 const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
 const me = computed(() => room.value.players.find((player) => player.id === props.playerId));
@@ -63,6 +73,8 @@ watch(() => props.lastEmote, (event) => {
 onUnmounted(() => {
     clearRollTimers();
     clearEmoteTimers();
+    clearHighlightTimer();
+    clearSkillHintTimer();
 });
 const visibleRoll = computed(() => {
     if (rollPhase.value !== "idle" && rollPhase.value !== "reveal")
@@ -95,7 +107,37 @@ const rollButtonText = computed(() => {
         return "摇骰中...";
     if (pendingRoll.value)
         return isPendingMine.value ? "继续投骰" : "等待继续投骰";
-    return isMyTurn.value ? "投骰开怼" : "等待对手";
+    return "投骰";
+});
+const turnGuideText = computed(() => {
+    if (room.value.phase === "gameOver")
+        return "游戏结束";
+    if (me.value?.isDead)
+        return "你已死亡，等待本局结束";
+    if (rollRequestLocked.value && !pendingRoom.value)
+        return "正在结算……";
+    if (isRolling.value)
+        return "骰子滚动中……";
+    if (pendingRoll.value && isPendingMine.value)
+        return "技能触发：请继续投骰";
+    if (!isMyTurn.value)
+        return `等待【${activePlayer.value?.nickname ?? "玩家"}】行动`;
+    if (!selectedTargetId.value)
+        return "轮到你了：请选择攻击目标";
+    return "轮到你了：点击投骰";
+});
+const turnGuideTone = computed(() => {
+    if (room.value.phase === "gameOver")
+        return "ended";
+    if (me.value?.isDead)
+        return "dead";
+    if (rollRequestLocked.value || isRolling.value)
+        return "busy";
+    if (pendingRoll.value && isPendingMine.value)
+        return "continue";
+    if (isMyTurn.value)
+        return "mine";
+    return "waiting";
 });
 const canRoll = computed(() => {
     if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || !isMyTurn.value)
@@ -169,6 +211,8 @@ function startRollAnimation(shouldEmit) {
     clearRollTimers();
     activeEffectRollId.value = undefined;
     activeFloatingEffects.value = [];
+    activeSkillHints.value = [];
+    clearSkillHintTimer();
     rollPhase.value = "fast";
     rollingDice.value = randomDice();
     startDiceTicker(55);
@@ -200,6 +244,8 @@ function revealServerRoll() {
     displayedRoom.value = revealRoom;
     visibleRollId.value = revealRollId;
     startEffectWindow(revealRollId);
+    showSkillHints(revealRoom.skillHints, revealRollId);
+    showHighlight(revealRoom.highlight);
     pendingRoom.value = null;
     pendingRevealRollId.value = undefined;
     rollRequestLocked.value = false;
@@ -248,6 +294,39 @@ function clearEmoteTimers() {
     for (const timer of emoteTimers.values())
         window.clearTimeout(timer);
     emoteTimers.clear();
+}
+function showHighlight(highlight) {
+    if (!highlight || playedHighlightKeys.has(highlight.id))
+        return;
+    playedHighlightKeys.add(highlight.id);
+    activeHighlight.value = highlight;
+    window.clearTimeout(highlightTimer);
+    highlightTimer = window.setTimeout(() => {
+        if (activeHighlight.value?.id === highlight.id)
+            activeHighlight.value = null;
+        highlightTimer = undefined;
+    }, HIGHLIGHT_DISPLAY_MS);
+}
+function clearHighlightTimer() {
+    window.clearTimeout(highlightTimer);
+}
+function showSkillHints(hints, rollId) {
+    const nextHints = (hints ?? []).filter((hint) => hint.rollId === rollId && !playedSkillHintIds.has(hint.id));
+    if (nextHints.length === 0)
+        return;
+    for (const hint of nextHints)
+        playedSkillHintIds.add(hint.id);
+    activeSkillHints.value = nextHints;
+    window.clearTimeout(skillHintTimer);
+    skillHintTimer = window.setTimeout(() => {
+        if (activeSkillHints.value.some((hint) => nextHints.some((nextHint) => nextHint.id === hint.id))) {
+            activeSkillHints.value = [];
+        }
+        skillHintTimer = undefined;
+    }, SKILL_HINT_DISPLAY_MS);
+}
+function clearSkillHintTimer() {
+    window.clearTimeout(skillHintTimer);
 }
 function randomDice() {
     return Math.floor(Math.random() * 6) + 1;
@@ -336,6 +415,29 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
 (__VLS_ctx.room.phase === "gameOver" ? `${__VLS_ctx.winner?.nickname ?? ""} 获胜` : __VLS_ctx.pendingRoll ? "等待继续" : __VLS_ctx.isMyTurn ? "轮到你" : "观战中");
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+    ...{ class: "battle-tools" },
+});
+/** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
+            __VLS_ctx.showRuleGuide = true;
+            // @ts-ignore
+            [room, room, activePlayer, winner, pendingRoll, isMyTurn, showRuleGuide,];
+        } },
+    ...{ class: "ghost-btn small-btn" },
+    type: "button",
+});
+/** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+    ...{ class: "turn-guide" },
+    ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
+    'aria-live': "polite",
+});
+/** @type {__VLS_StyleScopedClasses['turn-guide']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+(__VLS_ctx.turnGuideText);
+__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "combat-board" },
 });
 /** @type {__VLS_StyleScopedClasses['combat-board']} */ ;
@@ -403,7 +505,7 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
         (__VLS_ctx.emoteFor(player)?.emoji);
     }
     // @ts-ignore
-    [room, room, room, room, activePlayer, activePlayer, winner, pendingRoll, pendingRoll, isMyTurn, isMyTurn, playerId, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, characterName, playerStatus, emoteFor, emoteFor, emoteFor,];
+    [room, room, activePlayer, pendingRoll, isMyTurn, turnGuideTone, turnGuideText, playerId, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, characterName, playerStatus, emoteFor, emoteFor, emoteFor,];
     var __VLS_3;
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "hp-row" },
@@ -529,6 +631,10 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
 /** @type {__VLS_StyleScopedClasses['reveal']} */ ;
 /** @type {__VLS_StyleScopedClasses['rolled']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "dice-visual" },
+});
+/** @type {__VLS_StyleScopedClasses['dice-visual']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "dice-box" },
     key: (__VLS_ctx.rollPhase === 'idle' ? __VLS_ctx.visibleRoll?.id : __VLS_ctx.rollPhase),
 });
@@ -541,6 +647,42 @@ for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPha
     // @ts-ignore
     [isMyTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
 }
+let __VLS_24;
+/** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
+transitionGroup;
+// @ts-ignore
+const __VLS_25 = __VLS_asFunctionalComponent1(__VLS_24, new __VLS_24({
+    name: "skill-hint",
+    tag: "div",
+    ...{ class: "skill-hint-stack" },
+    'aria-live': "polite",
+}));
+const __VLS_26 = __VLS_25({
+    name: "skill-hint",
+    tag: "div",
+    ...{ class: "skill-hint-stack" },
+    'aria-live': "polite",
+}, ...__VLS_functionalComponentArgsRest(__VLS_25));
+/** @type {__VLS_StyleScopedClasses['skill-hint-stack']} */ ;
+const { default: __VLS_29 } = __VLS_27.slots;
+for (const [hint] of __VLS_vFor((__VLS_ctx.activeSkillHints))) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        key: (hint.id),
+        ...{ class: "skill-hint-badge" },
+    });
+    /** @type {__VLS_StyleScopedClasses['skill-hint-badge']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (hint.text);
+    if (hint.valueText) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
+        (hint.valueText);
+    }
+    // @ts-ignore
+    [activeSkillHints,];
+}
+// @ts-ignore
+[];
+var __VLS_27;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "action-summary" },
 });
@@ -676,6 +818,49 @@ for (const [event, index] of __VLS_vFor((__VLS_ctx.renderedBattleLog))) {
     (event.message);
     // @ts-ignore
     [latestShownEvent, latestShownEvent, renderedBattleLog,];
+}
+if (__VLS_ctx.activeHighlight) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        key: (__VLS_ctx.activeHighlight.id),
+        ...{ class: "character-highlight-overlay" },
+        ...{ class: (`highlight-${__VLS_ctx.activeHighlight.type}`) },
+    });
+    /** @type {__VLS_StyleScopedClasses['character-highlight-overlay']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "character-highlight-card" },
+    });
+    /** @type {__VLS_StyleScopedClasses['character-highlight-card']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.activeHighlight.title);
+    if (__VLS_ctx.activeHighlight.valueText) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (__VLS_ctx.activeHighlight.valueText);
+    }
+}
+if (__VLS_ctx.showRuleGuide) {
+    const __VLS_30 = RuleGuideDialog;
+    // @ts-ignore
+    const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({
+        ...{ 'onClose': {} },
+        characters: (__VLS_ctx.characters),
+    }));
+    const __VLS_32 = __VLS_31({
+        ...{ 'onClose': {} },
+        characters: (__VLS_ctx.characters),
+    }, ...__VLS_functionalComponentArgsRest(__VLS_31));
+    let __VLS_35;
+    const __VLS_36 = {
+        ...{ close: {} },
+        onClose: (...[$event]) => {
+            if (!(__VLS_ctx.showRuleGuide))
+                return;
+            __VLS_ctx.showRuleGuide = false;
+            // @ts-ignore
+            [showRuleGuide, showRuleGuide, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, characters,];
+        },
+    };
+    var __VLS_33;
+    var __VLS_34;
 }
 // @ts-ignore
 [];

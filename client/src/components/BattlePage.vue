@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
-import type { Character, EmoteId, GameEvent, Player, PlayerEmoteEvent, Room } from "@career-war/shared";
+import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, Room, SkillHint } from "@career-war/shared";
 import { socket } from "../socket";
+import RuleGuideDialog from "./RuleGuideDialog.vue";
 
 const props = defineProps<{
   room: Room;
@@ -36,6 +37,8 @@ type VisibleEmote = PlayerEmoteEvent & {
 
 const MAX_RENDERED_LOG = 50;
 const EMOTE_DISPLAY_MS = 1500;
+const HIGHLIGHT_DISPLAY_MS = 1500;
+const SKILL_HINT_DISPLAY_MS = 1300;
 const EMOTE_OPTIONS: EmoteOption[] = [
   { id: "cry", label: "大哭", emoji: "😭" },
   { id: "surprise", label: "惊讶", emoji: "😮" },
@@ -57,11 +60,18 @@ const activeFloatingEffects = ref<FloatingEffect[]>([]);
 const animatedRollIds = new Set<string>();
 const rollRequestLocked = ref(false);
 const activeEmotes = ref<Record<string, VisibleEmote>>({});
+const activeHighlight = ref<CharacterHighlight | null>(null);
+const activeSkillHints = ref<SkillHint[]>([]);
+const showRuleGuide = ref(false);
 const emoteLocked = ref(false);
 let rollingTimer: number | undefined;
 let emoteUnlockTimer: number | undefined;
+let highlightTimer: number | undefined;
+let skillHintTimer: number | undefined;
 const timers: number[] = [];
 const emoteTimers = new Map<string, number>();
+const playedHighlightKeys = new Set<string>();
+const playedSkillHintIds = new Set<string>();
 
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
 const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
@@ -109,6 +119,8 @@ watch(
 onUnmounted(() => {
   clearRollTimers();
   clearEmoteTimers();
+  clearHighlightTimer();
+  clearSkillHintTimer();
 });
 
 const visibleRoll = computed(() => {
@@ -139,7 +151,27 @@ const latestDiceText = computed(() => {
 const rollButtonText = computed(() => {
   if (isRolling.value) return "摇骰中...";
   if (pendingRoll.value) return isPendingMine.value ? "继续投骰" : "等待继续投骰";
-  return isMyTurn.value ? "投骰开怼" : "等待对手";
+  return "投骰";
+});
+
+const turnGuideText = computed(() => {
+  if (room.value.phase === "gameOver") return "游戏结束";
+  if (me.value?.isDead) return "你已死亡，等待本局结束";
+  if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
+  if (isRolling.value) return "骰子滚动中……";
+  if (pendingRoll.value && isPendingMine.value) return "技能触发：请继续投骰";
+  if (!isMyTurn.value) return `等待【${activePlayer.value?.nickname ?? "玩家"}】行动`;
+  if (!selectedTargetId.value) return "轮到你了：请选择攻击目标";
+  return "轮到你了：点击投骰";
+});
+
+const turnGuideTone = computed(() => {
+  if (room.value.phase === "gameOver") return "ended";
+  if (me.value?.isDead) return "dead";
+  if (rollRequestLocked.value || isRolling.value) return "busy";
+  if (pendingRoll.value && isPendingMine.value) return "continue";
+  if (isMyTurn.value) return "mine";
+  return "waiting";
 });
 
 const canRoll = computed(() => {
@@ -214,6 +246,8 @@ function startRollAnimation(shouldEmit: boolean): void {
   clearRollTimers();
   activeEffectRollId.value = undefined;
   activeFloatingEffects.value = [];
+  activeSkillHints.value = [];
+  clearSkillHintTimer();
   rollPhase.value = "fast";
   rollingDice.value = randomDice();
   startDiceTicker(55);
@@ -249,6 +283,8 @@ function revealServerRoll(): void {
   displayedRoom.value = revealRoom;
   visibleRollId.value = revealRollId;
   startEffectWindow(revealRollId);
+  showSkillHints(revealRoom.skillHints, revealRollId);
+  showHighlight(revealRoom.highlight);
   pendingRoom.value = null;
   pendingRevealRollId.value = undefined;
   rollRequestLocked.value = false;
@@ -299,6 +335,40 @@ function clearEmoteTimers(): void {
   window.clearTimeout(emoteUnlockTimer);
   for (const timer of emoteTimers.values()) window.clearTimeout(timer);
   emoteTimers.clear();
+}
+
+function showHighlight(highlight: CharacterHighlight | undefined): void {
+  if (!highlight || playedHighlightKeys.has(highlight.id)) return;
+  playedHighlightKeys.add(highlight.id);
+  activeHighlight.value = highlight;
+  window.clearTimeout(highlightTimer);
+  highlightTimer = window.setTimeout(() => {
+    if (activeHighlight.value?.id === highlight.id) activeHighlight.value = null;
+    highlightTimer = undefined;
+  }, HIGHLIGHT_DISPLAY_MS);
+}
+
+function clearHighlightTimer(): void {
+  window.clearTimeout(highlightTimer);
+}
+
+function showSkillHints(hints: SkillHint[] | undefined, rollId: string): void {
+  const nextHints = (hints ?? []).filter((hint) => hint.rollId === rollId && !playedSkillHintIds.has(hint.id));
+  if (nextHints.length === 0) return;
+
+  for (const hint of nextHints) playedSkillHintIds.add(hint.id);
+  activeSkillHints.value = nextHints;
+  window.clearTimeout(skillHintTimer);
+  skillHintTimer = window.setTimeout(() => {
+    if (activeSkillHints.value.some((hint) => nextHints.some((nextHint) => nextHint.id === hint.id))) {
+      activeSkillHints.value = [];
+    }
+    skillHintTimer = undefined;
+  }, SKILL_HINT_DISPLAY_MS);
+}
+
+function clearSkillHintTimer(): void {
+  window.clearTimeout(skillHintTimer);
 }
 
 function randomDice(): number {
@@ -382,6 +452,14 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
     </section>
 
+    <section class="battle-tools">
+      <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
+    </section>
+
+    <section class="turn-guide" :class="`turn-guide-${turnGuideTone}`" aria-live="polite">
+      <span>{{ turnGuideText }}</span>
+    </section>
+
     <section class="combat-board">
       <article
         v-for="(player, index) in room.players"
@@ -444,8 +522,16 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
     </section>
 
     <section class="dice-panel" :class="{ ready: isMyTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
-      <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
-        <span v-for="(dice, index) in isRolling ? [rollPhase === 'pause' ? '...' : rollingDice] : visibleRoll?.dice ?? ['?']" :key="`${visibleRoll?.id ?? 'empty'}-${index}`">{{ dice }}</span>
+      <div class="dice-visual">
+        <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
+          <span v-for="(dice, index) in isRolling ? [rollPhase === 'pause' ? '...' : rollingDice] : visibleRoll?.dice ?? ['?']" :key="`${visibleRoll?.id ?? 'empty'}-${index}`">{{ dice }}</span>
+        </div>
+        <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
+          <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
+            <span>{{ hint.text }}</span>
+            <b v-if="hint.valueText">{{ hint.valueText }}</b>
+          </span>
+        </transition-group>
       </div>
       <div class="action-summary">
         <strong>{{ latestDiceText }}</strong>
@@ -495,5 +581,14 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         </li>
       </ol>
     </section>
+
+    <div v-if="activeHighlight" :key="activeHighlight.id" class="character-highlight-overlay" :class="`highlight-${activeHighlight.type}`">
+      <div class="character-highlight-card">
+        <strong>{{ activeHighlight.title }}</strong>
+        <span v-if="activeHighlight.valueText">{{ activeHighlight.valueText }}</span>
+      </div>
+    </div>
+
+    <RuleGuideDialog v-if="showRuleGuide" :characters="characters" @close="showRuleGuide = false" />
   </section>
 </template>

@@ -9,6 +9,8 @@ export type CharacterId =
 
 export type RoomPhase = "lobby" | "battle" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
+export type CharacterDifficulty = "simple" | "normal" | "complex" | "expert";
+export type CharacterRole = "attack" | "defense" | "healing" | "burst" | "special";
 
 export const EMOTE_IDS = ["cry", "surprise", "taunt", "angry", "like", "question"] as const;
 export type EmoteId = (typeof EMOTE_IDS)[number];
@@ -18,6 +20,13 @@ export interface Character {
   name: string;
   maxHp: number;
   description: string[];
+  difficulty?: CharacterDifficulty;
+  role?: CharacterRole;
+  tags?: string[];
+  shortDescription?: string;
+  fullDescription?: string[];
+  isImplemented?: boolean;
+  isHidden?: boolean;
 }
 
 export interface Effect {
@@ -70,6 +79,30 @@ export interface PlayerEmoteEvent {
   createdAt: number;
 }
 
+export type CharacterHighlightType = "big_damage" | "big_heal" | "streak";
+
+export interface CharacterHighlight {
+  id: string;
+  type: CharacterHighlightType;
+  title: string;
+  valueText?: string;
+  actorId: string;
+  rollId?: string;
+}
+
+export interface SkillHint {
+  id: string;
+  actorId: string;
+  text: string;
+  valueText?: string;
+  rollId?: string;
+}
+
+export interface RoomSettings {
+  maxPlayers: number;
+  allowDuplicateCharacters: boolean;
+}
+
 export type PendingRollType = "gunslinger_bonus_damage" | "vampire_bonus_heal" | string;
 
 export interface PendingRoll {
@@ -95,6 +128,7 @@ export interface Room {
   id: string;
   hostId: string;
   phase: RoomPhase;
+  settings: RoomSettings;
   players: Player[];
   rematchReadyPlayerIds: string[];
   activePlayerIndex: number;
@@ -104,6 +138,8 @@ export interface Room {
   previousFinalDamage: number;
   pendingRoll?: PendingRoll;
   winnerId?: string;
+  highlight?: CharacterHighlight;
+  skillHints?: SkillHint[];
 }
 
 export interface PublicRoomState extends Room {

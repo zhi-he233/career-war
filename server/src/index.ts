@@ -20,12 +20,17 @@ import {
   type PlayerEmoteEvent,
   type Room,
   type RoomListItem,
-  type RoomListStatus
+  type RoomListStatus,
+  type RoomSettings
 } from "@career-war/shared";
 
 const MAX_BATTLE_LOG = 80;
 const EMOTE_COOLDOWN_MS = 1000;
-const MAX_PLAYERS = 6;
+const ROOM_MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8] as const;
+const DEFAULT_ROOM_SETTINGS: RoomSettings = {
+  maxPlayers: 8,
+  allowDuplicateCharacters: true
+};
 const PORT = Number(process.env.PORT ?? 3001);
 const isLocalDev = process.env.NODE_ENV !== "production" && process.env.npm_lifecycle_event === "dev";
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? (isLocalDev ? "http://localhost:5173" : undefined);
@@ -89,6 +94,7 @@ io.on("connection", (socket) => {
         id: roomId,
         hostId: socket.id,
         phase: "lobby",
+        settings: { ...DEFAULT_ROOM_SETTINGS },
         players: [player],
         rematchReadyPlayerIds: [],
         activePlayerIndex: 0,
@@ -110,6 +116,7 @@ io.on("connection", (socket) => {
     handle(socket.id, reply, () => {
       const roomId = (payload.roomId ?? "").trim().toUpperCase();
       const room = getRoom(roomId);
+      const settings = ensureRoomSettings(room);
       const clientId = sanitizeClientId(payload.clientId);
       const existing = room.players.find((player) => player.clientId === clientId);
 
@@ -125,7 +132,7 @@ io.on("connection", (socket) => {
       }
 
       if (room.phase !== "lobby") throw new Error("游戏已经开始，不能加入");
-      if (room.players.length >= MAX_PLAYERS) throw new Error("房间已满");
+      if (room.players.length >= settings.maxPlayers) throw new Error("房间已满");
 
       const nickname = sanitizeNickname(payload.nickname);
       const player = createPlayer(socket.id, clientId, nickname, false);
@@ -167,6 +174,7 @@ io.on("connection", (socket) => {
       const room = getSocketRoom(socket.id);
       if (room.phase !== "lobby") throw new Error("游戏开始后不能更换职业");
       if (!payload.characterId) throw new Error("请选择职业");
+      validateCharacterChoice(room, socket.id, payload.characterId);
       const event = chooseCharacter(room, socket.id, payload.characterId);
       room.battleLog.unshift(event);
       trimBattleLog(room);
@@ -175,10 +183,20 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("updateRoomSettings", (payload: Partial<RoomSettings> | undefined, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      updateRoomSettings(room, socket.id, payload ?? {});
+      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      return { ok: true };
+    });
+  });
+
   socket.on("startGame", (_payload: unknown, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       if (room.hostId !== socket.id) throw new Error("只有房主可以开始游戏");
+      validateStartGame(room);
       const events = startGame(room, serverContext);
       broadcastRoom(room, events);
       return { ok: true };
@@ -297,6 +315,7 @@ function addEvent(room: Room, type: GameEvent["type"], message: string): GameEve
 }
 
 function serializePublicRoom(room: Room): Room {
+  ensureRoomSettings(room);
   const publicRoom = serializeRoom(room);
   publicRoom.battleLog = publicRoom.battleLog.slice(0, MAX_BATTLE_LOG);
   publicRoom.snapshots = [];
@@ -307,16 +326,66 @@ function getPublicRoomList(): RoomListItem[] {
   return Array.from(rooms.values())
     .filter((room) => room.phase !== "gameOver")
     .map((room) => {
+      const settings = ensureRoomSettings(room);
       const host = room.players.find((player) => player.id === room.hostId) ?? room.players.find((player) => player.isHost);
       return {
         roomId: room.id,
         hostName: host?.nickname ?? "未知房主",
         playerCount: room.players.length,
-        maxPlayers: MAX_PLAYERS,
+        maxPlayers: settings.maxPlayers,
         phase: mapRoomPhase(room.phase),
-        canJoin: room.phase === "lobby" && room.players.length < MAX_PLAYERS
+        canJoin: room.phase === "lobby" && room.players.length < settings.maxPlayers
       };
     });
+}
+
+function ensureRoomSettings(room: Room): RoomSettings {
+  room.settings = {
+    ...DEFAULT_ROOM_SETTINGS,
+    ...(room.settings ?? {})
+  };
+  return room.settings;
+}
+
+function updateRoomSettings(room: Room, actorId: string, payload: Partial<RoomSettings>): void {
+  const currentSettings = ensureRoomSettings(room);
+  if (room.hostId !== actorId) throw new Error("只有房主可以修改房间设置");
+  if (room.phase !== "lobby") throw new Error("游戏开始后不能修改房间设置");
+
+  const nextSettings: RoomSettings = { ...currentSettings };
+  if (payload.maxPlayers !== undefined) {
+    if (!Number.isInteger(payload.maxPlayers) || !ROOM_MAX_PLAYERS_OPTIONS.includes(payload.maxPlayers as (typeof ROOM_MAX_PLAYERS_OPTIONS)[number])) {
+      throw new Error("最大人数必须在 2 到 8 之间");
+    }
+    if (payload.maxPlayers < room.players.length) throw new Error("最大人数不能小于当前玩家数");
+    nextSettings.maxPlayers = payload.maxPlayers;
+  }
+
+  if (payload.allowDuplicateCharacters !== undefined) {
+    if (typeof payload.allowDuplicateCharacters !== "boolean") throw new Error("重复职业设置无效");
+    nextSettings.allowDuplicateCharacters = payload.allowDuplicateCharacters;
+  }
+
+  room.settings = nextSettings;
+}
+
+function validateCharacterChoice(room: Room, actorId: string, characterId: CharacterId): void {
+  const settings = ensureRoomSettings(room);
+  if (settings.allowDuplicateCharacters) return;
+  const takenByOther = room.players.some((player) => player.id !== actorId && player.characterId === characterId);
+  if (takenByOther) throw new Error("该职业已被其他玩家选择");
+}
+
+function validateStartGame(room: Room): void {
+  const settings = ensureRoomSettings(room);
+  if (room.players.length > settings.maxPlayers) throw new Error("当前玩家数超过房间最大人数");
+  if (settings.allowDuplicateCharacters) return;
+
+  const selectedCharacters = room.players.map((player) => player.characterId).filter((characterId): characterId is CharacterId => Boolean(characterId));
+  const uniqueCharacters = new Set(selectedCharacters);
+  if (uniqueCharacters.size !== selectedCharacters.length) {
+    throw new Error("当前已有重复职业，请玩家重新选择");
+  }
 }
 
 function mapRoomPhase(phase: Room["phase"]): RoomListStatus {

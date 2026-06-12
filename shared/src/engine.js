@@ -18,8 +18,8 @@ export function chooseCharacter(room, playerId, characterId) {
 export function canStartGame(room) {
     if (room.players.length < 2)
         return { ok: false, reason: "至少需要 2 名玩家" };
-    if (room.players.length > 6)
-        return { ok: false, reason: "最多支持 6 名玩家" };
+    if (room.players.length > 8)
+        return { ok: false, reason: "最多支持 8 名玩家" };
     if (room.players.some((player) => !player.characterId))
         return { ok: false, reason: "所有玩家都需要先选择职业" };
     return { ok: true };
@@ -36,6 +36,8 @@ export function startGame(room, ctx) {
     room.pendingRoll = undefined;
     room.rematchReadyPlayerIds = [];
     room.winnerId = undefined;
+    room.highlight = undefined;
+    room.skillHints = undefined;
     for (const player of room.players) {
         const character = characters[player.characterId];
         player.maxHp = character.maxHp;
@@ -59,6 +61,8 @@ export function resetToLobbyForRematch(room) {
     room.pendingRoll = undefined;
     room.rematchReadyPlayerIds = [];
     room.winnerId = undefined;
+    room.highlight = undefined;
+    room.skillHints = undefined;
     for (const player of room.players) {
         player.characterId = undefined;
         player.hp = 0;
@@ -92,6 +96,7 @@ export function rollForActivePlayer(room, playerId, ctx) {
         throw new Error("死亡玩家不能行动");
     if (!actor.characterId)
         throw new Error("当前玩家没有职业");
+    room.skillHints = undefined;
     if (room.pendingRoll) {
         return resolvePendingRoll(room, playerId, ctx);
     }
@@ -109,6 +114,7 @@ export function rollForActivePlayer(room, playerId, ctx) {
     if (pending) {
         room.pendingRoll = pending;
         events.push(makeEvent(ctx.now, ctx.makeId, "skill", pending.message, actor.id, target.id, [first]));
+        room.skillHints = createSkillHints([pendingSkillHintDraft(pending.type)], actor.id, events[0].id, ctx);
         room.battleLog.unshift(...events);
         return { room, events };
     }
@@ -140,7 +146,8 @@ function resolvePendingRoll(room, playerId, ctx) {
             healing: 0,
             ignoresShield: false,
             dice,
-            skillMessages: [`枪手第二次骰点 ${second} x3，最终伤害 ${second * 3}`]
+            skillMessages: [`枪手第二次骰点 ${second} x3，最终伤害 ${second * 3}`],
+            skillHints: []
         };
     }
     else if (pending.type === "vampire_bonus_heal") {
@@ -149,7 +156,8 @@ function resolvePendingRoll(room, playerId, ctx) {
             healing: second * 3,
             ignoresShield: false,
             dice,
-            skillMessages: [`吸血鬼第二次骰点 ${second} x3，回复 ${second * 3} 点血`]
+            skillMessages: [`吸血鬼第二次骰点 ${second} x3，回复 ${second * 3} 点血`],
+            skillHints: []
         };
     }
     else {
@@ -181,7 +189,20 @@ function createPendingRoll(actor, target, first) {
     }
     return undefined;
 }
+function pendingSkillHintDraft(type) {
+    if (type === "gunslinger_bonus_damage") {
+        return { key: "gunslinger-6", text: "连射准备！" };
+    }
+    if (type === "vampire_bonus_heal") {
+        return { key: "vampire-6", text: "血祭回复准备！" };
+    }
+    return { key: type, text: "技能准备！" };
+}
 function finishAction(room, actor, target, outcome, events, ctx) {
+    const actorHpAtActionStart = actor.hp;
+    const rollId = events.find((event) => event.type === "roll")?.id;
+    const previousOwnRoll = findPreviousOwnRoll(room, actor.id);
+    const skillHintDrafts = [...outcome.skillHints];
     for (const message of outcome.skillMessages) {
         events.push(makeEvent(ctx.now, ctx.makeId, "skill", `${actor.nickname} 触发技能：${message}`, actor.id, target.id, outcome.dice));
     }
@@ -204,6 +225,9 @@ function finishAction(room, actor, target, outcome, events, ctx) {
             finalDamage = applyDamage(target, outcome.damage, outcome.ignoresShield);
             const shieldText = outcome.ignoresShield ? "（无视护盾）" : "";
             events.push(makeEvent(ctx.now, ctx.makeId, "damage", `${actor.nickname} 对 ${target.nickname} 造成 ${finalDamage} 点伤害${shieldText}`, actor.id, target.id, outcome.dice, finalDamage));
+            if (actor.characterId === "zhaoZilong" && finalDamage > 0) {
+                skillHintDrafts.push({ key: "zhaoZilong-ignore-shield", text: "无视护盾！" });
+            }
             if (target.isDead)
                 events.push(makeEvent(ctx.now, ctx.makeId, "death", `${target.nickname} 已死亡`, target.id));
         }
@@ -215,7 +239,12 @@ function finishAction(room, actor, target, outcome, events, ctx) {
         const { hpGain, shieldGain } = applyHealing(actor, outcome.healing);
         const shieldText = shieldGain > 0 ? `，溢出 ${shieldGain} 点转为护盾` : "";
         events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 回复 ${hpGain} 点血${shieldText}`, actor.id, undefined, outcome.dice, undefined, outcome.healing));
+        if (actor.characterId === "vampire" && shieldGain > 0) {
+            skillHintDrafts.push({ key: "vampire-overflow-shield", text: "溢出转护盾！" });
+        }
     }
+    room.skillHints = createSkillHints(skillHintDrafts, actor.id, rollId, ctx);
+    room.highlight = createCharacterHighlight(actor, outcome, finalDamage, actorHpAtActionStart, previousOwnRoll, rollId, ctx);
     room.previousFinalDamage = finalDamage;
     actor.selectedTargetId = undefined;
     const winner = getWinner(room);
@@ -231,8 +260,67 @@ function finishAction(room, actor, target, outcome, events, ctx) {
     room.battleLog.unshift(...events);
     return { room, events };
 }
+function createSkillHints(drafts, actorId, rollId, ctx) {
+    const uniqueDrafts = drafts.filter((draft, index) => drafts.findIndex((item) => item.key === draft.key) === index);
+    if (uniqueDrafts.length === 0)
+        return undefined;
+    return uniqueDrafts.map((draft) => ({
+        id: rollId ? `${rollId}:${draft.key}` : ctx.makeId(),
+        actorId,
+        text: draft.text,
+        valueText: draft.valueText,
+        rollId
+    }));
+}
+function createCharacterHighlight(actor, outcome, finalDamage, actorHpAtActionStart, previousOwnRoll, rollId, ctx) {
+    const diceKey = outcome.dice.join("-");
+    const base = {
+        actorId: actor.id,
+        rollId
+    };
+    if (actor.characterId === "gunslinger" && diceKey === "6-6" && finalDamage === 18) {
+        return {
+            id: ctx.makeId(),
+            type: "big_damage",
+            title: "爆头！",
+            valueText: "-18",
+            ...base
+        };
+    }
+    if (actor.characterId === "vampire" && diceKey === "6-6" && outcome.healing === 18) {
+        return {
+            id: ctx.makeId(),
+            type: "big_heal",
+            title: "血祭回复！",
+            valueText: "+18",
+            ...base
+        };
+    }
+    if (actor.characterId === "berserker" && actorHpAtActionStart <= 2 && finalDamage >= 15) {
+        return {
+            id: ctx.makeId(),
+            type: "big_damage",
+            title: "暴怒！",
+            valueText: `-${finalDamage}`,
+            ...base
+        };
+    }
+    if (actor.characterId === "paladin" && outcome.dice[0] === 4 && previousOwnRoll?.dice?.[0] === 4) {
+        return {
+            id: ctx.makeId(),
+            type: "streak",
+            title: "神圣庇护！",
+            valueText: "连续守护",
+            ...base
+        };
+    }
+    return undefined;
+}
+function findPreviousOwnRoll(room, actorId) {
+    return room.battleLog.find((event) => event.type === "roll" && event.playerId === actorId);
+}
 function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMaxHp) {
-    const outcome = { damage: first, healing: 0, ignoresShield: false, dice: [first], skillMessages: [] };
+    const outcome = { damage: first, healing: 0, ignoresShield: false, dice: [first], skillMessages: [], skillHints: [] };
     if (characterId === "boxer")
         return outcome;
     if (characterId === "gunslinger") {
@@ -240,6 +328,7 @@ function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMax
         if (first === 1) {
             outcome.damage = previousFinalDamage;
             outcome.skillMessages.push(`枪手 1 点复制上一名玩家最终伤害，伤害为 ${outcome.damage}`);
+            outcome.skillHints.push({ key: "gunslinger-1", text: "复制伤害！" });
         }
         return outcome;
     }
@@ -252,6 +341,7 @@ function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMax
             outcome.damage = 1;
             outcome.healing = 2;
             outcome.skillMessages.push("吸血鬼 1 点造成 1 伤害并回复 2 血");
+            outcome.skillHints.push({ key: "vampire-1", text: "吸血回复！" });
         }
         return outcome;
     }
@@ -278,12 +368,16 @@ function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMax
         }
         else if (first === 4) {
             outcome.skillMessages.push("圣骑士 4 点触发全员无敌，持续到圣骑士下一次行动开始前");
+            outcome.skillHints.push({ key: "paladin-4", text: "全员无敌！" });
         }
     }
     if (characterId === "berserker") {
         const missingHp = Math.max(0, actorMaxHp - actorHp);
         outcome.damage = first + missingHp;
         outcome.skillMessages.push(`狂战士已损失 ${missingHp} 点血，本次伤害 +${missingHp}`);
+        if (missingHp > 0) {
+            outcome.skillHints.push({ key: "berserker-low-hp-damage", text: "残血增伤", valueText: `+${missingHp}` });
+        }
         return outcome;
     }
     return outcome;

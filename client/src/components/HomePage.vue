@@ -45,6 +45,8 @@ function joinRoom(): void {
 function selectRoom(room: RoomListItem): void {
   if (!room.canJoin) return;
   roomId.value = room.roomId;
+  rememberName();
+  emit("joinRoom", { nickname: nickname.value, roomId: room.roomId });
 }
 
 function phaseLabel(phase: RoomListItem["phase"]): string {
@@ -93,7 +95,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
               <span>{{ phaseLabel(room.phase) }}</span>
             </div>
             <button class="secondary-btn small-btn" type="button" :disabled="!room.canJoin" @click="selectRoom(room)">
-              加入
+              {{ room.canJoin ? "加入" : room.playerCount >= room.maxPlayers ? "已满" : "不可加入" }}
             </button>
           </article>
         </div>

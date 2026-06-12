@@ -29,6 +29,8 @@ function selectRoom(room) {
     if (!room.canJoin)
         return;
     roomId.value = room.roomId;
+    rememberName();
+    emit("joinRoom", { nickname: nickname.value, roomId: room.roomId });
 }
 function phaseLabel(phase) {
     if (phase === "waiting")
@@ -160,6 +162,7 @@ else {
             });
             /** @type {__VLS_StyleScopedClasses['secondary-btn']} */ ;
             /** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+            (room.canJoin ? "加入" : room.playerCount >= room.maxPlayers ? "已满" : "不可加入");
             // @ts-ignore
             [];
         }

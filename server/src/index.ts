@@ -1,6 +1,8 @@
 import cors from "cors";
 import express from "express";
 import { createServer } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
   characterList,
@@ -17,21 +19,40 @@ import {
 } from "@career-war/shared";
 
 const PORT = Number(process.env.PORT ?? 3001);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
+const isLocalDev = process.env.NODE_ENV !== "production" && process.env.npm_lifecycle_event === "dev";
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? (isLocalDev ? "http://localhost:5173" : undefined);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDistPath = path.resolve(__dirname, "../../client/dist");
+const clientIndexPath = path.join(clientDistPath, "index.html");
 
 const app = express();
-app.use(cors({ origin: CLIENT_ORIGIN }));
+if (CLIENT_ORIGIN) {
+  app.use(cors({ origin: CLIENT_ORIGIN }));
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true, rooms: rooms.size });
 });
 
+if (!isLocalDev) {
+  app.use(express.static(clientDistPath));
+  app.get(/^\/(?!health$).*/, (_req, res) => {
+    res.sendFile(clientIndexPath);
+  });
+}
+
 const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: {
-    origin: CLIENT_ORIGIN,
-    methods: ["GET", "POST"]
-  }
-});
+const io = new Server(
+  httpServer,
+  CLIENT_ORIGIN
+    ? {
+        cors: {
+          origin: CLIENT_ORIGIN,
+          methods: ["GET", "POST"]
+        }
+      }
+    : {}
+);
 
 const rooms = new Map<string, Room>();
 const socketToRoom = new Map<string, string>();
@@ -192,7 +213,7 @@ io.on("connection", (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`Career War server listening on http://localhost:${PORT}`);
+  console.log(`Career War server listening on port ${PORT}`);
 });
 
 type Ack = (response: { ok: true; [key: string]: unknown } | { ok: false; error: string }) => void;

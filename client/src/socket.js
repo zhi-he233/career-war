@@ -1,6 +1,7 @@
 import { io } from "socket.io-client";
 const CLIENT_ID_KEY = "career-war-client-id";
-export const socket = io(import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001", {
+const socketUrl = import.meta.env.DEV ? (import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001") : undefined;
+export const socket = io(socketUrl, {
     autoConnect: true,
     transports: ["websocket", "polling"]
 });

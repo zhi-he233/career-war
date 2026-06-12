@@ -17,7 +17,9 @@ const emit = defineEmits<{
 
 type RollPhase = "idle" | "fast" | "slow" | "pause" | "reveal";
 
-const displayedRoom = ref<Room>(cloneRoom(props.room));
+const MAX_RENDERED_LOG = 50;
+
+const displayedRoom = ref<Room>(cloneRoomForDisplay(props.room));
 const pendingRoom = ref<Room | null>(null);
 const room = computed(() => displayedRoom.value);
 const rollPhase = ref<RollPhase>("idle");
@@ -46,20 +48,20 @@ watch(
     const shownRollId = getLatestRoll(displayedRoom.value)?.id;
 
     if (nextRollId && nextRollId !== shownRollId) {
-      pendingRoom.value = cloneRoom(nextRoom);
+      pendingRoom.value = cloneRoomForDisplay(nextRoom);
       pendingRevealRollId.value = nextRollId;
       startRollAnimation(false);
       return;
     }
 
     if (isRolling.value) {
-      pendingRoom.value = cloneRoom(nextRoom);
+      pendingRoom.value = cloneRoomForDisplay(nextRoom);
       return;
     }
 
-    displayedRoom.value = cloneRoom(nextRoom);
+    displayedRoom.value = cloneRoomForDisplay(nextRoom);
   },
-  { deep: true }
+  { deep: false }
 );
 
 onUnmounted(clearRollTimers);
@@ -81,6 +83,7 @@ const latestDamage = computed(() => latestActionEvents.value.find((event) => eve
 const latestHeal = computed(() => latestActionEvents.value.find((event) => event.type === "heal"));
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
 const latestShownEvent = computed(() => room.value.battleLog[0]);
+const renderedBattleLog = computed(() => room.value.battleLog.slice(0, MAX_RENDERED_LOG));
 const latestDiceText = computed(() => {
   if (isRolling.value) return pendingRoll.value?.message ?? "";
   const dice = visibleRoll.value?.dice ?? [];
@@ -150,21 +153,21 @@ function startRollAnimation(shouldEmit: boolean): void {
 
   timers.push(window.setTimeout(() => {
     rollPhase.value = "slow";
-    startDiceTicker(130);
-  }, 360));
+    startDiceTicker(110);
+  }, 240));
 
   timers.push(window.setTimeout(() => {
     rollPhase.value = "pause";
     window.clearInterval(rollingTimer);
     rollingTimer = undefined;
-  }, 760));
+  }, 500));
 
-  timers.push(window.setTimeout(revealServerRoll, shouldEmit ? 1050 : 980));
-  timers.push(window.setTimeout(revealServerRoll, 1250));
+  timers.push(window.setTimeout(revealServerRoll, shouldEmit ? 680 : 560));
+  timers.push(window.setTimeout(revealServerRoll, 820));
 }
 
 function revealServerRoll(): void {
-  const revealRoom = pendingRoom.value ?? cloneRoom(props.room);
+  const revealRoom = pendingRoom.value ?? cloneRoomForDisplay(props.room);
   const revealRollId = pendingRevealRollId.value ?? getLatestRoll(revealRoom)?.id;
   if (!revealRollId || revealRollId === visibleRollId.value) return;
 
@@ -177,7 +180,7 @@ function revealServerRoll(): void {
   rollingTimer = undefined;
   timers.push(window.setTimeout(() => {
     rollPhase.value = "idle";
-  }, 320));
+  }, 220));
 }
 
 function startDiceTicker(interval: number): void {
@@ -201,8 +204,11 @@ function getLatestRoll(targetRoom: Room): GameEvent | undefined {
   return targetRoom.battleLog.find((event) => event.type === "roll");
 }
 
-function cloneRoom(targetRoom: Room): Room {
-  return JSON.parse(JSON.stringify(targetRoom)) as Room;
+function cloneRoomForDisplay(targetRoom: Room): Room {
+  const nextRoom = JSON.parse(JSON.stringify(targetRoom)) as Room;
+  nextRoom.battleLog = nextRoom.battleLog.slice(0, MAX_RENDERED_LOG);
+  nextRoom.snapshots = [];
+  return nextRoom;
 }
 </script>
 
@@ -319,7 +325,7 @@ function cloneRoom(targetRoom: Room): Room {
         <span v-if="latestShownEvent">{{ latestShownEvent.message }}</span>
       </div>
       <ol>
-        <li v-for="(event, index) in room.battleLog" :key="event.id" :class="{ newest: index === 0 }">
+        <li v-for="(event, index) in renderedBattleLog" :key="event.id" :class="{ newest: index === 0 }">
           <time>{{ new Date(event.createdAt).toLocaleTimeString() }}</time>
           <span>{{ event.message }}</span>
         </li>

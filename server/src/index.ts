@@ -18,6 +18,7 @@ import {
   type Room
 } from "@career-war/shared";
 
+const MAX_BATTLE_LOG = 80;
 const PORT = Number(process.env.PORT ?? 3001);
 const isLocalDev = process.env.NODE_ENV !== "production" && process.env.npm_lifecycle_event === "dev";
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? (isLocalDev ? "http://localhost:5173" : undefined);
@@ -84,7 +85,7 @@ io.on("connection", (socket) => {
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${nickname} 创建了房间 ${roomId}`);
       broadcastRoom(room, [event]);
-      return { roomId, playerId: socket.id, room: serializeRoom(room) };
+      return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
     });
   });
 
@@ -103,7 +104,7 @@ io.on("connection", (socket) => {
         bindSocketToRoom(socket.id, clientId, roomId);
         const event = addEvent(room, "system", `${existing.nickname} 已重新连接`);
         broadcastRoom(room, [event]);
-        return { roomId, playerId: socket.id, room: serializeRoom(room) };
+        return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
       }
 
       if (room.phase !== "lobby") throw new Error("游戏已经开始，不能加入");
@@ -115,7 +116,7 @@ io.on("connection", (socket) => {
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${nickname} 加入了房间`);
       broadcastRoom(room, [event]);
-      return { roomId, playerId: socket.id, room: serializeRoom(room) };
+      return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
     });
   });
 
@@ -133,7 +134,7 @@ io.on("connection", (socket) => {
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${player.nickname} 已重新连接`);
       broadcastRoom(room, [event]);
-      return { roomId, playerId: socket.id, room: serializeRoom(room) };
+      return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
     });
   });
 
@@ -151,6 +152,7 @@ io.on("connection", (socket) => {
       if (!payload.characterId) throw new Error("请选择职业");
       const event = chooseCharacter(room, socket.id, payload.characterId);
       room.battleLog.unshift(event);
+      trimBattleLog(room);
       broadcastRoom(room, [event]);
       return { ok: true };
     });
@@ -171,7 +173,7 @@ io.on("connection", (socket) => {
       const room = getSocketRoom(socket.id);
       if (!payload.targetId) throw new Error("请选择目标");
       selectTarget(room, socket.id, payload.targetId);
-      io.to(room.id).emit("gameStateUpdated", serializeRoom(room));
+      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
       return { ok: true };
     });
   });
@@ -198,11 +200,11 @@ io.on("connection", (socket) => {
 
       if (room.players.every((player) => room.rematchReadyPlayerIds.includes(player.id))) {
         resetToLobbyForRematch(room);
-        io.to(room.id).emit("gameStateUpdated", serializeRoom(room));
+        io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
         return { ok: true, reset: true };
       }
 
-      io.to(room.id).emit("gameStateUpdated", serializeRoom(room));
+      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
       return { ok: true };
     });
   });
@@ -235,11 +237,9 @@ function handle(socketId: string, reply: Ack | undefined, fn: () => Record<strin
   }
 }
 
-function broadcastRoom(room: Room, events: GameEvent[]): void {
-  io.to(room.id).emit("gameStateUpdated", serializeRoom(room));
-  for (const event of events) {
-    io.to(room.id).emit("battleLogAdded", event);
-  }
+function broadcastRoom(room: Room, _events: GameEvent[]): void {
+  trimBattleLog(room);
+  io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
 }
 
 function addEvent(room: Room, type: GameEvent["type"], message: string): GameEvent {
@@ -250,7 +250,21 @@ function addEvent(room: Room, type: GameEvent["type"], message: string): GameEve
     message
   };
   room.battleLog.unshift(event);
+  trimBattleLog(room);
   return event;
+}
+
+function serializePublicRoom(room: Room): Room {
+  const publicRoom = serializeRoom(room);
+  publicRoom.battleLog = publicRoom.battleLog.slice(0, MAX_BATTLE_LOG);
+  publicRoom.snapshots = [];
+  return publicRoom;
+}
+
+function trimBattleLog(room: Room): void {
+  if (room.battleLog.length > MAX_BATTLE_LOG) {
+    room.battleLog.length = MAX_BATTLE_LOG;
+  }
 }
 
 function getSocketRoom(socketId: string): Room {

@@ -2,7 +2,8 @@ import { computed, onUnmounted, ref, watch } from "vue";
 import { socket } from "../socket";
 const props = defineProps();
 const emit = defineEmits();
-const displayedRoom = ref(cloneRoom(props.room));
+const MAX_RENDERED_LOG = 50;
+const displayedRoom = ref(cloneRoomForDisplay(props.room));
 const pendingRoom = ref(null);
 const room = computed(() => displayedRoom.value);
 const rollPhase = ref("idle");
@@ -26,17 +27,17 @@ watch(() => props.room, (nextRoom) => {
     const nextRollId = getLatestRoll(nextRoom)?.id;
     const shownRollId = getLatestRoll(displayedRoom.value)?.id;
     if (nextRollId && nextRollId !== shownRollId) {
-        pendingRoom.value = cloneRoom(nextRoom);
+        pendingRoom.value = cloneRoomForDisplay(nextRoom);
         pendingRevealRollId.value = nextRollId;
         startRollAnimation(false);
         return;
     }
     if (isRolling.value) {
-        pendingRoom.value = cloneRoom(nextRoom);
+        pendingRoom.value = cloneRoomForDisplay(nextRoom);
         return;
     }
-    displayedRoom.value = cloneRoom(nextRoom);
-}, { deep: true });
+    displayedRoom.value = cloneRoomForDisplay(nextRoom);
+}, { deep: false });
 onUnmounted(clearRollTimers);
 const visibleRoll = computed(() => {
     if (rollPhase.value !== "idle" && rollPhase.value !== "reveal")
@@ -55,6 +56,7 @@ const latestDamage = computed(() => latestActionEvents.value.find((event) => eve
 const latestHeal = computed(() => latestActionEvents.value.find((event) => event.type === "heal"));
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
 const latestShownEvent = computed(() => room.value.battleLog[0]);
+const renderedBattleLog = computed(() => room.value.battleLog.slice(0, MAX_RENDERED_LOG));
 const latestDiceText = computed(() => {
     if (isRolling.value)
         return pendingRoll.value?.message ?? "";
@@ -127,18 +129,18 @@ function startRollAnimation(shouldEmit) {
     startDiceTicker(55);
     timers.push(window.setTimeout(() => {
         rollPhase.value = "slow";
-        startDiceTicker(130);
-    }, 360));
+        startDiceTicker(110);
+    }, 240));
     timers.push(window.setTimeout(() => {
         rollPhase.value = "pause";
         window.clearInterval(rollingTimer);
         rollingTimer = undefined;
-    }, 760));
-    timers.push(window.setTimeout(revealServerRoll, shouldEmit ? 1050 : 980));
-    timers.push(window.setTimeout(revealServerRoll, 1250));
+    }, 500));
+    timers.push(window.setTimeout(revealServerRoll, shouldEmit ? 680 : 560));
+    timers.push(window.setTimeout(revealServerRoll, 820));
 }
 function revealServerRoll() {
-    const revealRoom = pendingRoom.value ?? cloneRoom(props.room);
+    const revealRoom = pendingRoom.value ?? cloneRoomForDisplay(props.room);
     const revealRollId = pendingRevealRollId.value ?? getLatestRoll(revealRoom)?.id;
     if (!revealRollId || revealRollId === visibleRollId.value)
         return;
@@ -151,7 +153,7 @@ function revealServerRoll() {
     rollingTimer = undefined;
     timers.push(window.setTimeout(() => {
         rollPhase.value = "idle";
-    }, 320));
+    }, 220));
 }
 function startDiceTicker(interval) {
     window.clearInterval(rollingTimer);
@@ -171,8 +173,11 @@ function randomDice() {
 function getLatestRoll(targetRoom) {
     return targetRoom.battleLog.find((event) => event.type === "roll");
 }
-function cloneRoom(targetRoom) {
-    return JSON.parse(JSON.stringify(targetRoom));
+function cloneRoomForDisplay(targetRoom) {
+    const nextRoom = JSON.parse(JSON.stringify(targetRoom));
+    nextRoom.battleLog = nextRoom.battleLog.slice(0, MAX_RENDERED_LOG);
+    nextRoom.snapshots = [];
+    return nextRoom;
 }
 const __VLS_ctx = {
     ...{},
@@ -485,7 +490,7 @@ if (__VLS_ctx.latestShownEvent) {
     (__VLS_ctx.latestShownEvent.message);
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.ol, __VLS_intrinsics.ol)({});
-for (const [event, index] of __VLS_vFor((__VLS_ctx.room.battleLog))) {
+for (const [event, index] of __VLS_vFor((__VLS_ctx.renderedBattleLog))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({
         key: (event.id),
         ...{ class: ({ newest: index === 0 }) },
@@ -496,7 +501,7 @@ for (const [event, index] of __VLS_vFor((__VLS_ctx.room.battleLog))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     (event.message);
     // @ts-ignore
-    [room, latestShownEvent, latestShownEvent,];
+    [latestShownEvent, latestShownEvent, renderedBattleLog,];
 }
 // @ts-ignore
 [];

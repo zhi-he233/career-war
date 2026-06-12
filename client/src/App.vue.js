@@ -8,8 +8,10 @@ const room = ref(null);
 const characters = ref([]);
 const playerId = ref("");
 const roomId = ref("");
+const roomList = ref([]);
 const errorMessage = ref("");
 const lastEvent = ref(null);
+const lastEmote = ref(null);
 const query = new URLSearchParams(window.location.search);
 const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
 const inviteJoinStarted = ref(false);
@@ -35,8 +37,14 @@ onMounted(() => {
         roomId.value = nextRoom.id;
         sessionStorage.setItem(ROOM_ID_KEY, nextRoom.id);
     });
+    socket.on("roomListUpdated", (items) => {
+        roomList.value = items;
+    });
     socket.on("battleLogAdded", (event) => {
         lastEvent.value = event;
+    });
+    socket.on("playerEmote", (event) => {
+        lastEmote.value = event;
     });
     socket.on("gameOver", (payload) => {
         lastEvent.value = {
@@ -53,7 +61,9 @@ onUnmounted(() => {
     socket.off("connect", enterFromCurrentUrl);
     socket.off("characters");
     socket.off("gameStateUpdated");
+    socket.off("roomListUpdated");
     socket.off("battleLogAdded");
+    socket.off("playerEmote");
     socket.off("gameOver");
     socket.off("errorMessage");
 });
@@ -109,6 +119,11 @@ function joinRoom(payload) {
         roomId.value = response.roomId;
         room.value = response.room;
         sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+    });
+}
+function requestRoomList() {
+    emitWithAck("requestRoomList", {}, (response) => {
+        roomList.value = response.roomList;
     });
 }
 function chooseCharacter(characterId) {
@@ -189,12 +204,16 @@ if (__VLS_ctx.page === 'home') {
     const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
         ...{ 'onCreateRoom': {} },
         ...{ 'onJoinRoom': {} },
+        ...{ 'onRefreshRoomList': {} },
         inviteRoomId: (__VLS_ctx.inviteRoomId),
+        roomList: (__VLS_ctx.roomList),
     }));
     const __VLS_2 = __VLS_1({
         ...{ 'onCreateRoom': {} },
         ...{ 'onJoinRoom': {} },
+        ...{ 'onRefreshRoomList': {} },
         inviteRoomId: (__VLS_ctx.inviteRoomId),
+        roomList: (__VLS_ctx.roomList),
     }, ...__VLS_functionalComponentArgsRest(__VLS_1));
     let __VLS_5;
     const __VLS_6 = {
@@ -202,6 +221,8 @@ if (__VLS_ctx.page === 'home') {
         onCreateRoom: (__VLS_ctx.createRoom),
         ...{ joinRoom: {} },
         onJoinRoom: (__VLS_ctx.joinRoom),
+        ...{ refreshRoomList: {} },
+        onRefreshRoomList: (__VLS_ctx.requestRoomList),
     };
     var __VLS_3;
     var __VLS_4;
@@ -243,6 +264,7 @@ else if (__VLS_ctx.room) {
         playerId: (__VLS_ctx.playerId),
         characters: (__VLS_ctx.characters),
         lastEvent: (__VLS_ctx.lastEvent),
+        lastEmote: (__VLS_ctx.lastEmote),
     }));
     const __VLS_16 = __VLS_15({
         ...{ 'onSelectTarget': {} },
@@ -251,6 +273,7 @@ else if (__VLS_ctx.room) {
         playerId: (__VLS_ctx.playerId),
         characters: (__VLS_ctx.characters),
         lastEvent: (__VLS_ctx.lastEvent),
+        lastEmote: (__VLS_ctx.lastEmote),
     }, ...__VLS_functionalComponentArgsRest(__VLS_15));
     let __VLS_19;
     const __VLS_20 = {
@@ -263,6 +286,6 @@ else if (__VLS_ctx.room) {
     var __VLS_18;
 }
 // @ts-ignore
-[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, page, page, inviteRoomId, createRoom, joinRoom, playerId, playerId, characters, characters, chooseCharacter, startGame, lastEvent, selectTarget, rollDice,];
+[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, page, page, inviteRoomId, roomList, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, startGame, lastEvent, lastEmote, selectTarget, rollDice,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

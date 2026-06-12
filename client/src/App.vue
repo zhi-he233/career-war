@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import type { Character, GameEvent, Room } from "@career-war/shared";
+import type { Character, GameEvent, PlayerEmoteEvent, Room, RoomListItem } from "@career-war/shared";
 import { getClientId, resetClientId, socket, type Ack } from "./socket";
 import HomePage from "./components/HomePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
@@ -12,8 +12,10 @@ const room = ref<Room | null>(null);
 const characters = ref<Character[]>([]);
 const playerId = ref("");
 const roomId = ref("");
+const roomList = ref<RoomListItem[]>([]);
 const errorMessage = ref("");
 const lastEvent = ref<GameEvent | null>(null);
+const lastEmote = ref<PlayerEmoteEvent | null>(null);
 const query = new URLSearchParams(window.location.search);
 const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
 const inviteJoinStarted = ref(false);
@@ -40,8 +42,14 @@ onMounted(() => {
     roomId.value = nextRoom.id;
     sessionStorage.setItem(ROOM_ID_KEY, nextRoom.id);
   });
+  socket.on("roomListUpdated", (items: RoomListItem[]) => {
+    roomList.value = items;
+  });
   socket.on("battleLogAdded", (event: GameEvent) => {
     lastEvent.value = event;
+  });
+  socket.on("playerEmote", (event: PlayerEmoteEvent) => {
+    lastEmote.value = event;
   });
   socket.on("gameOver", (payload: { winnerName: string }) => {
     lastEvent.value = {
@@ -59,7 +67,9 @@ onUnmounted(() => {
   socket.off("connect", enterFromCurrentUrl);
   socket.off("characters");
   socket.off("gameStateUpdated");
+  socket.off("roomListUpdated");
   socket.off("battleLogAdded");
+  socket.off("playerEmote");
   socket.off("gameOver");
   socket.off("errorMessage");
 });
@@ -118,6 +128,12 @@ function joinRoom(payload: { nickname: string; roomId: string }): void {
     roomId.value = response.roomId;
     room.value = response.room;
     sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+  });
+}
+
+function requestRoomList(): void {
+  emitWithAck<{ roomList: RoomListItem[] }>("requestRoomList", {}, (response) => {
+    roomList.value = response.roomList;
   });
 }
 
@@ -180,7 +196,14 @@ function showError(message: string): void {
 
     <p v-if="errorMessage" class="toast">{{ errorMessage }}</p>
 
-    <HomePage v-if="page === 'home'" :invite-room-id="inviteRoomId" @create-room="createRoom" @join-room="joinRoom" />
+    <HomePage
+      v-if="page === 'home'"
+      :invite-room-id="inviteRoomId"
+      :room-list="roomList"
+      @create-room="createRoom"
+      @join-room="joinRoom"
+      @refresh-room-list="requestRoomList"
+    />
     <LobbyPage
       v-else-if="page === 'lobby' && room"
       :room="room"
@@ -195,6 +218,7 @@ function showError(message: string): void {
       :player-id="playerId"
       :characters="characters"
       :last-event="lastEvent"
+      :last-emote="lastEmote"
       @select-target="selectTarget"
       @roll-dice="rollDice"
     />

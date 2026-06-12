@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
+  EMOTE_IDS,
   characterList,
   chooseCharacter,
   createPlayer,
@@ -14,11 +15,17 @@ import {
   serializeRoom,
   startGame,
   type CharacterId,
+  type EmoteId,
   type GameEvent,
-  type Room
+  type PlayerEmoteEvent,
+  type Room,
+  type RoomListItem,
+  type RoomListStatus
 } from "@career-war/shared";
 
 const MAX_BATTLE_LOG = 80;
+const EMOTE_COOLDOWN_MS = 1000;
+const MAX_PLAYERS = 6;
 const PORT = Number(process.env.PORT ?? 3001);
 const isLocalDev = process.env.NODE_ENV !== "production" && process.env.npm_lifecycle_event === "dev";
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? (isLocalDev ? "http://localhost:5173" : undefined);
@@ -58,9 +65,19 @@ const io = new Server(
 const rooms = new Map<string, Room>();
 const socketToRoom = new Map<string, string>();
 const socketToClient = new Map<string, string>();
+const emoteCooldowns = new Map<string, number>();
+const allowedEmoteIds = new Set<string>(EMOTE_IDS);
 
 io.on("connection", (socket) => {
   socket.emit("characters", characterList);
+
+  socket.on("requestRoomList", (_payload: unknown, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const roomList = getPublicRoomList();
+      socket.emit("roomListUpdated", roomList);
+      return { roomList };
+    });
+  });
 
   socket.on("createRoom", (payload: { nickname?: string; clientId?: string }, reply?: Ack) => {
     handle(socket.id, reply, () => {
@@ -108,7 +125,7 @@ io.on("connection", (socket) => {
       }
 
       if (room.phase !== "lobby") throw new Error("游戏已经开始，不能加入");
-      if (room.players.length >= 6) throw new Error("房间已满");
+      if (room.players.length >= MAX_PLAYERS) throw new Error("房间已满");
 
       const nickname = sanitizeNickname(payload.nickname);
       const player = createPlayer(socket.id, clientId, nickname, false);
@@ -209,6 +226,31 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("sendEmote", (payload: { emoteId?: unknown } | undefined, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      const player = room.players.find((item) => item.id === socket.id);
+      if (!player) throw new Error("玩家不在该房间中");
+      const emoteId = payload?.emoteId;
+      if (!isEmoteId(emoteId)) throw new Error("无效的表情");
+
+      const now = Date.now();
+      const cooldownKey = `${room.id}:${socket.id}`;
+      const lastSentAt = emoteCooldowns.get(cooldownKey) ?? 0;
+      if (now - lastSentAt < EMOTE_COOLDOWN_MS) return { ok: true, ignored: true };
+
+      emoteCooldowns.set(cooldownKey, now);
+      const event: PlayerEmoteEvent = {
+        roomId: room.id,
+        playerId: socket.id,
+        emoteId,
+        createdAt: now
+      };
+      io.to(room.id).emit("playerEmote", event);
+      return { ok: true };
+    });
+  });
+
   socket.on("disconnect", () => {
     markPlayerOffline(socket.id);
   });
@@ -261,6 +303,28 @@ function serializePublicRoom(room: Room): Room {
   return publicRoom;
 }
 
+function getPublicRoomList(): RoomListItem[] {
+  return Array.from(rooms.values())
+    .filter((room) => room.phase !== "gameOver")
+    .map((room) => {
+      const host = room.players.find((player) => player.id === room.hostId) ?? room.players.find((player) => player.isHost);
+      return {
+        roomId: room.id,
+        hostName: host?.nickname ?? "未知房主",
+        playerCount: room.players.length,
+        maxPlayers: MAX_PLAYERS,
+        phase: mapRoomPhase(room.phase),
+        canJoin: room.phase === "lobby" && room.players.length < MAX_PLAYERS
+      };
+    });
+}
+
+function mapRoomPhase(phase: Room["phase"]): RoomListStatus {
+  if (phase === "lobby") return "waiting";
+  if (phase === "battle") return "playing";
+  return "ended";
+}
+
 function trimBattleLog(room: Room): void {
   if (room.battleLog.length > MAX_BATTLE_LOG) {
     room.battleLog.length = MAX_BATTLE_LOG;
@@ -277,6 +341,10 @@ function getRoom(roomId: string): Room {
   const room = rooms.get(roomId);
   if (!room) throw new Error("房间不存在");
   return room;
+}
+
+function isEmoteId(value: unknown): value is EmoteId {
+  return typeof value === "string" && allowedEmoteIds.has(value);
 }
 
 function bindSocketToRoom(socketId: string, clientId: string, roomId: string): void {

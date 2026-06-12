@@ -36,6 +36,12 @@ export const characters: Record<CharacterId, Character> = {
     name: "圣骑士",
     maxHp: 20,
     description: ["1 点无伤", "4 点全员无敌，持续到圣骑士下一次行动开始前"]
+  },
+  berserker: {
+    id: "berserker",
+    name: "狂战士",
+    maxHp: 10,
+    description: ["血量很低，但越残血伤害越高", "损失了多少血，本次攻击就额外增加多少伤害"]
   }
 };
 

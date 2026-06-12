@@ -12,6 +12,7 @@ onMounted(() => {
         inviteRoomId.value = queryRoomId.toUpperCase().slice(0, 4);
         roomId.value = inviteRoomId.value;
     }
+    emit("refreshRoomList");
 });
 function rememberName() {
     localStorage.setItem("career-war-nickname", nickname.value.trim());
@@ -23,6 +24,18 @@ function createRoom() {
 function joinRoom() {
     rememberName();
     emit("joinRoom", { nickname: nickname.value, roomId: roomId.value });
+}
+function selectRoom(room) {
+    if (!room.canJoin)
+        return;
+    roomId.value = room.roomId;
+}
+function phaseLabel(phase) {
+    if (phase === "waiting")
+        return "等待中";
+    if (phase === "playing")
+        return "游戏中";
+    return "已结束";
 }
 const __VLS_ctx = {
     ...{},
@@ -78,6 +91,79 @@ if (__VLS_ctx.isInviteMode) {
     /** @type {__VLS_StyleScopedClasses['secondary-btn']} */ ;
 }
 else {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "room-list-panel" },
+    });
+    /** @type {__VLS_StyleScopedClasses['room-list-panel']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "section-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-heading']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!!(__VLS_ctx.isInviteMode))
+                    return;
+                __VLS_ctx.emit('refreshRoomList');
+                // @ts-ignore
+                [nickname, isInviteMode, isInviteMode, isInviteMode, createRoom, inviteRoomId, joinRoom, emit,];
+            } },
+        ...{ class: "ghost-btn small-btn" },
+        type: "button",
+    });
+    /** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
+    /** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+    if (props.roomList.length === 0) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+            ...{ class: "empty-state" },
+        });
+        /** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
+    }
+    else {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "room-list" },
+        });
+        /** @type {__VLS_StyleScopedClasses['room-list']} */ ;
+        for (const [room] of __VLS_vFor((props.roomList))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                key: (room.roomId),
+                ...{ class: "public-room-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['public-room-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (room.roomId);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+            (room.hostName);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "room-meta" },
+            });
+            /** @type {__VLS_StyleScopedClasses['room-meta']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            (room.playerCount);
+            (room.maxPlayers);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            (__VLS_ctx.phaseLabel(room.phase));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!!(__VLS_ctx.isInviteMode))
+                            return;
+                        if (!!(props.roomList.length === 0))
+                            return;
+                        __VLS_ctx.selectRoom(room);
+                        // @ts-ignore
+                        [phaseLabel, selectRoom,];
+                    } },
+                ...{ class: "secondary-btn small-btn" },
+                type: "button",
+                disabled: (!room.canJoin),
+            });
+            /** @type {__VLS_StyleScopedClasses['secondary-btn']} */ ;
+            /** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+            // @ts-ignore
+            [];
+        }
+    }
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
         ...{ class: "field" },
     });
@@ -89,7 +175,7 @@ else {
                     return;
                 __VLS_ctx.roomId = __VLS_ctx.roomId.toUpperCase();
                 // @ts-ignore
-                [nickname, isInviteMode, isInviteMode, isInviteMode, createRoom, inviteRoomId, joinRoom, roomId, roomId,];
+                [roomId, roomId,];
             } },
         maxlength: "4",
         placeholder: "例如 A8K2",

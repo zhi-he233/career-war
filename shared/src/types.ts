@@ -4,9 +4,14 @@ export type CharacterId =
   | "vampire"
   | "zhaoZilong"
   | "assassin"
-  | "paladin";
+  | "paladin"
+  | "berserker";
 
 export type RoomPhase = "lobby" | "battle" | "gameOver";
+export type RoomListStatus = "waiting" | "playing" | "ended";
+
+export const EMOTE_IDS = ["cry", "surprise", "taunt", "angry", "like", "question"] as const;
+export type EmoteId = (typeof EMOTE_IDS)[number];
 
 export interface Character {
   id: CharacterId;
@@ -58,6 +63,13 @@ export interface GameEvent {
   healing?: number;
 }
 
+export interface PlayerEmoteEvent {
+  roomId: string;
+  playerId: string;
+  emoteId: EmoteId;
+  createdAt: number;
+}
+
 export type PendingRollType = "gunslinger_bonus_damage" | "vampire_bonus_heal" | string;
 
 export interface PendingRoll {
@@ -96,6 +108,15 @@ export interface Room {
 
 export interface PublicRoomState extends Room {
   snapshots: ActionSnapshot[];
+}
+
+export interface RoomListItem {
+  roomId: string;
+  hostName: string;
+  playerCount: number;
+  maxPlayers: number;
+  phase: RoomListStatus;
+  canJoin: boolean;
 }
 
 export interface RollResult {

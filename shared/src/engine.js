@@ -112,7 +112,7 @@ export function rollForActivePlayer(room, playerId, ctx) {
         room.battleLog.unshift(...events);
         return { room, events };
     }
-    const outcome = resolveSkill(actor.characterId, first, room.previousFinalDamage);
+    const outcome = resolveSkill(actor.characterId, first, room.previousFinalDamage, actor.hp, actor.maxHp);
     return finishAction(room, actor, target, outcome, events, ctx);
 }
 export function serializeRoom(room) {
@@ -231,7 +231,7 @@ function finishAction(room, actor, target, outcome, events, ctx) {
     room.battleLog.unshift(...events);
     return { room, events };
 }
-function resolveSkill(characterId, first, previousFinalDamage) {
+function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMaxHp) {
     const outcome = { damage: first, healing: 0, ignoresShield: false, dice: [first], skillMessages: [] };
     if (characterId === "boxer")
         return outcome;
@@ -279,6 +279,12 @@ function resolveSkill(characterId, first, previousFinalDamage) {
         else if (first === 4) {
             outcome.skillMessages.push("圣骑士 4 点触发全员无敌，持续到圣骑士下一次行动开始前");
         }
+    }
+    if (characterId === "berserker") {
+        const missingHp = Math.max(0, actorMaxHp - actorHp);
+        outcome.damage = first + missingHp;
+        outcome.skillMessages.push(`狂战士已损失 ${missingHp} 点血，本次伤害 +${missingHp}`);
+        return outcome;
     }
     return outcome;
 }

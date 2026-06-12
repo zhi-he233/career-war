@@ -3,6 +3,15 @@ import { socket } from "../socket";
 const props = defineProps();
 const emit = defineEmits();
 const MAX_RENDERED_LOG = 50;
+const EMOTE_DISPLAY_MS = 1500;
+const EMOTE_OPTIONS = [
+    { id: "cry", label: "大哭", emoji: "😭" },
+    { id: "surprise", label: "惊讶", emoji: "😮" },
+    { id: "taunt", label: "嘲讽", emoji: "😏" },
+    { id: "angry", label: "愤怒", emoji: "😡" },
+    { id: "like", label: "点赞", emoji: "👍" },
+    { id: "question", label: "疑惑", emoji: "❓" }
+];
 const displayedRoom = ref(cloneRoomForDisplay(props.room));
 const pendingRoom = ref(null);
 const room = computed(() => displayedRoom.value);
@@ -10,8 +19,16 @@ const rollPhase = ref("idle");
 const rollingDice = ref(1);
 const visibleRollId = ref(getLatestRoll(props.room)?.id);
 const pendingRevealRollId = ref();
+const activeEffectRollId = ref();
+const activeFloatingEffects = ref([]);
+const animatedRollIds = new Set();
+const rollRequestLocked = ref(false);
+const activeEmotes = ref({});
+const emoteLocked = ref(false);
 let rollingTimer;
+let emoteUnlockTimer;
 const timers = [];
+const emoteTimers = new Map();
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
 const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
 const me = computed(() => room.value.players.find((player) => player.id === props.playerId));
@@ -38,7 +55,15 @@ watch(() => props.room, (nextRoom) => {
     }
     displayedRoom.value = cloneRoomForDisplay(nextRoom);
 }, { deep: false });
-onUnmounted(clearRollTimers);
+watch(() => props.lastEmote, (event) => {
+    if (!event || event.roomId !== room.value.id)
+        return;
+    showPlayerEmote(event);
+});
+onUnmounted(() => {
+    clearRollTimers();
+    clearEmoteTimers();
+});
 const visibleRoll = computed(() => {
     if (rollPhase.value !== "idle" && rollPhase.value !== "reveal")
         return undefined;
@@ -73,7 +98,7 @@ const rollButtonText = computed(() => {
     return isMyTurn.value ? "投骰开怼" : "等待对手";
 });
 const canRoll = computed(() => {
-    if (room.value.phase === "gameOver" || isRolling.value || !isMyTurn.value)
+    if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || !isMyTurn.value)
         return false;
     if (pendingRoll.value)
         return isPendingMine.value;
@@ -101,19 +126,37 @@ function playerStatus(player) {
     return "待机";
 }
 function isRecentDamageTarget(player) {
-    return latestDamage.value?.targetId === player.id && (latestDamage.value.damage ?? 0) > 0;
+    return Boolean(floatingEffectFor(player, "damage"));
 }
 function isRecentHealTarget(player) {
-    return latestHeal.value?.playerId === player.id && (latestHeal.value.healing ?? 0) > 0;
+    return Boolean(floatingEffectFor(player, "heal"));
 }
 function isNoDamageTarget(player) {
-    return latestDamage.value?.targetId === player.id && (latestDamage.value.damage ?? 0) === 0;
+    return Boolean(floatingEffectFor(player, "noEffect"));
+}
+function floatingEffectFor(player, type) {
+    return activeFloatingEffects.value.find((effect) => effect.playerId === player.id && effect.type === type);
 }
 function rollWithAnimation() {
     if (!canRoll.value)
         return;
+    rollRequestLocked.value = true;
     startRollAnimation(true);
     emit("rollDice");
+}
+function sendEmote(emoteId) {
+    if (emoteLocked.value)
+        return;
+    emoteLocked.value = true;
+    socket.emit("sendEmote", { emoteId });
+    window.clearTimeout(emoteUnlockTimer);
+    emoteUnlockTimer = window.setTimeout(() => {
+        emoteLocked.value = false;
+        emoteUnlockTimer = undefined;
+    }, EMOTE_DISPLAY_MS);
+}
+function emoteFor(player) {
+    return activeEmotes.value[player.id];
 }
 function readyForRematch() {
     if (room.value.phase !== "gameOver" || isRematchReady.value)
@@ -124,6 +167,8 @@ function startRollAnimation(shouldEmit) {
     if (isRolling.value)
         return;
     clearRollTimers();
+    activeEffectRollId.value = undefined;
+    activeFloatingEffects.value = [];
     rollPhase.value = "fast";
     rollingDice.value = randomDice();
     startDiceTicker(55);
@@ -138,6 +183,14 @@ function startRollAnimation(shouldEmit) {
     }, 500));
     timers.push(window.setTimeout(revealServerRoll, shouldEmit ? 680 : 560));
     timers.push(window.setTimeout(revealServerRoll, 820));
+    timers.push(window.setTimeout(() => {
+        if (rollPhase.value !== "idle" && !pendingRoom.value) {
+            rollPhase.value = "idle";
+            rollRequestLocked.value = false;
+            window.clearInterval(rollingTimer);
+            rollingTimer = undefined;
+        }
+    }, 1200));
 }
 function revealServerRoll() {
     const revealRoom = pendingRoom.value ?? cloneRoomForDisplay(props.room);
@@ -146,8 +199,10 @@ function revealServerRoll() {
         return;
     displayedRoom.value = revealRoom;
     visibleRollId.value = revealRollId;
+    startEffectWindow(revealRollId);
     pendingRoom.value = null;
     pendingRevealRollId.value = undefined;
+    rollRequestLocked.value = false;
     rollPhase.value = "reveal";
     window.clearInterval(rollingTimer);
     rollingTimer = undefined;
@@ -167,11 +222,82 @@ function clearRollTimers() {
         window.clearTimeout(timers.pop());
     rollingTimer = undefined;
 }
+function showPlayerEmote(event) {
+    window.clearTimeout(emoteTimers.get(event.playerId));
+    activeEmotes.value = {
+        ...activeEmotes.value,
+        [event.playerId]: {
+            ...event,
+            key: `${event.playerId}-${event.createdAt}-${event.emoteId}`,
+            emoji: EMOTE_OPTIONS.find((emote) => emote.id === event.emoteId)?.emoji ?? ""
+        }
+    };
+    const timer = window.setTimeout(() => {
+        const current = activeEmotes.value[event.playerId];
+        if (current?.createdAt !== event.createdAt)
+            return;
+        const nextEmotes = { ...activeEmotes.value };
+        delete nextEmotes[event.playerId];
+        activeEmotes.value = nextEmotes;
+        emoteTimers.delete(event.playerId);
+    }, EMOTE_DISPLAY_MS);
+    emoteTimers.set(event.playerId, timer);
+}
+function clearEmoteTimers() {
+    window.clearTimeout(emoteUnlockTimer);
+    for (const timer of emoteTimers.values())
+        window.clearTimeout(timer);
+    emoteTimers.clear();
+}
 function randomDice() {
     return Math.floor(Math.random() * 6) + 1;
 }
 function getLatestRoll(targetRoom) {
     return targetRoom.battleLog.find((event) => event.type === "roll");
+}
+function startEffectWindow(rollId) {
+    if (animatedRollIds.has(rollId))
+        return;
+    animatedRollIds.add(rollId);
+    activeFloatingEffects.value = collectFloatingEffects(rollId);
+    activeEffectRollId.value = rollId;
+    timers.push(window.setTimeout(() => {
+        if (activeEffectRollId.value === rollId) {
+            activeEffectRollId.value = undefined;
+            activeFloatingEffects.value = [];
+        }
+    }, 620));
+}
+function collectFloatingEffects(rollId) {
+    const firstRollIndex = displayedRoom.value.battleLog.findIndex((event) => event.id === rollId);
+    if (firstRollIndex < 0)
+        return [];
+    const nextRollIndex = displayedRoom.value.battleLog.findIndex((event, index) => index > firstRollIndex && event.type === "roll");
+    const actionEvents = displayedRoom.value.battleLog.slice(firstRollIndex, nextRollIndex < 0 ? undefined : nextRollIndex);
+    const effects = [];
+    for (const event of actionEvents) {
+        if (event.type === "damage" && event.targetId) {
+            const value = event.damage ?? 0;
+            effects.push({
+                rollId,
+                type: value > 0 ? "damage" : "noEffect",
+                playerId: event.targetId,
+                value,
+                key: `${rollId}-${event.id}-${value > 0 ? "damage" : "noEffect"}`
+            });
+        }
+        if (event.type === "heal" && event.playerId && (event.healing ?? 0) > 0) {
+            const value = event.healing ?? 0;
+            effects.push({
+                rollId,
+                type: "heal",
+                playerId: event.playerId,
+                value,
+                key: `${rollId}-${event.id}-heal`
+            });
+        }
+    }
+    return effects;
 }
 function cloneRoomForDisplay(targetRoom) {
     const nextRoom = JSON.parse(JSON.stringify(targetRoom));
@@ -257,6 +383,28 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
     });
     /** @type {__VLS_StyleScopedClasses['status-pill']} */ ;
     (__VLS_ctx.playerStatus(player));
+    let __VLS_0;
+    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+    transition;
+    // @ts-ignore
+    const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
+        name: "emote-bubble",
+    }));
+    const __VLS_2 = __VLS_1({
+        name: "emote-bubble",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_1));
+    const { default: __VLS_5 } = __VLS_3.slots;
+    if (__VLS_ctx.emoteFor(player)) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (__VLS_ctx.emoteFor(player)?.key),
+            ...{ class: "emote-bubble" },
+        });
+        /** @type {__VLS_StyleScopedClasses['emote-bubble']} */ ;
+        (__VLS_ctx.emoteFor(player)?.emoji);
+    }
+    // @ts-ignore
+    [room, room, room, room, activePlayer, activePlayer, winner, pendingRoll, pendingRoll, isMyTurn, isMyTurn, playerId, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, characterName, playerStatus, emoteFor, emoteFor, emoteFor,];
+    var __VLS_3;
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "hp-row" },
     });
@@ -282,29 +430,6 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({
         ...{ style: ({ width: `${Math.min(100, player.shield * 8)}%` }) },
     });
-    let __VLS_0;
-    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
-    transition;
-    // @ts-ignore
-    const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
-        name: "float-pop",
-    }));
-    const __VLS_2 = __VLS_1({
-        name: "float-pop",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_1));
-    const { default: __VLS_5 } = __VLS_3.slots;
-    if (__VLS_ctx.isRecentDamageTarget(player)) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
-            key: (__VLS_ctx.latestDamage?.id),
-            ...{ class: "float-number damage-pop" },
-        });
-        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
-        /** @type {__VLS_StyleScopedClasses['damage-pop']} */ ;
-        (__VLS_ctx.latestDamage?.damage);
-    }
-    // @ts-ignore
-    [room, room, room, room, activePlayer, activePlayer, winner, pendingRoll, pendingRoll, isMyTurn, isMyTurn, playerId, selectedTargetId, isRecentDamageTarget, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, characterName, playerStatus, hpPercent, latestDamage, latestDamage,];
-    var __VLS_3;
     let __VLS_6;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
     transition;
@@ -316,17 +441,17 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
         name: "float-pop",
     }, ...__VLS_functionalComponentArgsRest(__VLS_7));
     const { default: __VLS_11 } = __VLS_9.slots;
-    if (__VLS_ctx.isRecentHealTarget(player)) {
+    if (__VLS_ctx.floatingEffectFor(player, 'damage')) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
-            key: (__VLS_ctx.latestHeal?.id),
-            ...{ class: "float-number heal-pop" },
+            key: (__VLS_ctx.floatingEffectFor(player, 'damage')?.key),
+            ...{ class: "float-number damage-pop" },
         });
         /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
-        /** @type {__VLS_StyleScopedClasses['heal-pop']} */ ;
-        (__VLS_ctx.latestHeal?.healing);
+        /** @type {__VLS_StyleScopedClasses['damage-pop']} */ ;
+        (__VLS_ctx.floatingEffectFor(player, "damage")?.value);
     }
     // @ts-ignore
-    [isRecentHealTarget, latestHeal, latestHeal,];
+    [hpPercent, floatingEffectFor, floatingEffectFor, floatingEffectFor,];
     var __VLS_9;
     let __VLS_12;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
@@ -339,17 +464,40 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
         name: "float-pop",
     }, ...__VLS_functionalComponentArgsRest(__VLS_13));
     const { default: __VLS_17 } = __VLS_15.slots;
-    if (__VLS_ctx.isNoDamageTarget(player)) {
+    if (__VLS_ctx.floatingEffectFor(player, 'heal')) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
-            key: (__VLS_ctx.latestDamage?.id),
+            key: (__VLS_ctx.floatingEffectFor(player, 'heal')?.key),
+            ...{ class: "float-number heal-pop" },
+        });
+        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+        /** @type {__VLS_StyleScopedClasses['heal-pop']} */ ;
+        (__VLS_ctx.floatingEffectFor(player, "heal")?.value);
+    }
+    // @ts-ignore
+    [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
+    var __VLS_15;
+    let __VLS_18;
+    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+    transition;
+    // @ts-ignore
+    const __VLS_19 = __VLS_asFunctionalComponent1(__VLS_18, new __VLS_18({
+        name: "float-pop",
+    }));
+    const __VLS_20 = __VLS_19({
+        name: "float-pop",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_19));
+    const { default: __VLS_23 } = __VLS_21.slots;
+    if (__VLS_ctx.floatingEffectFor(player, 'noEffect')) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+            key: (__VLS_ctx.floatingEffectFor(player, 'noEffect')?.key),
             ...{ class: "float-number no-pop" },
         });
         /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
         /** @type {__VLS_StyleScopedClasses['no-pop']} */ ;
     }
     // @ts-ignore
-    [isNoDamageTarget, latestDamage,];
-    var __VLS_15;
+    [floatingEffectFor, floatingEffectFor,];
+    var __VLS_21;
     if (__VLS_ctx.isMyTurn && !__VLS_ctx.pendingRoll && player.id !== __VLS_ctx.playerId) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
             ...{ onClick: (...[$event]) => {
@@ -427,6 +575,32 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 });
 /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
 (__VLS_ctx.rollButtonText);
+__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+    ...{ class: "emote-panel" },
+    'aria-label': "固定表情",
+});
+/** @type {__VLS_StyleScopedClasses['emote-panel']} */ ;
+for (const [emote] of __VLS_vFor((__VLS_ctx.EMOTE_OPTIONS))) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                __VLS_ctx.sendEmote(emote.id);
+                // @ts-ignore
+                [pendingRoll, pendingRoll, visibleRoll, visibleRoll, isRolling, latestDiceText, latestSkill, latestSkill, latestDamage, latestDamage, latestHeal, latestHeal, rollWithAnimation, canRoll, rollButtonText, EMOTE_OPTIONS, sendEmote,];
+            } },
+        key: (emote.id),
+        ...{ class: "emote-btn" },
+        type: "button",
+        disabled: (__VLS_ctx.emoteLocked),
+        title: (emote.label),
+    });
+    /** @type {__VLS_StyleScopedClasses['emote-btn']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (emote.emoji);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    (emote.label);
+    // @ts-ignore
+    [emoteLocked,];
+}
 if (__VLS_ctx.room.phase === 'gameOver') {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "log-panel rematch-panel" },
@@ -472,7 +646,7 @@ if (__VLS_ctx.room.phase === 'gameOver') {
         /** @type {__VLS_StyleScopedClasses['host-badge']} */ ;
         (__VLS_ctx.rematchReadyIds.includes(player.id) ? "已准备" : "未准备");
         // @ts-ignore
-        [room, room, room, room, winner, pendingRoll, pendingRoll, latestDamage, latestDamage, latestHeal, latestHeal, visibleRoll, visibleRoll, isRolling, latestDiceText, latestSkill, latestSkill, rollWithAnimation, canRoll, rollButtonText, readyForRematch, isRematchReady, isRematchReady, rematchReadyIds, rematchReadyIds,];
+        [room, room, room, room, winner, readyForRematch, isRematchReady, isRematchReady, rematchReadyIds, rematchReadyIds,];
     }
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({

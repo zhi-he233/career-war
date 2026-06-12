@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
-import type { Character, GameEvent, Player, Room } from "@career-war/shared";
+import type { Character, EmoteId, GameEvent, Player, PlayerEmoteEvent, Room } from "@career-war/shared";
 import { socket } from "../socket";
 
 const props = defineProps<{
@@ -8,6 +8,7 @@ const props = defineProps<{
   playerId: string;
   characters: Character[];
   lastEvent: GameEvent | null;
+  lastEmote: PlayerEmoteEvent | null;
 }>();
 
 const emit = defineEmits<{
@@ -16,8 +17,33 @@ const emit = defineEmits<{
 }>();
 
 type RollPhase = "idle" | "fast" | "slow" | "pause" | "reveal";
+type FloatingEffect = {
+  rollId: string;
+  type: "damage" | "heal" | "noEffect";
+  playerId: string;
+  value: number;
+  key: string;
+};
+type EmoteOption = {
+  id: EmoteId;
+  label: string;
+  emoji: string;
+};
+type VisibleEmote = PlayerEmoteEvent & {
+  key: string;
+  emoji: string;
+};
 
 const MAX_RENDERED_LOG = 50;
+const EMOTE_DISPLAY_MS = 1500;
+const EMOTE_OPTIONS: EmoteOption[] = [
+  { id: "cry", label: "大哭", emoji: "😭" },
+  { id: "surprise", label: "惊讶", emoji: "😮" },
+  { id: "taunt", label: "嘲讽", emoji: "😏" },
+  { id: "angry", label: "愤怒", emoji: "😡" },
+  { id: "like", label: "点赞", emoji: "👍" },
+  { id: "question", label: "疑惑", emoji: "❓" }
+];
 
 const displayedRoom = ref<Room>(cloneRoomForDisplay(props.room));
 const pendingRoom = ref<Room | null>(null);
@@ -26,8 +52,16 @@ const rollPhase = ref<RollPhase>("idle");
 const rollingDice = ref(1);
 const visibleRollId = ref<string | undefined>(getLatestRoll(props.room)?.id);
 const pendingRevealRollId = ref<string | undefined>();
+const activeEffectRollId = ref<string | undefined>();
+const activeFloatingEffects = ref<FloatingEffect[]>([]);
+const animatedRollIds = new Set<string>();
+const rollRequestLocked = ref(false);
+const activeEmotes = ref<Record<string, VisibleEmote>>({});
+const emoteLocked = ref(false);
 let rollingTimer: number | undefined;
+let emoteUnlockTimer: number | undefined;
 const timers: number[] = [];
+const emoteTimers = new Map<string, number>();
 
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
 const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
@@ -64,7 +98,18 @@ watch(
   { deep: false }
 );
 
-onUnmounted(clearRollTimers);
+watch(
+  () => props.lastEmote,
+  (event) => {
+    if (!event || event.roomId !== room.value.id) return;
+    showPlayerEmote(event);
+  }
+);
+
+onUnmounted(() => {
+  clearRollTimers();
+  clearEmoteTimers();
+});
 
 const visibleRoll = computed(() => {
   if (rollPhase.value !== "idle" && rollPhase.value !== "reveal") return undefined;
@@ -98,7 +143,7 @@ const rollButtonText = computed(() => {
 });
 
 const canRoll = computed(() => {
-  if (room.value.phase === "gameOver" || isRolling.value || !isMyTurn.value) return false;
+  if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || !isMyTurn.value) return false;
   if (pendingRoll.value) return isPendingMine.value;
   return Boolean(selectedTargetId.value) && aliveEnemies.value.length > 0;
 });
@@ -122,21 +167,41 @@ function playerStatus(player: Player): string {
 }
 
 function isRecentDamageTarget(player: Player): boolean {
-  return latestDamage.value?.targetId === player.id && (latestDamage.value.damage ?? 0) > 0;
+  return Boolean(floatingEffectFor(player, "damage"));
 }
 
 function isRecentHealTarget(player: Player): boolean {
-  return latestHeal.value?.playerId === player.id && (latestHeal.value.healing ?? 0) > 0;
+  return Boolean(floatingEffectFor(player, "heal"));
 }
 
 function isNoDamageTarget(player: Player): boolean {
-  return latestDamage.value?.targetId === player.id && (latestDamage.value.damage ?? 0) === 0;
+  return Boolean(floatingEffectFor(player, "noEffect"));
+}
+
+function floatingEffectFor(player: Player, type: FloatingEffect["type"]): FloatingEffect | undefined {
+  return activeFloatingEffects.value.find((effect) => effect.playerId === player.id && effect.type === type);
 }
 
 function rollWithAnimation(): void {
   if (!canRoll.value) return;
+  rollRequestLocked.value = true;
   startRollAnimation(true);
   emit("rollDice");
+}
+
+function sendEmote(emoteId: EmoteId): void {
+  if (emoteLocked.value) return;
+  emoteLocked.value = true;
+  socket.emit("sendEmote", { emoteId });
+  window.clearTimeout(emoteUnlockTimer);
+  emoteUnlockTimer = window.setTimeout(() => {
+    emoteLocked.value = false;
+    emoteUnlockTimer = undefined;
+  }, EMOTE_DISPLAY_MS);
+}
+
+function emoteFor(player: Player): VisibleEmote | undefined {
+  return activeEmotes.value[player.id];
 }
 
 function readyForRematch(): void {
@@ -147,6 +212,8 @@ function readyForRematch(): void {
 function startRollAnimation(shouldEmit: boolean): void {
   if (isRolling.value) return;
   clearRollTimers();
+  activeEffectRollId.value = undefined;
+  activeFloatingEffects.value = [];
   rollPhase.value = "fast";
   rollingDice.value = randomDice();
   startDiceTicker(55);
@@ -164,6 +231,14 @@ function startRollAnimation(shouldEmit: boolean): void {
 
   timers.push(window.setTimeout(revealServerRoll, shouldEmit ? 680 : 560));
   timers.push(window.setTimeout(revealServerRoll, 820));
+  timers.push(window.setTimeout(() => {
+    if (rollPhase.value !== "idle" && !pendingRoom.value) {
+      rollPhase.value = "idle";
+      rollRequestLocked.value = false;
+      window.clearInterval(rollingTimer);
+      rollingTimer = undefined;
+    }
+  }, 1200));
 }
 
 function revealServerRoll(): void {
@@ -173,8 +248,10 @@ function revealServerRoll(): void {
 
   displayedRoom.value = revealRoom;
   visibleRollId.value = revealRollId;
+  startEffectWindow(revealRollId);
   pendingRoom.value = null;
   pendingRevealRollId.value = undefined;
+  rollRequestLocked.value = false;
   rollPhase.value = "reveal";
   window.clearInterval(rollingTimer);
   rollingTimer = undefined;
@@ -196,12 +273,88 @@ function clearRollTimers(): void {
   rollingTimer = undefined;
 }
 
+function showPlayerEmote(event: PlayerEmoteEvent): void {
+  window.clearTimeout(emoteTimers.get(event.playerId));
+  activeEmotes.value = {
+    ...activeEmotes.value,
+    [event.playerId]: {
+      ...event,
+      key: `${event.playerId}-${event.createdAt}-${event.emoteId}`,
+      emoji: EMOTE_OPTIONS.find((emote) => emote.id === event.emoteId)?.emoji ?? ""
+    }
+  };
+
+  const timer = window.setTimeout(() => {
+    const current = activeEmotes.value[event.playerId];
+    if (current?.createdAt !== event.createdAt) return;
+    const nextEmotes = { ...activeEmotes.value };
+    delete nextEmotes[event.playerId];
+    activeEmotes.value = nextEmotes;
+    emoteTimers.delete(event.playerId);
+  }, EMOTE_DISPLAY_MS);
+  emoteTimers.set(event.playerId, timer);
+}
+
+function clearEmoteTimers(): void {
+  window.clearTimeout(emoteUnlockTimer);
+  for (const timer of emoteTimers.values()) window.clearTimeout(timer);
+  emoteTimers.clear();
+}
+
 function randomDice(): number {
   return Math.floor(Math.random() * 6) + 1;
 }
 
 function getLatestRoll(targetRoom: Room): GameEvent | undefined {
   return targetRoom.battleLog.find((event) => event.type === "roll");
+}
+
+function startEffectWindow(rollId: string): void {
+  if (animatedRollIds.has(rollId)) return;
+  animatedRollIds.add(rollId);
+  activeFloatingEffects.value = collectFloatingEffects(rollId);
+  activeEffectRollId.value = rollId;
+  timers.push(window.setTimeout(() => {
+    if (activeEffectRollId.value === rollId) {
+      activeEffectRollId.value = undefined;
+      activeFloatingEffects.value = [];
+    }
+  }, 620));
+}
+
+function collectFloatingEffects(rollId: string): FloatingEffect[] {
+  const firstRollIndex = displayedRoom.value.battleLog.findIndex((event) => event.id === rollId);
+  if (firstRollIndex < 0) return [];
+
+  const nextRollIndex = displayedRoom.value.battleLog.findIndex((event, index) => index > firstRollIndex && event.type === "roll");
+  const actionEvents = displayedRoom.value.battleLog.slice(firstRollIndex, nextRollIndex < 0 ? undefined : nextRollIndex);
+  const effects: FloatingEffect[] = [];
+
+  for (const event of actionEvents) {
+    if (event.type === "damage" && event.targetId) {
+      const value = event.damage ?? 0;
+      effects.push({
+        rollId,
+        type: value > 0 ? "damage" : "noEffect",
+        playerId: event.targetId,
+        value,
+        key: `${rollId}-${event.id}-${value > 0 ? "damage" : "noEffect"}`
+      });
+    }
+
+    if (event.type === "heal" && event.playerId && (event.healing ?? 0) > 0) {
+      const value = event.healing ?? 0;
+      effects.push({
+        rollId,
+        type: "heal",
+        playerId: event.playerId,
+        value,
+        key: `${rollId}-${event.id}-heal`
+      });
+    }
+  }
+
+  return effects;
 }
 
 function cloneRoomForDisplay(targetRoom: Room): Room {
@@ -253,6 +406,10 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           <span class="status-pill">{{ playerStatus(player) }}</span>
         </div>
 
+        <transition name="emote-bubble">
+          <span v-if="emoteFor(player)" :key="emoteFor(player)?.key" class="emote-bubble">{{ emoteFor(player)?.emoji }}</span>
+        </transition>
+
         <div class="hp-row">
           <span>HP {{ player.hp }}/{{ player.maxHp }}</span>
           <span>护盾 {{ player.shield }}</span>
@@ -265,13 +422,13 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         </div>
 
         <transition name="float-pop">
-          <b v-if="isRecentDamageTarget(player)" :key="latestDamage?.id" class="float-number damage-pop">-{{ latestDamage?.damage }}</b>
+          <b v-if="floatingEffectFor(player, 'damage')" :key="floatingEffectFor(player, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(player, "damage")?.value }}</b>
         </transition>
         <transition name="float-pop">
-          <b v-if="isRecentHealTarget(player)" :key="latestHeal?.id" class="float-number heal-pop">+{{ latestHeal?.healing }}</b>
+          <b v-if="floatingEffectFor(player, 'heal')" :key="floatingEffectFor(player, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(player, "heal")?.value }}</b>
         </transition>
         <transition name="float-pop">
-          <b v-if="isNoDamageTarget(player)" :key="latestDamage?.id" class="float-number no-pop">无效</b>
+          <b v-if="floatingEffectFor(player, 'noEffect')" :key="floatingEffectFor(player, 'noEffect')?.key" class="float-number no-pop">无效</b>
         </transition>
 
         <button
@@ -300,6 +457,13 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
       <button class="roll-btn" type="button" :disabled="!canRoll" @click="rollWithAnimation">
         {{ rollButtonText }}
+      </button>
+    </section>
+
+    <section class="emote-panel" aria-label="固定表情">
+      <button v-for="emote in EMOTE_OPTIONS" :key="emote.id" class="emote-btn" type="button" :disabled="emoteLocked" :title="emote.label" @click="sendEmote(emote.id)">
+        <span>{{ emote.emoji }}</span>
+        <small>{{ emote.label }}</small>
       </button>
     </section>
 

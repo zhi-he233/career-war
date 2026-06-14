@@ -4,8 +4,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: "3001"
-      CLIENT_ORIGIN: ${CLIENT_ORIGIN}
+      PORT: ${PORT:-3001}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
     expose:
       - "3001"
 

@@ -12,13 +12,13 @@ export const socket = io(socketUrl, {
 export function getClientId(): string {
   const existing = sessionStorage.getItem(CLIENT_ID_KEY);
   if (existing) return existing;
-  const next = createClientId();
+  const next = createClientId("client");
   sessionStorage.setItem(CLIENT_ID_KEY, next);
   return next;
 }
 
 export function resetClientId(): string {
-  const next = createClientId();
+  const next = createClientId("client");
   sessionStorage.setItem(CLIENT_ID_KEY, next);
   return next;
 }

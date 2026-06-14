@@ -1,1 +1,1 @@
-export declare function createClientId(): string;
+export declare function createClientId(prefix?: string): string;

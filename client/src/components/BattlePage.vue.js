@@ -44,7 +44,6 @@ const activeSkillHints = ref([]);
 const showRuleGuide = ref(false);
 const emoteLocked = ref(false);
 const detailPlayerId = ref(null);
-const showBattleLog = ref(false);
 const selectedActionSlot = ref(null);
 let rollingTimer;
 let emoteUnlockTimer;
@@ -70,12 +69,13 @@ const pendingRollDecision = computed(() => room.value.pendingRollDecision);
 const isPendingMine = computed(() => pendingRoll.value?.playerId === props.playerId);
 const isDecisionMine = computed(() => pendingRollDecision.value?.actorId === props.playerId);
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
+const isSelfDead = computed(() => Boolean(me.value?.isDead));
 const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
+const shouldShowActionSlots = computed(() => Boolean(canUseActionSlots.value && !isSelfDead.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
-const latestLogPreview = computed(() => room.value.battleLog.slice(0, 3));
 const actionStageText = computed(() => {
     if (room.value.phase === "gameOver")
         return "游戏结束";
@@ -118,9 +118,7 @@ const actionSlots = computed(() => {
     const decision = pendingRollDecision.value;
     if (!decision)
         return [];
-    if (decision.availableActions?.length)
-        return decision.availableActions;
-    return legacyActionSlots(decision);
+    return decision.availableActions ?? [];
 });
 watch(() => props.room, (nextRoom) => {
     const nextRollId = getLatestRoll(nextRoom)?.id;
@@ -166,7 +164,6 @@ const latestActionEvents = computed(() => {
     return room.value.battleLog.slice(firstRollIndex, nextRollIndex < 0 ? undefined : nextRollIndex);
 });
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
-const renderedBattleLog = computed(() => room.value.battleLog.slice(0, MAX_RENDERED_LOG));
 const latestDiceText = computed(() => {
     if (isRolling.value)
         return pendingRoll.value?.message ?? "";
@@ -176,6 +173,26 @@ const latestDiceText = computed(() => {
     if (dice.length === 0)
         return pendingRoll.value?.message ?? "等待投骰";
     return `投出了 ${dice.join("、")} 点`;
+});
+const currentActionTitle = computed(() => {
+    if (isSelfDead.value)
+        return "你已死亡，正在观战";
+    return actionStageText.value;
+});
+const currentDiceValueText = computed(() => {
+    if (pendingRollDecision.value)
+        return String(pendingRollDecision.value.currentRoll);
+    return latestDiceText.value;
+});
+const currentActionLines = computed(() => {
+    const actorName = activePlayer.value?.nickname ?? "玩家";
+    if (isSelfDead.value) {
+        return [`当前行动：${actorName}`, `当前骰点：${currentDiceValueText.value}`, `等待 ${actorName} 操作`];
+    }
+    if (pendingRollDecision.value && !isDecisionMine.value) {
+        return [`当前行动：${actorName}`, `当前骰点：${currentDiceValueText.value}`, `等待 ${actorName} 操作`];
+    }
+    return [selectedTargetText.value, latestDiceText.value];
 });
 const rollButtonText = computed(() => {
     if (isRolling.value)
@@ -344,34 +361,6 @@ function confirmActionSlot(slot) {
         return;
     const summonerSkillId = slot.id === "summoner_skill" && isSummonerSkillId(slot.skillId) ? slot.skillId : undefined;
     confirmDecision(slot.id, summonerSkillId);
-}
-function legacyActionSlots(decision) {
-    return [
-        {
-            id: "normal_attack",
-            label: "普通攻击",
-            enabled: true,
-            description: `使用 🎲 ${decision.currentRoll} 攻击目标`
-        },
-        {
-            id: "character_skill",
-            label: decision.availableCharacterSkillName ? `发动【${decision.availableCharacterSkillName}】` : "职业技能",
-            enabled: decision.canUseCharacterSkill,
-            description: decision.canUseCharacterSkill ? `消耗 🎲 ${decision.currentRoll} 发动` : "当前骰点不能发动",
-            reason: decision.canUseCharacterSkill ? undefined : "当前骰点不能发动",
-            skillId: decision.availableCharacterSkillId,
-            skillName: decision.availableCharacterSkillName
-        },
-        {
-            id: "summoner_skill",
-            label: decision.availableSummonerSkillName ? `发动【${decision.availableSummonerSkillName}】` : "召唤师技能",
-            enabled: Boolean(decision.availableSummonerSkillId),
-            description: decision.availableSummonerSkillName ? `使用 🎲 ${decision.currentRoll} 发动` : "当前不可用",
-            reason: decision.availableSummonerSkillId ? undefined : "当前不可用",
-            skillId: decision.availableSummonerSkillId,
-            skillName: decision.availableSummonerSkillName
-        }
-    ];
 }
 function isSummonerSkillId(value) {
     return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
@@ -588,7 +577,6 @@ let __VLS_components;
 let __VLS_intrinsics;
 let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
-/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
 /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
@@ -597,64 +585,42 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-status-bar']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
+/** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
+/** @type {__VLS_StyleScopedClasses['emote-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
-/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
-/** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
-/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
+/** @type {__VLS_StyleScopedClasses['combat-board']} */ ;
+/** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
+/** @type {__VLS_StyleScopedClasses['avatar-ring']} */ ;
+/** @type {__VLS_StyleScopedClasses['avatar-emoji']} */ ;
+/** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+/** @type {__VLS_StyleScopedClasses['slot-grid']} */ ;
+/** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
 /** @type {__VLS_StyleScopedClasses['self-panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-avatar']} */ ;
+/** @type {__VLS_StyleScopedClasses['emote-panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['emote-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['emote-btn']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "battle-layout" },
 });
 /** @type {__VLS_StyleScopedClasses['battle-layout']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "battle-status-bar" },
-});
-/** @type {__VLS_StyleScopedClasses['battle-status-bar']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.activePlayer?.nickname ?? "等待中");
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.turnGuideText);
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.latestDiceText);
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "battle-tools" },
 });
 /** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
-            __VLS_ctx.showBattleLog = !__VLS_ctx.showBattleLog;
-            // @ts-ignore
-            [activePlayer, turnGuideText, latestDiceText, showBattleLog, showBattleLog,];
-        } },
-    ...{ class: "ghost-btn small-btn battle-log-trigger" },
-    type: "button",
-});
-/** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log-trigger']} */ ;
-(__VLS_ctx.showBattleLog ? "收起日志" : "展开日志");
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (...[$event]) => {
             __VLS_ctx.showRuleGuide = true;
             // @ts-ignore
-            [showBattleLog, showRuleGuide,];
+            [showRuleGuide,];
         } },
     ...{ class: "ghost-btn small-btn" },
     type: "button",
@@ -703,7 +669,7 @@ for (const [player] of __VLS_vFor((__VLS_ctx.battlePlayers))) {
         ...{ onClick: (...[$event]) => {
                 __VLS_ctx.selectTargetFromSeat(player);
                 // @ts-ignore
-                [activePlayer, turnGuideTone, battlePlayers, canSelectTarget, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, selectTargetFromSeat,];
+                [turnGuideTone, battlePlayers, activePlayer, canSelectTarget, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, selectTargetFromSeat,];
             } },
         ...{ class: "seat-button" },
         type: "button",
@@ -909,9 +875,15 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.actionStageText);
-__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-(__VLS_ctx.selectedTargetText);
+(__VLS_ctx.currentActionTitle);
+for (const [line] of __VLS_vFor((__VLS_ctx.currentActionLines))) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({
+        key: (line),
+    });
+    (line);
+    // @ts-ignore
+    [turnGuideTone, currentActionTitle, currentActionLines,];
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "dice-panel action-arena" },
     ...{ class: ({ ready: __VLS_ctx.isMyTurn, rolling: __VLS_ctx.rollPhase === 'fast', slowing: __VLS_ctx.rollPhase === 'slow', paused: __VLS_ctx.rollPhase === 'pause', reveal: __VLS_ctx.rollPhase === 'reveal', rolled: __VLS_ctx.visibleRoll }) },
@@ -939,7 +911,7 @@ for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPha
     });
     (dice);
     // @ts-ignore
-    [turnGuideTone, actionStageText, selectedTargetText, isMyTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
+    [isMyTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
 }
 let __VLS_24;
 /** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
@@ -995,7 +967,7 @@ if (__VLS_ctx.latestSkill.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
     (__VLS_ctx.latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；"));
 }
-if (__VLS_ctx.pendingRollDecision && !__VLS_ctx.isRolling) {
+if (__VLS_ctx.shouldShowActionSlots) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "dice-action-slots" },
     });
@@ -1005,30 +977,24 @@ if (__VLS_ctx.pendingRollDecision && !__VLS_ctx.isRolling) {
     });
     /** @type {__VLS_StyleScopedClasses['slot-heading']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (__VLS_ctx.pendingRollDecision.currentRoll);
-    if (!__VLS_ctx.isDecisionMine) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-        (__VLS_ctx.activePlayer?.nickname ?? "玩家");
-    }
+    (__VLS_ctx.pendingRollDecision?.currentRoll);
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "slot-grid" },
-        ...{ class: ({ spectator: !__VLS_ctx.isDecisionMine }) },
     });
     /** @type {__VLS_StyleScopedClasses['slot-grid']} */ ;
-    /** @type {__VLS_StyleScopedClasses['spectator']} */ ;
     for (const [slot] of __VLS_vFor((__VLS_ctx.actionSlots))) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.pendingRollDecision && !__VLS_ctx.isRolling))
+                    if (!(__VLS_ctx.shouldShowActionSlots))
                         return;
                     __VLS_ctx.confirmActionSlot(slot);
                     // @ts-ignore
-                    [activePlayer, latestDiceText, visibleRoll, visibleRoll, isRolling, isRolling, pendingRoll, pendingRoll, latestSkill, latestSkill, pendingRollDecision, pendingRollDecision, isDecisionMine, isDecisionMine, actionSlots, confirmActionSlot,];
+                    [visibleRoll, visibleRoll, isRolling, latestDiceText, pendingRoll, pendingRoll, latestSkill, latestSkill, shouldShowActionSlots, pendingRollDecision, actionSlots, confirmActionSlot,];
                 } },
             key: (slot.id),
             ...{ class: "dice-action-slot" },
             type: "button",
-            ...{ class: ({ enabled: slot.enabled && __VLS_ctx.isDecisionMine, disabled: !slot.enabled || !__VLS_ctx.isDecisionMine, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
+            ...{ class: ({ enabled: slot.enabled, disabled: !slot.enabled, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
             disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled),
         });
         /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
@@ -1039,13 +1005,13 @@ if (__VLS_ctx.pendingRollDecision && !__VLS_ctx.isRolling) {
             ...{ class: "slot-dice" },
         });
         /** @type {__VLS_StyleScopedClasses['slot-dice']} */ ;
-        (__VLS_ctx.pendingRollDecision.currentRoll);
+        (__VLS_ctx.pendingRollDecision?.currentRoll);
         __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
         (__VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked ? "结算中……" : slot.label);
         __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
         (slot.enabled ? slot.description : slot.reason ?? slot.description);
         // @ts-ignore
-        [pendingRollDecision, isDecisionMine, isDecisionMine, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
+        [pendingRollDecision, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
     }
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
@@ -1297,44 +1263,6 @@ if (__VLS_ctx.room.phase === 'gameOver') {
         // @ts-ignore
         [room, room, room, room, winner, readyForRematch, isRematchReady, isRematchReady, rematchReadyIds, rematchReadyIds,];
     }
-}
-__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "battle-log-inline" },
-});
-/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "log-inline-title" },
-});
-/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (...[$event]) => {
-            __VLS_ctx.showBattleLog = !__VLS_ctx.showBattleLog;
-            // @ts-ignore
-            [showBattleLog, showBattleLog,];
-        } },
-    ...{ class: "ghost-btn small-btn" },
-    type: "button",
-});
-/** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
-(__VLS_ctx.showBattleLog ? "收起日志" : "展开日志");
-__VLS_asFunctionalElement1(__VLS_intrinsics.ol, __VLS_intrinsics.ol)({
-    ...{ class: ({ expanded: __VLS_ctx.showBattleLog }) },
-});
-/** @type {__VLS_StyleScopedClasses['expanded']} */ ;
-for (const [event, index] of __VLS_vFor(((__VLS_ctx.showBattleLog ? __VLS_ctx.renderedBattleLog : __VLS_ctx.latestLogPreview)))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({
-        key: (event.id),
-        ...{ class: ({ newest: index === 0 }) },
-    });
-    /** @type {__VLS_StyleScopedClasses['newest']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.time, __VLS_intrinsics.time)({});
-    (new Date(event.createdAt).toLocaleTimeString());
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (event.message);
-    // @ts-ignore
-    [showBattleLog, showBattleLog, showBattleLog, renderedBattleLog, latestLogPreview,];
 }
 if (__VLS_ctx.activeHighlight) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({

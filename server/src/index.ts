@@ -30,6 +30,8 @@ import {
 
 const MAX_BATTLE_LOG = 80;
 const EMOTE_COOLDOWN_MS = 1000;
+const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000;
+const ROOM_CLEANUP_INTERVAL_MS = 30 * 1000;
 const ROOM_MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8] as const;
 const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
@@ -80,6 +82,14 @@ const allowedEmoteIds = new Set<string>(EMOTE_IDS);
 io.on("connection", (socket) => {
   socket.emit("characters", characterList);
 
+  socket.on("clientPing", (payload: { clientSentAt?: unknown } | undefined) => {
+    const clientSentAt = typeof payload?.clientSentAt === "number" ? payload.clientSentAt : Date.now();
+    socket.emit("clientPong", {
+      clientSentAt,
+      serverReceivedAt: Date.now()
+    });
+  });
+
   socket.on("requestRoomList", (_payload: unknown, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const roomList = getPublicRoomList();
@@ -92,6 +102,8 @@ io.on("connection", (socket) => {
     handle(socket.id, reply, () => {
       const nickname = sanitizeNickname(payload.nickname);
       const clientId = sanitizeClientId(payload.clientId);
+      removePlayerFromRoom(socket.id);
+      removeClientFromRooms(clientId);
       const roomId = createRoomId();
       const player = createPlayer(socket.id, clientId, nickname, true);
       const room: Room = {
@@ -112,6 +124,7 @@ io.on("connection", (socket) => {
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${nickname} 创建了房间 ${roomId}`);
       broadcastRoom(room, [event]);
+      broadcastRoomList();
       return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
     });
   });
@@ -132,6 +145,7 @@ io.on("connection", (socket) => {
         bindSocketToRoom(socket.id, clientId, roomId);
         const event = addEvent(room, "system", `${existing.nickname} 已重新连接`);
         broadcastRoom(room, [event]);
+        broadcastRoomList();
         return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
       }
 
@@ -144,6 +158,7 @@ io.on("connection", (socket) => {
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${nickname} 加入了房间`);
       broadcastRoom(room, [event]);
+      broadcastRoomList();
       return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
     });
   });
@@ -162,6 +177,7 @@ io.on("connection", (socket) => {
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${player.nickname} 已重新连接`);
       broadcastRoom(room, [event]);
+      broadcastRoomList();
       return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
     });
   });
@@ -314,6 +330,12 @@ httpServer.listen(PORT, () => {
   console.log(`Career War server listening on port ${PORT}`);
 });
 
+setInterval(() => {
+  if (cleanupExpiredEmptyRooms()) {
+    broadcastRoomList();
+  }
+}, ROOM_CLEANUP_INTERVAL_MS);
+
 type Ack = (response: { ok: true; [key: string]: unknown } | { ok: false; error: string }) => void;
 
 const serverContext = {
@@ -338,6 +360,10 @@ function broadcastRoom(room: Room, _events: GameEvent[]): void {
   io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
 }
 
+function broadcastRoomList(): void {
+  io.emit("roomListUpdated", getPublicRoomList());
+}
+
 function addEvent(room: Room, type: GameEvent["type"], message: string): GameEvent {
   const event: GameEvent = {
     id: crypto.randomUUID(),
@@ -359,8 +385,9 @@ function serializePublicRoom(room: Room): Room {
 }
 
 function getPublicRoomList(): RoomListItem[] {
+  cleanupExpiredEmptyRooms();
   return Array.from(rooms.values())
-    .filter((room) => room.phase !== "gameOver")
+    .filter((room) => room.phase !== "gameOver" && getRoomOnlineCount(room) > 0)
     .map((room) => {
       const settings = ensureRoomSettings(room);
       const host = room.players.find((player) => player.id === room.hostId) ?? room.players.find((player) => player.isHost);
@@ -461,10 +488,17 @@ function isRollDecisionChoice(value: unknown): value is RollDecisionChoice {
 }
 
 function bindSocketToRoom(socketId: string, clientId: string, roomId: string): void {
+  const previousRoomId = socketToRoom.get(socketId);
+  if (previousRoomId && previousRoomId !== roomId) {
+    const previousSocket = io.sockets.sockets.get(socketId);
+    previousSocket?.leave(previousRoomId);
+  }
   socketToRoom.set(socketId, roomId);
   socketToClient.set(socketId, clientId);
   const socket = io.sockets.sockets.get(socketId);
   socket?.join(roomId);
+  const room = rooms.get(roomId);
+  if (room) refreshRoomEmptySince(room);
 }
 
 function removePlayerFromRoom(socketId: string): void {
@@ -486,6 +520,7 @@ function removePlayerFromRoom(socketId: string): void {
 
   if (room.players.length === 0) {
     rooms.delete(roomId);
+    broadcastRoomList();
     return;
   }
 
@@ -499,7 +534,53 @@ function removePlayerFromRoom(socketId: string): void {
   }
 
   const event = addEvent(room, "system", `${leaving?.nickname ?? "玩家"} 离开了房间`);
+  refreshRoomEmptySince(room);
   broadcastRoom(room, [event]);
+  broadcastRoomList();
+}
+
+function removeClientFromRooms(clientId: string): void {
+  let changed = false;
+
+  for (const room of Array.from(rooms.values())) {
+    const leaving = room.players.find((player) => player.clientId === clientId);
+    if (!leaving) continue;
+
+    changed = true;
+    unbindClientSocketsFromRoom(clientId, room.id);
+    room.players = room.players.filter((player) => player.clientId !== clientId);
+    room.rematchReadyPlayerIds = room.rematchReadyPlayerIds.filter((playerId) => playerId !== leaving.id);
+
+    if (room.players.length === 0) {
+      rooms.delete(room.id);
+      continue;
+    }
+
+    if (room.hostId === leaving.id) {
+      room.hostId = room.players[0].id;
+      room.players[0].isHost = true;
+    }
+
+    if (room.activePlayerIndex >= room.players.length) {
+      room.activePlayerIndex = 0;
+    }
+
+    const event = addEvent(room, "system", `${leaving.nickname} 离开了房间`);
+    refreshRoomEmptySince(room);
+    broadcastRoom(room, [event]);
+  }
+
+  if (changed) broadcastRoomList();
+}
+
+function unbindClientSocketsFromRoom(clientId: string, roomId: string): void {
+  for (const [socketId, mappedClientId] of Array.from(socketToClient.entries())) {
+    if (mappedClientId !== clientId || socketToRoom.get(socketId) !== roomId) continue;
+    const socket = io.sockets.sockets.get(socketId);
+    socket?.leave(roomId);
+    socketToRoom.delete(socketId);
+    socketToClient.delete(socketId);
+  }
 }
 
 function markPlayerOffline(socketId: string): void {
@@ -516,7 +597,36 @@ function markPlayerOffline(socketId: string): void {
   if (!player) return;
   player.isOnline = false;
   const event = addEvent(room, "system", `${player.nickname} 已离线`);
+  refreshRoomEmptySince(room);
   broadcastRoom(room, [event]);
+  broadcastRoomList();
+}
+
+function getRoomOnlineCount(room: Room): number {
+  return room.players.filter((player) => socketToRoom.get(player.id) === room.id && socketToClient.get(player.id) === player.clientId && io.sockets.sockets.has(player.id)).length;
+}
+
+function refreshRoomEmptySince(room: Room, now = Date.now()): void {
+  if (getRoomOnlineCount(room) === 0) {
+    room.emptySince ??= now;
+    return;
+  }
+
+  room.emptySince = undefined;
+}
+
+function cleanupExpiredEmptyRooms(now = Date.now()): boolean {
+  let removed = false;
+
+  for (const [roomId, room] of Array.from(rooms.entries())) {
+    refreshRoomEmptySince(room, now);
+    if (room.emptySince !== undefined && now - room.emptySince >= EMPTY_ROOM_TTL_MS && getRoomOnlineCount(room) === 0) {
+      rooms.delete(roomId);
+      removed = true;
+    }
+  }
+
+  return removed;
 }
 
 function rebindPlayerReferences(room: Room, previousId: string, nextId: string): void {

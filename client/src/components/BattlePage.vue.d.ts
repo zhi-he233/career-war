@@ -7,8 +7,8 @@ type __VLS_Props = {
     lastEmote: PlayerEmoteEvent | null;
 };
 declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {}, {}, import("vue").ComponentOptionsMixin, import("vue").ComponentOptionsMixin, {
-    selectTarget: (targetId: string) => any;
     rollDice: () => any;
+    selectTarget: (targetId: string) => any;
     confirmRollDecision: (payload: {
         roomId: string;
         pendingDecisionId: string;
@@ -19,8 +19,8 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
         summonerSkillId?: SummonerSkillId;
     }) => any;
 }, string, import("vue").PublicProps, Readonly<__VLS_Props> & Readonly<{
-    onSelectTarget?: ((targetId: string) => any) | undefined;
     onRollDice?: (() => any) | undefined;
+    onSelectTarget?: ((targetId: string) => any) | undefined;
     onConfirmRollDecision?: ((payload: {
         roomId: string;
         pendingDecisionId: string;

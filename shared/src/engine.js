@@ -325,51 +325,51 @@ function createPendingRollDecision(room, actor, target, roll, rollEventId, ctx) 
     };
 }
 function createAvailableActions(room, actor, target, roll, characterSkill, summonerSkill, usedSummonerSkillThisAction) {
-    const characterReason = activeCharacterSkillReason(actor.characterId, roll);
-    const summonerReason = summonerSkillUnavailableReason(room, actor, target, roll, usedSummonerSkillThisAction);
-    const summonerSkillId = actor.summonerSkillId ?? "lucky_plus_one";
-    return [
+    const actions = [
         {
             id: "normal_attack",
             label: "普通攻击",
             enabled: true,
-            description: `使用 🎲 ${roll} 攻击目标`
-        },
-        {
-            id: "character_skill",
-            label: characterSkill ? `发动【${characterSkill.name}】` : "职业技能",
-            enabled: Boolean(characterSkill),
-            description: characterSkill ? characterSkillDescription(characterSkill.id, roll) : characterReason,
-            reason: characterSkill ? undefined : characterReason,
-            skillId: characterSkill?.id,
-            skillName: characterSkill?.name
-        },
-        {
-            id: "summoner_skill",
-            label: summonerSkill ? `发动【${summonerSkill.name}】` : summonerSkillName(summonerSkillId),
-            enabled: Boolean(summonerSkill),
-            description: summonerSkill ? summonerSkillDescription(summonerSkill.id, roll) : summonerReason,
-            reason: summonerSkill ? undefined : summonerReason,
-            skillId: summonerSkill?.id ?? summonerSkillId,
-            skillName: summonerSkill?.name ?? summonerSkillName(summonerSkillId)
+            description: `使用 🎲 ${roll} 进行普通结算`
         }
     ];
+    if (characterSkill) {
+        actions.push({
+            id: "character_skill",
+            label: `发动【${characterSkill.name}】`,
+            enabled: true,
+            description: characterSkillDescription(characterSkill.id, roll),
+            skillId: characterSkill.id,
+            skillName: characterSkill.name
+        });
+    }
+    if (summonerSkill) {
+        actions.push({
+            id: "summoner_skill",
+            label: `发动【${summonerSkill.name}】`,
+            enabled: true,
+            description: summonerSkillDescription(summonerSkill.id, roll),
+            skillId: summonerSkill.id,
+            skillName: summonerSkill.name
+        });
+    }
+    return actions;
 }
 function activeCharacterSkillReason(characterId, roll) {
     if (characterId === "gunslinger")
-        return roll === 6 ? "消耗 🎲 6，继续投骰" : "当前骰点不能发动";
+        return roll === 6 ? "继续投骰造成额外伤害" : "当前骰点不能发动";
     if (characterId === "vampire")
-        return roll === 6 ? "消耗 🎲 6，继续投骰回血" : "当前骰点不能发动";
+        return roll === 6 ? "继续投骰并根据结果回复生命" : "当前骰点不能发动";
     if (characterId === "paladin")
-        return roll === 4 ? "消耗 🎲 4，发动全员无敌" : "当前骰点不能发动";
+        return roll === 4 ? "全员无敌，自己获得护盾" : "当前骰点不能发动";
     return "无可发动职业技能";
 }
 function characterSkillDescription(skillId, roll) {
     if (skillId === "gunslinger_barrage")
-        return `消耗 🎲 ${roll}，继续投骰`;
+        return `消耗 🎲 ${roll}，继续投骰造成额外伤害`;
     if (skillId === "vampire_blood_rite")
-        return `消耗 🎲 ${roll}，继续投骰回血`;
-    return `消耗 🎲 ${roll}，发动全员无敌`;
+        return `消耗 🎲 ${roll}，继续投骰并根据结果回复生命`;
+    return `消耗 🎲 ${roll}，全员无敌，自己获得护盾`;
 }
 function summonerSkillDescription(skillId, roll) {
     if (skillId === "lucky_plus_one")

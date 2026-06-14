@@ -82,7 +82,6 @@ const activeSkillHints = ref<SkillHint[]>([]);
 const showRuleGuide = ref(false);
 const emoteLocked = ref(false);
 const detailPlayerId = ref<string | null>(null);
-const showBattleLog = ref(false);
 const selectedActionSlot = ref<RollActionType | null>(null);
 let rollingTimer: number | undefined;
 let emoteUnlockTimer: number | undefined;
@@ -109,12 +108,13 @@ const pendingRollDecision = computed(() => room.value.pendingRollDecision);
 const isPendingMine = computed(() => pendingRoll.value?.playerId === props.playerId);
 const isDecisionMine = computed(() => pendingRollDecision.value?.actorId === props.playerId);
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
+const isSelfDead = computed(() => Boolean(me.value?.isDead));
 const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
+const shouldShowActionSlots = computed(() => Boolean(canUseActionSlots.value && !isSelfDead.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
-const latestLogPreview = computed(() => room.value.battleLog.slice(0, 3));
 const actionStageText = computed(() => {
   if (room.value.phase === "gameOver") return "游戏结束";
   if (me.value?.isDead) return "你已死亡，等待本局结束";
@@ -143,8 +143,7 @@ const selfSummonerText = computed(() => {
 const actionSlots = computed<RollDecisionAvailableAction[]>(() => {
   const decision = pendingRollDecision.value;
   if (!decision) return [];
-  if (decision.availableActions?.length) return decision.availableActions;
-  return legacyActionSlots(decision);
+  return decision.availableActions ?? [];
 });
 
 watch(
@@ -202,13 +201,33 @@ const latestActionEvents = computed(() => {
 });
 
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
-const renderedBattleLog = computed(() => room.value.battleLog.slice(0, MAX_RENDERED_LOG));
 const latestDiceText = computed(() => {
   if (isRolling.value) return pendingRoll.value?.message ?? "";
   if (pendingRollDecision.value) return `当前骰点 ${pendingRollDecision.value.currentRoll}`;
   const dice = visibleRoll.value?.dice ?? [];
   if (dice.length === 0) return pendingRoll.value?.message ?? "等待投骰";
   return `投出了 ${dice.join("、")} 点`;
+});
+
+const currentActionTitle = computed(() => {
+  if (isSelfDead.value) return "你已死亡，正在观战";
+  return actionStageText.value;
+});
+
+const currentDiceValueText = computed(() => {
+  if (pendingRollDecision.value) return String(pendingRollDecision.value.currentRoll);
+  return latestDiceText.value;
+});
+
+const currentActionLines = computed(() => {
+  const actorName = activePlayer.value?.nickname ?? "玩家";
+  if (isSelfDead.value) {
+    return [`当前行动：${actorName}`, `当前骰点：${currentDiceValueText.value}`, `等待 ${actorName} 操作`];
+  }
+  if (pendingRollDecision.value && !isDecisionMine.value) {
+    return [`当前行动：${actorName}`, `当前骰点：${currentDiceValueText.value}`, `等待 ${actorName} 操作`];
+  }
+  return [selectedTargetText.value, latestDiceText.value];
 });
 
 const rollButtonText = computed(() => {
@@ -366,35 +385,6 @@ function confirmActionSlot(slot: RollDecisionAvailableAction): void {
   if (!pendingRollDecision.value || !isDecisionMine.value || rollRequestLocked.value || !slot.enabled) return;
   const summonerSkillId = slot.id === "summoner_skill" && isSummonerSkillId(slot.skillId) ? slot.skillId : undefined;
   confirmDecision(slot.id, summonerSkillId);
-}
-
-function legacyActionSlots(decision: NonNullable<Room["pendingRollDecision"]>): RollDecisionAvailableAction[] {
-  return [
-    {
-      id: "normal_attack",
-      label: "普通攻击",
-      enabled: true,
-      description: `使用 🎲 ${decision.currentRoll} 攻击目标`
-    },
-    {
-      id: "character_skill",
-      label: decision.availableCharacterSkillName ? `发动【${decision.availableCharacterSkillName}】` : "职业技能",
-      enabled: decision.canUseCharacterSkill,
-      description: decision.canUseCharacterSkill ? `消耗 🎲 ${decision.currentRoll} 发动` : "当前骰点不能发动",
-      reason: decision.canUseCharacterSkill ? undefined : "当前骰点不能发动",
-      skillId: decision.availableCharacterSkillId,
-      skillName: decision.availableCharacterSkillName
-    },
-    {
-      id: "summoner_skill",
-      label: decision.availableSummonerSkillName ? `发动【${decision.availableSummonerSkillName}】` : "召唤师技能",
-      enabled: Boolean(decision.availableSummonerSkillId),
-      description: decision.availableSummonerSkillName ? `使用 🎲 ${decision.currentRoll} 发动` : "当前不可用",
-      reason: decision.availableSummonerSkillId ? undefined : "当前不可用",
-      skillId: decision.availableSummonerSkillId,
-      skillName: decision.availableSummonerSkillName
-    }
-  ];
 }
 
 function isSummonerSkillId(value: unknown): value is SummonerSkillId {
@@ -619,23 +609,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
 <template>
   <section class="battle-layout">
-    <section class="battle-status-bar">
-      <div>
-        <span>当前行动</span>
-        <strong>{{ activePlayer?.nickname ?? "等待中" }}</strong>
-      </div>
-      <div>
-        <span>提示</span>
-        <strong>{{ turnGuideText }}</strong>
-      </div>
-      <div>
-        <span>骰子</span>
-        <strong>{{ latestDiceText }}</strong>
-      </div>
-    </section>
-
     <section class="battle-tools">
-      <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">{{ showBattleLog ? "收起日志" : "展开日志" }}</button>
       <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
     </section>
 
@@ -715,8 +689,8 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
     <section class="action-center" :class="`turn-guide-${turnGuideTone}`">
       <div class="action-phase">
         <span>当前阶段</span>
-        <strong>{{ actionStageText }}</strong>
-        <small>{{ selectedTargetText }}</small>
+        <strong>{{ currentActionTitle }}</strong>
+        <small v-for="line in currentActionLines" :key="line">{{ line }}</small>
       </div>
 
       <div class="dice-panel action-arena" :class="{ ready: isMyTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
@@ -737,22 +711,21 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           <p v-else-if="visibleRoll">{{ visibleRoll.message }}</p>
           <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
         </div>
-        <div v-if="pendingRollDecision && !isRolling" class="dice-action-slots">
+        <div v-if="shouldShowActionSlots" class="dice-action-slots">
           <div class="slot-heading">
-            <strong>行动卡槽 · 🎲 {{ pendingRollDecision.currentRoll }}</strong>
-            <span v-if="!isDecisionMine">等待【{{ activePlayer?.nickname ?? "玩家" }}】选择</span>
+            <strong>行动卡槽 · 🎲 {{ pendingRollDecision?.currentRoll }}</strong>
           </div>
-          <div class="slot-grid" :class="{ spectator: !isDecisionMine }">
+          <div class="slot-grid">
             <button
               v-for="slot in actionSlots"
               :key="slot.id"
               class="dice-action-slot"
               type="button"
-              :class="{ enabled: slot.enabled && isDecisionMine, disabled: !slot.enabled || !isDecisionMine, settling: selectedActionSlot === slot.id && rollRequestLocked }"
+              :class="{ enabled: slot.enabled, disabled: !slot.enabled, settling: selectedActionSlot === slot.id && rollRequestLocked }"
               :disabled="!canUseActionSlots || !slot.enabled"
               @click="confirmActionSlot(slot)"
             >
-              <span class="slot-dice">🎲 {{ pendingRollDecision.currentRoll }}</span>
+              <span class="slot-dice">🎲 {{ pendingRollDecision?.currentRoll }}</span>
               <strong>{{ selectedActionSlot === slot.id && rollRequestLocked ? "结算中……" : slot.label }}</strong>
               <small>{{ slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
             </button>
@@ -822,19 +795,6 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
     </section>
 
-    <section class="battle-log-inline">
-      <div class="log-inline-title">
-        <strong>战斗日志</strong>
-        <button class="ghost-btn small-btn" type="button" @click="showBattleLog = !showBattleLog">{{ showBattleLog ? "收起日志" : "展开日志" }}</button>
-      </div>
-      <ol :class="{ expanded: showBattleLog }">
-        <li v-for="(event, index) in (showBattleLog ? renderedBattleLog : latestLogPreview)" :key="event.id" :class="{ newest: index === 0 }">
-          <time>{{ new Date(event.createdAt).toLocaleTimeString() }}</time>
-          <span>{{ event.message }}</span>
-        </li>
-      </ol>
-    </section>
-
     <div v-if="activeHighlight" :key="activeHighlight.id" class="character-highlight-overlay" :class="`highlight-${activeHighlight.type}`">
       <div class="character-highlight-card">
         <strong>{{ activeHighlight.title }}</strong>
@@ -891,38 +851,33 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
 <style scoped>
 .battle-layout {
-  gap: 10px;
-  padding-bottom: 12px;
-}
-
-.battle-status-bar {
-  grid-template-columns: 0.9fr minmax(0, 1.5fr) 0.9fr;
+  gap: 7px;
+  padding-bottom: 8px;
 }
 
 .battle-tools {
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .battle-zone,
-.action-center,
-.battle-log-inline {
+.action-center {
   border: 1px solid #d7dee8;
   border-radius: 8px;
   background: #ffffff;
 }
 
-.zone-heading,
-.log-inline-title {
+.zone-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 9px 10px;
+  padding: 6px 9px;
   border-bottom: 1px solid #e2e8f0;
 }
 
-.zone-heading strong,
-.log-inline-title strong {
+.zone-heading strong {
   color: #172033;
   font-size: 14px;
 }
@@ -936,7 +891,29 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 .battle-zone .combat-board {
   border: 0;
   border-radius: 0 0 8px 8px;
-  padding-top: 14px;
+  padding: 8px;
+}
+
+.battle-seat {
+  gap: 4px;
+}
+
+.seat-button {
+  min-height: 68px;
+  padding: 6px;
+}
+
+.avatar-ring {
+  width: 48px;
+  height: 48px;
+}
+
+.avatar-emoji {
+  font-size: 28px;
+}
+
+.seat-name-row {
+  gap: 4px;
 }
 
 .seat-tags {
@@ -969,8 +946,8 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
 .action-phase {
   display: grid;
-  gap: 3px;
-  padding: 10px 12px;
+  gap: 2px;
+  padding: 7px 10px;
   background: #172033;
   color: #ffffff;
 }
@@ -981,7 +958,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 }
 
 .action-phase strong {
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.25;
 }
 
@@ -994,89 +971,123 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 .action-center .dice-panel {
   border: 0;
   border-radius: 0;
+  gap: 7px;
+  padding: 8px 10px;
   box-shadow: none;
+}
+
+.action-center .dice-visual {
+  gap: 6px;
+}
+
+.action-center .dice-box span {
+  width: 48px;
+  height: 48px;
+  font-size: 28px;
+}
+
+.action-summary {
+  gap: 3px;
+}
+
+.action-summary p {
+  margin: 0;
+  line-height: 1.3;
+}
+
+.dice-action-slots {
+  margin-top: 4px;
+}
+
+.slot-grid {
+  gap: 6px;
 }
 
 .slot-heading {
   align-items: start;
 }
 
+.dice-action-slot {
+  min-height: 72px;
+  padding: 7px;
+}
+
 .dice-action-slot small {
-  min-height: 30px;
+  min-height: 0;
 }
 
 .self-panel {
   position: relative;
+  padding: 8px 10px;
+  gap: 8px;
+}
+
+.self-avatar {
+  width: 52px;
+  height: 52px;
 }
 
 .self-title span {
   flex: 0 0 auto;
 }
 
-.battle-log-inline {
-  overflow: hidden;
+.self-meta {
+  gap: 4px;
 }
 
-.battle-log-inline ol {
-  display: grid;
-  gap: 7px;
-  max-height: 104px;
-  margin: 0;
-  padding: 10px;
-  overflow: hidden;
-  list-style: none;
+.emote-panel {
+  gap: 5px;
+  padding: 6px;
 }
 
-.battle-log-inline ol.expanded {
-  max-height: 280px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+.emote-btn {
+  min-height: 38px;
+  padding: 4px 6px;
 }
 
-.battle-log-inline li {
-  display: grid;
-  gap: 2px;
-  border-bottom: 1px solid #e2e8f0;
-  padding-bottom: 7px;
-  color: #172033;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.battle-log-inline li:last-child {
-  border-bottom: 0;
-}
-
-.battle-log-inline li.newest {
-  border-radius: 6px;
-  border-bottom: 0;
-  padding: 7px;
-  background: #fff7ed;
-}
-
-.battle-log-inline time {
-  color: #94a3b8;
-  font-size: 11px;
+.emote-btn small {
+  font-size: 10px;
 }
 
 @media (max-width: 480px) {
-  .battle-status-bar {
-    grid-template-columns: 1fr;
-  }
-
   .battle-tools {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
   }
 
-  .battle-tools .small-btn,
-  .log-inline-title .small-btn {
-    min-height: 38px;
+  .battle-tools .small-btn {
+    flex: 1;
+    min-height: 34px;
   }
 
-  .zone-heading,
-  .log-inline-title {
-    align-items: start;
+  .zone-heading {
+    padding: 5px 8px;
+  }
+
+  .zone-heading span {
+    display: none;
+  }
+
+  .battle-zone .combat-board {
+    padding: 6px;
+  }
+
+  .seat-button {
+    min-height: 58px;
+    padding: 5px;
+  }
+
+  .avatar-ring {
+    width: 42px;
+    height: 42px;
+  }
+
+  .avatar-emoji {
+    font-size: 25px;
+  }
+
+  .seat-tags,
+  .seat-roll {
+    display: none;
   }
 
   .action-phase strong {
@@ -1087,8 +1098,30 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
     padding-bottom: 4px;
   }
 
+  .dice-action-slot {
+    min-height: 64px;
+  }
+
   .self-panel {
     grid-template-columns: auto minmax(0, 1fr);
+    padding: 7px 8px;
+  }
+
+  .self-avatar {
+    width: 46px;
+    height: 46px;
+  }
+
+  .emote-panel {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .emote-btn {
+    min-height: 34px;
+  }
+
+  .emote-btn small {
+    display: none;
   }
 
   .self-info-btn {

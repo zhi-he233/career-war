@@ -176,6 +176,7 @@ export interface Room {
   battleLog: GameEvent[];
   snapshots: ActionSnapshot[];
   previousFinalDamage: number;
+  emptySince?: number;
   pendingRoll?: PendingRoll;
   pendingRollDecision?: PendingRollDecision;
   winnerId?: string;

@@ -1,5 +1,6 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { getClientId, resetClientId, socket } from "./socket";
+import { createClientId } from "./utils/id";
 import HomePage from "./components/HomePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
 import BattlePage from "./components/BattlePage.vue";
@@ -48,7 +49,7 @@ onMounted(() => {
     });
     socket.on("gameOver", (payload) => {
         lastEvent.value = {
-            id: crypto.randomUUID(),
+            id: createClientId(),
             createdAt: Date.now(),
             type: "victory",
             message: `${payload.winnerName} 获胜！`

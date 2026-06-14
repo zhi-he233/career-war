@@ -129,6 +129,9 @@ function requestRoomList() {
 function chooseCharacter(characterId) {
     emitWithAck("chooseCharacter", { characterId });
 }
+function chooseSummonerSkill(summonerSkillId) {
+    emitWithAck("chooseSummonerSkill", { summonerSkillId });
+}
 function startGame() {
     emitWithAck("startGame", {});
 }
@@ -140,6 +143,9 @@ function selectTarget(targetId) {
 }
 function rollDice() {
     emitWithAck("rollDice", {});
+}
+function confirmRollDecision(payload) {
+    emitWithAck("confirmRollDecision", payload);
 }
 function leaveRoom() {
     emitWithAck("leaveRoom", {}, () => {
@@ -235,6 +241,7 @@ else if (__VLS_ctx.page === 'lobby' && __VLS_ctx.room) {
     // @ts-ignore
     const __VLS_8 = __VLS_asFunctionalComponent1(__VLS_7, new __VLS_7({
         ...{ 'onChooseCharacter': {} },
+        ...{ 'onChooseSummonerSkill': {} },
         ...{ 'onUpdateRoomSettings': {} },
         ...{ 'onStartGame': {} },
         room: (__VLS_ctx.room),
@@ -243,6 +250,7 @@ else if (__VLS_ctx.page === 'lobby' && __VLS_ctx.room) {
     }));
     const __VLS_9 = __VLS_8({
         ...{ 'onChooseCharacter': {} },
+        ...{ 'onChooseSummonerSkill': {} },
         ...{ 'onUpdateRoomSettings': {} },
         ...{ 'onStartGame': {} },
         room: (__VLS_ctx.room),
@@ -253,6 +261,8 @@ else if (__VLS_ctx.page === 'lobby' && __VLS_ctx.room) {
     const __VLS_13 = {
         ...{ chooseCharacter: {} },
         onChooseCharacter: (__VLS_ctx.chooseCharacter),
+        ...{ chooseSummonerSkill: {} },
+        onChooseSummonerSkill: (__VLS_ctx.chooseSummonerSkill),
         ...{ updateRoomSettings: {} },
         onUpdateRoomSettings: (__VLS_ctx.updateRoomSettings),
         ...{ startGame: {} },
@@ -267,6 +277,7 @@ else if (__VLS_ctx.room) {
     const __VLS_15 = __VLS_asFunctionalComponent1(__VLS_14, new __VLS_14({
         ...{ 'onSelectTarget': {} },
         ...{ 'onRollDice': {} },
+        ...{ 'onConfirmRollDecision': {} },
         room: (__VLS_ctx.room),
         playerId: (__VLS_ctx.playerId),
         characters: (__VLS_ctx.characters),
@@ -276,6 +287,7 @@ else if (__VLS_ctx.room) {
     const __VLS_16 = __VLS_15({
         ...{ 'onSelectTarget': {} },
         ...{ 'onRollDice': {} },
+        ...{ 'onConfirmRollDecision': {} },
         room: (__VLS_ctx.room),
         playerId: (__VLS_ctx.playerId),
         characters: (__VLS_ctx.characters),
@@ -288,11 +300,13 @@ else if (__VLS_ctx.room) {
         onSelectTarget: (__VLS_ctx.selectTarget),
         ...{ rollDice: {} },
         onRollDice: (__VLS_ctx.rollDice),
+        ...{ confirmRollDecision: {} },
+        onConfirmRollDecision: (__VLS_ctx.confirmRollDecision),
     };
     var __VLS_17;
     var __VLS_18;
 }
 // @ts-ignore
-[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, page, page, inviteRoomId, roomList, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, updateRoomSettings, startGame, lastEvent, lastEmote, selectTarget, rollDice,];
+[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, page, page, inviteRoomId, roomList, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, chooseSummonerSkill, updateRoomSettings, startGame, lastEvent, lastEmote, selectTarget, rollDice, confirmRollDecision,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

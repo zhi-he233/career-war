@@ -29,18 +29,14 @@ const DEFAULT_ROOM_SETTINGS = {
     maxPlayers: 8,
     allowDuplicateCharacters: true
 };
+const SUMMONER_SKILLS = [
+    { id: "lucky_plus_one", name: "幸运骰", description: "投后让本次主骰 +1，最高 6。冷却：3 次自己的行动。" },
+    { id: "first_aid", name: "急救术", description: "本次不攻击，改为回复自己等于骰点的血量。冷却：3 次自己的行动。" },
+    { id: "iron_wall", name: "铁壁", description: "本次不攻击，改为获得等于骰点的护盾。冷却：3 次自己的行动。" },
+    { id: "fate_reroll", name: "命运重掷", description: "服务器重新投一次主骰，必须接受新骰点。冷却：3 次自己的行动。" },
+    { id: "last_stand", name: "破釜", description: "攻击伤害行动可用，最终伤害 +2，自己受 2 点反噬。冷却：3 次自己的行动。" }
+];
 const LOCKED_CHARACTERS = [
-    {
-        id: "stoneTitan",
-        name: "巨石泰坦",
-        maxHp: 25,
-        description: ["未开放"],
-        difficulty: "normal",
-        role: "defense",
-        tags: ["防御", "未开放"],
-        shortDescription: "厚重防御型职业，后续版本开放。",
-        isImplemented: false
-    },
     {
         id: "warKnight",
         name: "战争骑士",
@@ -93,6 +89,7 @@ const showRuleGuide = ref(false);
 const me = computed(() => props.room.players.find((player) => player.id === props.playerId));
 const isHost = computed(() => props.room.hostId === props.playerId);
 const roomSettings = computed(() => ({ ...DEFAULT_ROOM_SETTINGS, ...(props.room.settings ?? {}) }));
+const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]);
 const canStart = computed(() => props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
 const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && duplicateCharacterIds.value.size > 0);
 const duplicateCharacterIds = computed(() => {
@@ -363,6 +360,49 @@ if (__VLS_ctx.hasDuplicateCharacterConflict) {
     /** @type {__VLS_StyleScopedClasses['settings-warning']} */ ;
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+    ...{ class: "summoner-select-panel" },
+});
+/** @type {__VLS_StyleScopedClasses['summoner-select-panel']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "settings-title" },
+});
+/** @type {__VLS_StyleScopedClasses['settings-title']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+    ...{ class: "hint" },
+});
+/** @type {__VLS_StyleScopedClasses['hint']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "summoner-options" },
+});
+/** @type {__VLS_StyleScopedClasses['summoner-options']} */ ;
+for (const [skill] of __VLS_vFor((__VLS_ctx.SUMMONER_SKILLS))) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                __VLS_ctx.emit('chooseSummonerSkill', skill.id);
+                // @ts-ignore
+                [room, roomSettings, roomSettings, roomSettings, updateDuplicateSetting, hasDuplicateCharacterConflict, SUMMONER_SKILLS, emit,];
+            } },
+        key: (skill.id),
+        ...{ class: "summoner-option" },
+        ...{ class: ({ selected: (__VLS_ctx.me?.summonerSkillId ?? 'lucky_plus_one') === skill.id }) },
+        type: "button",
+    });
+    /** @type {__VLS_StyleScopedClasses['summoner-option']} */ ;
+    /** @type {__VLS_StyleScopedClasses['selected']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (skill.name);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    (skill.description);
+    // @ts-ignore
+    [me,];
+}
+__VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+    ...{ class: "hint" },
+});
+/** @type {__VLS_StyleScopedClasses['hint']} */ ;
+(__VLS_ctx.selectedSummonerSkill.name);
+__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "lobby-start-bar" },
 });
 /** @type {__VLS_StyleScopedClasses['lobby-start-bar']} */ ;
@@ -378,7 +418,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             __VLS_ctx.emit('startGame');
             // @ts-ignore
-            [room, roomSettings, roomSettings, roomSettings, characterName, isHost, isHost, updateDuplicateSetting, hasDuplicateCharacterConflict, startHint, me, emit,];
+            [characterName, isHost, isHost, emit, me, selectedSummonerSkill, startHint,];
         } },
     ...{ class: "primary-btn" },
     type: "button",

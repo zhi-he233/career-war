@@ -15,6 +15,18 @@ const EMOTE_OPTIONS = [
     { id: "like", label: "点赞", emoji: "👍" },
     { id: "question", label: "疑惑", emoji: "❓" }
 ];
+const PLAYER_AVATARS = [
+    { id: "wolf", emoji: "🐺" },
+    { id: "fox", emoji: "🦊" },
+    { id: "cat", emoji: "🐱" },
+    { id: "dog", emoji: "🐶" },
+    { id: "panda", emoji: "🐼" },
+    { id: "frog", emoji: "🐸" },
+    { id: "monkey", emoji: "🐵" },
+    { id: "dragon", emoji: "🐲" },
+    { id: "robot", emoji: "🤖" },
+    { id: "ghost", emoji: "👻" }
+];
 const displayedRoom = ref(cloneRoomForDisplay(props.room));
 const pendingRoom = ref(null);
 const room = computed(() => displayedRoom.value);
@@ -31,6 +43,9 @@ const activeHighlight = ref(null);
 const activeSkillHints = ref([]);
 const showRuleGuide = ref(false);
 const emoteLocked = ref(false);
+const detailPlayerId = ref(null);
+const showBattleLog = ref(false);
+const selectedActionSlot = ref(null);
 let rollingTimer;
 let emoteUnlockTimer;
 let highlightTimer;
@@ -43,13 +58,70 @@ const activePlayer = computed(() => room.value.players[room.value.activePlayerIn
 const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
 const me = computed(() => room.value.players.find((player) => player.id === props.playerId));
 const selectedTargetId = computed(() => me.value?.selectedTargetId);
+const selectedTarget = computed(() => room.value.players.find((player) => player.id === selectedTargetId.value));
+const battlePlayers = computed(() => {
+    const others = room.value.players.filter((player) => player.id !== props.playerId);
+    return others.length > 0 ? others : room.value.players;
+});
 const aliveEnemies = computed(() => room.value.players.filter((player) => !player.isDead && player.id !== props.playerId));
 const winner = computed(() => room.value.players.find((player) => player.id === room.value.winnerId));
 const pendingRoll = computed(() => room.value.pendingRoll);
+const pendingRollDecision = computed(() => room.value.pendingRollDecision);
 const isPendingMine = computed(() => pendingRoll.value?.playerId === props.playerId);
+const isDecisionMine = computed(() => pendingRollDecision.value?.actorId === props.playerId);
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
+const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
+const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
+const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
+const latestLogPreview = computed(() => room.value.battleLog.slice(0, 3));
+const actionStageText = computed(() => {
+    if (room.value.phase === "gameOver")
+        return "游戏结束";
+    if (me.value?.isDead)
+        return "你已死亡，等待本局结束";
+    if (rollRequestLocked.value && !pendingRoom.value)
+        return "正在结算……";
+    if (isRolling.value)
+        return "骰子滚动中……";
+    if (pendingRollDecision.value && isDecisionMine.value)
+        return "请选择本回合行动";
+    if (pendingRollDecision.value)
+        return `等待 ${activePlayer.value?.nickname ?? "玩家"} 选择骰子用途`;
+    if (pendingRoll.value && isPendingMine.value)
+        return "技能触发：请继续投骰";
+    if (!isMyTurn.value)
+        return `等待 ${activePlayer.value?.nickname ?? "玩家"} 行动`;
+    if (!selectedTargetId.value)
+        return "请选择一个目标";
+    return `已选择目标：${selectedTarget.value?.nickname ?? "目标"}，可以投骰`;
+});
+const selfActionStateText = computed(() => {
+    if (!me.value)
+        return "未入场";
+    if (me.value.isDead)
+        return "已死亡";
+    if (isMyTurn.value)
+        return selectedTargetId.value ? "可以投骰" : "选择目标中";
+    return "等待行动";
+});
+const selfSummonerText = computed(() => {
+    const player = me.value;
+    if (!player)
+        return "召唤师技能：无";
+    const name = summonerSkillName(player.summonerSkillId);
+    const cooldown = player.summonerSkillCooldown ?? 0;
+    return cooldown > 0 ? `${name} 冷却 ${cooldown}` : `${name} 可用`;
+});
+const actionSlots = computed(() => {
+    const decision = pendingRollDecision.value;
+    if (!decision)
+        return [];
+    if (decision.availableActions?.length)
+        return decision.availableActions;
+    return legacyActionSlots(decision);
+});
 watch(() => props.room, (nextRoom) => {
     const nextRollId = getLatestRoll(nextRoom)?.id;
     const shownRollId = getLatestRoll(displayedRoom.value)?.id;
@@ -64,6 +136,10 @@ watch(() => props.room, (nextRoom) => {
         return;
     }
     displayedRoom.value = cloneRoomForDisplay(nextRoom);
+    rollRequestLocked.value = false;
+    selectedActionSlot.value = null;
+    if (visibleRollId.value)
+        startEffectWindow(visibleRollId.value);
 }, { deep: false });
 watch(() => props.lastEmote, (event) => {
     if (!event || event.roomId !== room.value.id)
@@ -89,14 +165,13 @@ const latestActionEvents = computed(() => {
     const nextRollIndex = room.value.battleLog.findIndex((event, index) => index > firstRollIndex && event.type === "roll");
     return room.value.battleLog.slice(firstRollIndex, nextRollIndex < 0 ? undefined : nextRollIndex);
 });
-const latestDamage = computed(() => latestActionEvents.value.find((event) => event.type === "damage"));
-const latestHeal = computed(() => latestActionEvents.value.find((event) => event.type === "heal"));
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
-const latestShownEvent = computed(() => room.value.battleLog[0]);
 const renderedBattleLog = computed(() => room.value.battleLog.slice(0, MAX_RENDERED_LOG));
 const latestDiceText = computed(() => {
     if (isRolling.value)
         return pendingRoll.value?.message ?? "";
+    if (pendingRollDecision.value)
+        return `当前骰点 ${pendingRollDecision.value.currentRoll}`;
     const dice = visibleRoll.value?.dice ?? [];
     if (dice.length === 0)
         return pendingRoll.value?.message ?? "等待投骰";
@@ -105,6 +180,8 @@ const latestDiceText = computed(() => {
 const rollButtonText = computed(() => {
     if (isRolling.value)
         return "摇骰中...";
+    if (pendingRollDecision.value)
+        return "等待选择";
     if (pendingRoll.value)
         return isPendingMine.value ? "继续投骰" : "等待继续投骰";
     return "投骰";
@@ -118,13 +195,17 @@ const turnGuideText = computed(() => {
         return "正在结算……";
     if (isRolling.value)
         return "骰子滚动中……";
+    if (pendingRollDecision.value && isDecisionMine.value)
+        return "骰点已揭示：选择一个骰子行动卡槽";
+    if (pendingRollDecision.value)
+        return `等待【${activePlayer.value?.nickname ?? "玩家"}】选择骰子用途`;
     if (pendingRoll.value && isPendingMine.value)
         return "技能触发：请继续投骰";
     if (!isMyTurn.value)
         return `等待【${activePlayer.value?.nickname ?? "玩家"}】行动`;
     if (!selectedTargetId.value)
-        return "轮到你了：请选择攻击目标";
-    return "轮到你了：点击投骰";
+        return "轮到你了：点击一个头像选择攻击目标";
+    return `已选择【${selectedTarget.value?.nickname ?? "目标"}】，点击投骰`;
 });
 const turnGuideTone = computed(() => {
     if (room.value.phase === "gameOver")
@@ -140,7 +221,7 @@ const turnGuideTone = computed(() => {
     return "waiting";
 });
 const canRoll = computed(() => {
-    if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || !isMyTurn.value)
+    if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || pendingRollDecision.value || !isMyTurn.value)
         return false;
     if (pendingRoll.value)
         return isPendingMine.value;
@@ -148,6 +229,20 @@ const canRoll = computed(() => {
 });
 function characterName(id) {
     return props.characters.find((character) => character.id === id)?.name ?? "未知职业";
+}
+function characterFor(id) {
+    return props.characters.find((character) => character.id === id);
+}
+function summonerSkillName(id) {
+    if (id === "first_aid")
+        return "急救术";
+    if (id === "iron_wall")
+        return "铁壁";
+    if (id === "fate_reroll")
+        return "命运重掷";
+    if (id === "last_stand")
+        return "破釜";
+    return "幸运骰";
 }
 function hpPercent(player) {
     if (player.maxHp <= 0)
@@ -163,9 +258,51 @@ function playerStatus(player) {
         return "待继续";
     if (player.id === activePlayer.value?.id)
         return "行动中";
-    if (room.value.effects.some((effect) => effect.type === "invincible"))
+    if (hasInvincible(player))
         return "无敌";
     return "待机";
+}
+function hasInvincible(player) {
+    return room.value.effects.some((effect) => effect.type === "invincible" && effect.sourcePlayerId === player.id);
+}
+function playerAvatar(player) {
+    const avatarId = player.avatarId;
+    const assignedAvatar = PLAYER_AVATARS.find((avatar) => avatar.id === avatarId);
+    if (assignedAvatar)
+        return assignedAvatar;
+    const hash = Array.from(player.id).reduce((sum, char) => ((sum << 5) - sum + char.charCodeAt(0)) | 0, 0);
+    return PLAYER_AVATARS[Math.abs(hash) % PLAYER_AVATARS.length];
+}
+function playerNumber(player) {
+    const index = room.value.players.findIndex((item) => item.id === player.id);
+    return index < 0 ? 0 : index + 1;
+}
+function lastRollText(player) {
+    if (pendingRollDecision.value?.actorId === player.id)
+        return `🎲 ${pendingRollDecision.value.currentRoll}`;
+    const rollEvent = room.value.battleLog.find((event) => event.type === "roll" && event.playerId === player.id && event.dice?.length);
+    if (!rollEvent?.dice?.length)
+        return "";
+    return `🎲 ${rollEvent.dice.join("、")}`;
+}
+function zhaoZilongHitText(player) {
+    if (player.characterId !== "zhaoZilong")
+        return "";
+    return `龙胆：${player.zhaoZilongHitCount ?? 0}/3`;
+}
+function canSelectTarget(player) {
+    return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.id !== props.playerId && !player.isDead;
+}
+function selectTargetFromSeat(player) {
+    if (!canSelectTarget(player))
+        return;
+    emit("selectTarget", player.id);
+}
+function openPlayerDetail(player) {
+    detailPlayerId.value = player.id;
+}
+function closePlayerDetail() {
+    detailPlayerId.value = null;
 }
 function isRecentDamageTarget(player) {
     return Boolean(floatingEffectFor(player, "damage"));
@@ -185,6 +322,59 @@ function rollWithAnimation() {
     rollRequestLocked.value = true;
     startRollAnimation(true);
     emit("rollDice");
+}
+function confirmDecision(choice, summonerSkillId) {
+    const decision = pendingRollDecision.value;
+    if (!decision || !isDecisionMine.value || rollRequestLocked.value)
+        return;
+    rollRequestLocked.value = true;
+    selectedActionSlot.value = choice === "settle" ? "normal_attack" : choice;
+    emit("confirmRollDecision", {
+        roomId: room.value.id,
+        pendingDecisionId: decision.id,
+        actionType: choice === "settle" ? "normal_attack" : choice,
+        skillId: summonerSkillId,
+        decisionId: decision.id,
+        choice,
+        summonerSkillId
+    });
+}
+function confirmActionSlot(slot) {
+    if (!pendingRollDecision.value || !isDecisionMine.value || rollRequestLocked.value || !slot.enabled)
+        return;
+    const summonerSkillId = slot.id === "summoner_skill" && isSummonerSkillId(slot.skillId) ? slot.skillId : undefined;
+    confirmDecision(slot.id, summonerSkillId);
+}
+function legacyActionSlots(decision) {
+    return [
+        {
+            id: "normal_attack",
+            label: "普通攻击",
+            enabled: true,
+            description: `使用 🎲 ${decision.currentRoll} 攻击目标`
+        },
+        {
+            id: "character_skill",
+            label: decision.availableCharacterSkillName ? `发动【${decision.availableCharacterSkillName}】` : "职业技能",
+            enabled: decision.canUseCharacterSkill,
+            description: decision.canUseCharacterSkill ? `消耗 🎲 ${decision.currentRoll} 发动` : "当前骰点不能发动",
+            reason: decision.canUseCharacterSkill ? undefined : "当前骰点不能发动",
+            skillId: decision.availableCharacterSkillId,
+            skillName: decision.availableCharacterSkillName
+        },
+        {
+            id: "summoner_skill",
+            label: decision.availableSummonerSkillName ? `发动【${decision.availableSummonerSkillName}】` : "召唤师技能",
+            enabled: Boolean(decision.availableSummonerSkillId),
+            description: decision.availableSummonerSkillName ? `使用 🎲 ${decision.currentRoll} 发动` : "当前不可用",
+            reason: decision.availableSummonerSkillId ? undefined : "当前不可用",
+            skillId: decision.availableSummonerSkillId,
+            skillName: decision.availableSummonerSkillName
+        }
+    ];
+}
+function isSummonerSkillId(value) {
+    return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
 }
 function sendEmote(emoteId) {
     if (emoteLocked.value)
@@ -337,8 +527,11 @@ function getLatestRoll(targetRoom) {
 function startEffectWindow(rollId) {
     if (animatedRollIds.has(rollId))
         return;
+    const effects = collectFloatingEffects(rollId);
+    if (effects.length === 0)
+        return;
     animatedRollIds.add(rollId);
-    activeFloatingEffects.value = collectFloatingEffects(rollId);
+    activeFloatingEffects.value = effects;
     activeEffectRollId.value = rollId;
     timers.push(window.setTimeout(() => {
         if (activeEffectRollId.value === rollId) {
@@ -394,18 +587,40 @@ const __VLS_ctx = {
 let __VLS_components;
 let __VLS_intrinsics;
 let __VLS_directives;
+/** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
+/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
+/** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-status-bar']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
+/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
+/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-panel']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "battle-layout" },
 });
 /** @type {__VLS_StyleScopedClasses['battle-layout']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "battle-header" },
+    ...{ class: "battle-status-bar" },
 });
-/** @type {__VLS_StyleScopedClasses['battle-header']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.room.id);
+/** @type {__VLS_StyleScopedClasses['battle-status-bar']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
@@ -413,16 +628,33 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({})
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.room.phase === "gameOver" ? `${__VLS_ctx.winner?.nickname ?? ""} 获胜` : __VLS_ctx.pendingRoll ? "等待继续" : __VLS_ctx.isMyTurn ? "轮到你" : "观战中");
+(__VLS_ctx.turnGuideText);
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.latestDiceText);
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "battle-tools" },
 });
 /** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
+            __VLS_ctx.showBattleLog = !__VLS_ctx.showBattleLog;
+            // @ts-ignore
+            [activePlayer, turnGuideText, latestDiceText, showBattleLog, showBattleLog,];
+        } },
+    ...{ class: "ghost-btn small-btn battle-log-trigger" },
+    type: "button",
+});
+/** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-trigger']} */ ;
+(__VLS_ctx.showBattleLog ? "收起日志" : "展开日志");
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
             __VLS_ctx.showRuleGuide = true;
             // @ts-ignore
-            [room, room, activePlayer, winner, pendingRoll, isMyTurn, showRuleGuide,];
+            [showBattleLog, showRuleGuide,];
         } },
     ...{ class: "ghost-btn small-btn" },
     type: "button",
@@ -430,33 +662,36 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 /** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "turn-guide" },
-    ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
-    'aria-live': "polite",
+    ...{ class: "battle-zone" },
 });
-/** @type {__VLS_StyleScopedClasses['turn-guide']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "zone-heading" },
+});
+/** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-(__VLS_ctx.turnGuideText);
-__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "combat-board" },
+    ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
+    'aria-label': "玩家头像战场",
 });
 /** @type {__VLS_StyleScopedClasses['combat-board']} */ ;
-for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
+for (const [player] of __VLS_vFor((__VLS_ctx.battlePlayers))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
         key: (player.id),
-        ...{ class: "player-card battle-card" },
+        ...{ class: "battle-seat" },
         ...{ class: ({
                 active: player.id === __VLS_ctx.activePlayer?.id,
                 dead: player.isDead,
-                selectable: __VLS_ctx.isMyTurn && !__VLS_ctx.pendingRoll && player.id !== __VLS_ctx.playerId && !player.isDead,
+                selectable: __VLS_ctx.canSelectTarget(player),
                 selected: __VLS_ctx.selectedTargetId === player.id,
                 hit: __VLS_ctx.isRecentDamageTarget(player),
                 healed: __VLS_ctx.isRecentHealTarget(player),
                 blocked: __VLS_ctx.isNoDamageTarget(player)
             }) },
     });
-    /** @type {__VLS_StyleScopedClasses['player-card']} */ ;
-    /** @type {__VLS_StyleScopedClasses['battle-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['battle-seat']} */ ;
     /** @type {__VLS_StyleScopedClasses['active']} */ ;
     /** @type {__VLS_StyleScopedClasses['dead']} */ ;
     /** @type {__VLS_StyleScopedClasses['selectable']} */ ;
@@ -464,27 +699,58 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
     /** @type {__VLS_StyleScopedClasses['hit']} */ ;
     /** @type {__VLS_StyleScopedClasses['healed']} */ ;
     /** @type {__VLS_StyleScopedClasses['blocked']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "card-title" },
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                __VLS_ctx.selectTargetFromSeat(player);
+                // @ts-ignore
+                [activePlayer, turnGuideTone, battlePlayers, canSelectTarget, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, selectTargetFromSeat,];
+            } },
+        ...{ class: "seat-button" },
+        type: "button",
+        'aria-pressed': (__VLS_ctx.selectedTargetId === player.id),
+        'aria-label': (`${__VLS_ctx.playerNumber(player)}号 ${player.nickname}，${__VLS_ctx.playerStatus(player)}`),
     });
-    /** @type {__VLS_StyleScopedClasses['card-title']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
-    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (index + 1);
-    (player.nickname);
+    /** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
+    if (__VLS_ctx.canSelectTarget(player) && __VLS_ctx.selectedTargetId !== player.id) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "attackable-mark" },
+        });
+        /** @type {__VLS_StyleScopedClasses['attackable-mark']} */ ;
+    }
+    if (__VLS_ctx.selectedTargetId === player.id) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "target-mark" },
+        });
+        /** @type {__VLS_StyleScopedClasses['target-mark']} */ ;
+    }
+    if (__VLS_ctx.hasInvincible(player)) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "invincible-mark" },
+            'aria-label': "无敌",
+        });
+        /** @type {__VLS_StyleScopedClasses['invincible-mark']} */ ;
+    }
     if (player.id === __VLS_ctx.room.hostId) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "host-mark" },
+            ...{ class: "seat-host-mark" },
         });
-        /** @type {__VLS_StyleScopedClasses['host-mark']} */ ;
+        /** @type {__VLS_StyleScopedClasses['seat-host-mark']} */ ;
     }
-    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-    (__VLS_ctx.characterName(player.characterId));
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        ...{ class: "status-pill" },
+        ...{ class: "avatar-ring" },
     });
-    /** @type {__VLS_StyleScopedClasses['status-pill']} */ ;
-    (__VLS_ctx.playerStatus(player));
+    /** @type {__VLS_StyleScopedClasses['avatar-ring']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "avatar-emoji" },
+    });
+    /** @type {__VLS_StyleScopedClasses['avatar-emoji']} */ ;
+    (__VLS_ctx.playerAvatar(player).emoji);
+    if (player.isDead) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "dead-label" },
+        });
+        /** @type {__VLS_StyleScopedClasses['dead-label']} */ ;
+    }
     let __VLS_0;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
     transition;
@@ -505,33 +771,8 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
         (__VLS_ctx.emoteFor(player)?.emoji);
     }
     // @ts-ignore
-    [room, room, activePlayer, pendingRoll, isMyTurn, turnGuideTone, turnGuideText, playerId, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, characterName, playerStatus, emoteFor, emoteFor, emoteFor,];
+    [canSelectTarget, selectedTargetId, selectedTargetId, selectedTargetId, playerNumber, playerStatus, hasInvincible, room, playerAvatar, emoteFor, emoteFor, emoteFor,];
     var __VLS_3;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "hp-row" },
-    });
-    /** @type {__VLS_StyleScopedClasses['hp-row']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (player.hp);
-    (player.maxHp);
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (player.shield);
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "hp-bar" },
-        'aria-label': "血量",
-    });
-    /** @type {__VLS_StyleScopedClasses['hp-bar']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({
-        ...{ style: ({ width: `${__VLS_ctx.hpPercent(player)}%` }) },
-    });
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "shield-bar" },
-        'aria-label': "护盾",
-    });
-    /** @type {__VLS_StyleScopedClasses['shield-bar']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({
-        ...{ style: ({ width: `${Math.min(100, player.shield * 8)}%` }) },
-    });
     let __VLS_6;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
     transition;
@@ -553,7 +794,7 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
         (__VLS_ctx.floatingEffectFor(player, "damage")?.value);
     }
     // @ts-ignore
-    [hpPercent, floatingEffectFor, floatingEffectFor, floatingEffectFor,];
+    [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
     var __VLS_9;
     let __VLS_12;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
@@ -600,30 +841,83 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
     // @ts-ignore
     [floatingEffectFor, floatingEffectFor,];
     var __VLS_21;
-    if (__VLS_ctx.isMyTurn && !__VLS_ctx.pendingRoll && player.id !== __VLS_ctx.playerId) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.isMyTurn && !__VLS_ctx.pendingRoll && player.id !== __VLS_ctx.playerId))
-                        return;
-                    __VLS_ctx.emit('selectTarget', player.id);
-                    // @ts-ignore
-                    [pendingRoll, isMyTurn, playerId, emit,];
-                } },
-            ...{ class: "target-btn" },
-            type: "button",
-            disabled: (player.isDead),
-        });
-        /** @type {__VLS_StyleScopedClasses['target-btn']} */ ;
-        (__VLS_ctx.selectedTargetId === player.id ? "目标锁定" : "选择攻击");
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "seat-name-row" },
+    });
+    /** @type {__VLS_StyleScopedClasses['seat-name-row']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.playerNumber(player));
+    (player.nickname);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                __VLS_ctx.openPlayerDetail(player);
+                // @ts-ignore
+                [playerNumber, openPlayerDetail,];
+            } },
+        ...{ class: "seat-info-btn" },
+        type: "button",
+        'aria-label': "查看玩家详情",
+    });
+    /** @type {__VLS_StyleScopedClasses['seat-info-btn']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "seat-tags" },
+    });
+    /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.characterName(player.characterId));
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.summonerSkillName(player.summonerSkillId));
+    (player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : "");
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "seat-stats" },
+    });
+    /** @type {__VLS_StyleScopedClasses['seat-stats']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (player.hp);
+    if (player.shield > 0) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (player.shield);
     }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "seat-roll" },
+    });
+    /** @type {__VLS_StyleScopedClasses['seat-roll']} */ ;
+    (__VLS_ctx.lastRollText(player));
+    if (__VLS_ctx.zhaoZilongHitText(player)) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "seat-roll" },
+        });
+        /** @type {__VLS_StyleScopedClasses['seat-roll']} */ ;
+        (__VLS_ctx.zhaoZilongHitText(player));
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "seat-status" },
+    });
+    /** @type {__VLS_StyleScopedClasses['seat-status']} */ ;
+    (__VLS_ctx.playerStatus(player));
     // @ts-ignore
-    [selectedTargetId,];
+    [playerStatus, characterName, summonerSkillName, lastRollText, zhaoZilongHitText, zhaoZilongHitText,];
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "dice-panel" },
+    ...{ class: "action-center" },
+    ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
+});
+/** @type {__VLS_StyleScopedClasses['action-center']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "action-phase" },
+});
+/** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.actionStageText);
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+(__VLS_ctx.selectedTargetText);
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "dice-panel action-arena" },
     ...{ class: ({ ready: __VLS_ctx.isMyTurn, rolling: __VLS_ctx.rollPhase === 'fast', slowing: __VLS_ctx.rollPhase === 'slow', paused: __VLS_ctx.rollPhase === 'pause', reveal: __VLS_ctx.rollPhase === 'reveal', rolled: __VLS_ctx.visibleRoll }) },
 });
 /** @type {__VLS_StyleScopedClasses['dice-panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-arena']} */ ;
 /** @type {__VLS_StyleScopedClasses['ready']} */ ;
 /** @type {__VLS_StyleScopedClasses['rolling']} */ ;
 /** @type {__VLS_StyleScopedClasses['slowing']} */ ;
@@ -645,7 +939,7 @@ for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPha
     });
     (dice);
     // @ts-ignore
-    [isMyTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
+    [turnGuideTone, actionStageText, selectedTargetText, isMyTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
 }
 let __VLS_24;
 /** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
@@ -701,13 +995,58 @@ if (__VLS_ctx.latestSkill.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
     (__VLS_ctx.latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；"));
 }
-if (__VLS_ctx.latestDamage) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    (__VLS_ctx.latestDamage.damage ?? 0);
-}
-if (__VLS_ctx.latestHeal) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    (__VLS_ctx.latestHeal.healing ?? 0);
+if (__VLS_ctx.pendingRollDecision && !__VLS_ctx.isRolling) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "dice-action-slots" },
+    });
+    /** @type {__VLS_StyleScopedClasses['dice-action-slots']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "slot-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['slot-heading']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.pendingRollDecision.currentRoll);
+    if (!__VLS_ctx.isDecisionMine) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (__VLS_ctx.activePlayer?.nickname ?? "玩家");
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "slot-grid" },
+        ...{ class: ({ spectator: !__VLS_ctx.isDecisionMine }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['slot-grid']} */ ;
+    /** @type {__VLS_StyleScopedClasses['spectator']} */ ;
+    for (const [slot] of __VLS_vFor((__VLS_ctx.actionSlots))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.pendingRollDecision && !__VLS_ctx.isRolling))
+                        return;
+                    __VLS_ctx.confirmActionSlot(slot);
+                    // @ts-ignore
+                    [activePlayer, latestDiceText, visibleRoll, visibleRoll, isRolling, isRolling, pendingRoll, pendingRoll, latestSkill, latestSkill, pendingRollDecision, pendingRollDecision, isDecisionMine, isDecisionMine, actionSlots, confirmActionSlot,];
+                } },
+            key: (slot.id),
+            ...{ class: "dice-action-slot" },
+            type: "button",
+            ...{ class: ({ enabled: slot.enabled && __VLS_ctx.isDecisionMine, disabled: !slot.enabled || !__VLS_ctx.isDecisionMine, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
+            disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled),
+        });
+        /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
+        /** @type {__VLS_StyleScopedClasses['enabled']} */ ;
+        /** @type {__VLS_StyleScopedClasses['disabled']} */ ;
+        /** @type {__VLS_StyleScopedClasses['settling']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "slot-dice" },
+        });
+        /** @type {__VLS_StyleScopedClasses['slot-dice']} */ ;
+        (__VLS_ctx.pendingRollDecision.currentRoll);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (__VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked ? "结算中……" : slot.label);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+        (slot.enabled ? slot.description : slot.reason ?? slot.description);
+        // @ts-ignore
+        [pendingRollDecision, isDecisionMine, isDecisionMine, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
+    }
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (__VLS_ctx.rollWithAnimation) },
@@ -717,6 +1056,174 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 });
 /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
 (__VLS_ctx.rollButtonText);
+if (__VLS_ctx.me) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "self-panel" },
+        ...{ class: ({ active: __VLS_ctx.me.id === __VLS_ctx.activePlayer?.id, dead: __VLS_ctx.me.isDead }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['self-panel']} */ ;
+    /** @type {__VLS_StyleScopedClasses['active']} */ ;
+    /** @type {__VLS_StyleScopedClasses['dead']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.me))
+                    return;
+                __VLS_ctx.openPlayerDetail(__VLS_ctx.me);
+                // @ts-ignore
+                [activePlayer, openPlayerDetail, rollWithAnimation, canRoll, rollButtonText, me, me, me, me,];
+            } },
+        ...{ class: "self-avatar" },
+        type: "button",
+        'aria-label': "查看自己详情",
+    });
+    /** @type {__VLS_StyleScopedClasses['self-avatar']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.playerAvatar(__VLS_ctx.me).emoji);
+    let __VLS_30;
+    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+    transition;
+    // @ts-ignore
+    const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({
+        name: "emote-bubble",
+    }));
+    const __VLS_32 = __VLS_31({
+        name: "emote-bubble",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_31));
+    const { default: __VLS_35 } = __VLS_33.slots;
+    if (__VLS_ctx.emoteFor(__VLS_ctx.me)) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (__VLS_ctx.emoteFor(__VLS_ctx.me)?.key),
+            ...{ class: "emote-bubble" },
+        });
+        /** @type {__VLS_StyleScopedClasses['emote-bubble']} */ ;
+        (__VLS_ctx.emoteFor(__VLS_ctx.me)?.emoji);
+    }
+    // @ts-ignore
+    [playerAvatar, emoteFor, emoteFor, emoteFor, me, me, me, me,];
+    var __VLS_33;
+    let __VLS_36;
+    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+    transition;
+    // @ts-ignore
+    const __VLS_37 = __VLS_asFunctionalComponent1(__VLS_36, new __VLS_36({
+        name: "float-pop",
+    }));
+    const __VLS_38 = __VLS_37({
+        name: "float-pop",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_37));
+    const { default: __VLS_41 } = __VLS_39.slots;
+    if (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'damage')) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+            key: (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'damage')?.key),
+            ...{ class: "float-number damage-pop" },
+        });
+        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+        /** @type {__VLS_StyleScopedClasses['damage-pop']} */ ;
+        (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, "damage")?.value);
+    }
+    // @ts-ignore
+    [floatingEffectFor, floatingEffectFor, floatingEffectFor, me, me, me,];
+    var __VLS_39;
+    let __VLS_42;
+    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+    transition;
+    // @ts-ignore
+    const __VLS_43 = __VLS_asFunctionalComponent1(__VLS_42, new __VLS_42({
+        name: "float-pop",
+    }));
+    const __VLS_44 = __VLS_43({
+        name: "float-pop",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_43));
+    const { default: __VLS_47 } = __VLS_45.slots;
+    if (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'heal')) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+            key: (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'heal')?.key),
+            ...{ class: "float-number heal-pop" },
+        });
+        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+        /** @type {__VLS_StyleScopedClasses['heal-pop']} */ ;
+        (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, "heal")?.value);
+    }
+    // @ts-ignore
+    [floatingEffectFor, floatingEffectFor, floatingEffectFor, me, me, me,];
+    var __VLS_45;
+    let __VLS_48;
+    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+    transition;
+    // @ts-ignore
+    const __VLS_49 = __VLS_asFunctionalComponent1(__VLS_48, new __VLS_48({
+        name: "float-pop",
+    }));
+    const __VLS_50 = __VLS_49({
+        name: "float-pop",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_49));
+    const { default: __VLS_53 } = __VLS_51.slots;
+    if (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'noEffect')) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+            key: (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'noEffect')?.key),
+            ...{ class: "float-number no-pop" },
+        });
+        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+        /** @type {__VLS_StyleScopedClasses['no-pop']} */ ;
+    }
+    // @ts-ignore
+    [floatingEffectFor, floatingEffectFor, me, me,];
+    var __VLS_51;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "self-main" },
+    });
+    /** @type {__VLS_StyleScopedClasses['self-main']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "self-title" },
+    });
+    /** @type {__VLS_StyleScopedClasses['self-title']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.me.nickname);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.characterName(__VLS_ctx.me.characterId));
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "self-meta" },
+    });
+    /** @type {__VLS_StyleScopedClasses['self-meta']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.me.hp);
+    (__VLS_ctx.me.maxHp);
+    if (__VLS_ctx.me.shield > 0) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (__VLS_ctx.me.shield);
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.playerStatus(__VLS_ctx.me));
+    (__VLS_ctx.selfActionStateText);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.selfSummonerText);
+    if (__VLS_ctx.lastRollText(__VLS_ctx.me)) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (__VLS_ctx.lastRollText(__VLS_ctx.me));
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "self-hp-bar" },
+        'aria-label': "自己的血量",
+    });
+    /** @type {__VLS_StyleScopedClasses['self-hp-bar']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({
+        ...{ style: ({ width: `${__VLS_ctx.hpPercent(__VLS_ctx.me)}%` }) },
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.me))
+                    return;
+                __VLS_ctx.openPlayerDetail(__VLS_ctx.me);
+                // @ts-ignore
+                [playerStatus, openPlayerDetail, characterName, lastRollText, lastRollText, me, me, me, me, me, me, me, me, me, me, me, selfActionStateText, selfSummonerText, hpPercent,];
+            } },
+        ...{ class: "seat-info-btn self-info-btn" },
+        type: "button",
+        'aria-label': "查看自己详情",
+    });
+    /** @type {__VLS_StyleScopedClasses['seat-info-btn']} */ ;
+    /** @type {__VLS_StyleScopedClasses['self-info-btn']} */ ;
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "emote-panel" },
     'aria-label': "固定表情",
@@ -727,7 +1234,7 @@ for (const [emote] of __VLS_vFor((__VLS_ctx.EMOTE_OPTIONS))) {
         ...{ onClick: (...[$event]) => {
                 __VLS_ctx.sendEmote(emote.id);
                 // @ts-ignore
-                [pendingRoll, pendingRoll, visibleRoll, visibleRoll, isRolling, latestDiceText, latestSkill, latestSkill, latestDamage, latestDamage, latestHeal, latestHeal, rollWithAnimation, canRoll, rollButtonText, EMOTE_OPTIONS, sendEmote,];
+                [EMOTE_OPTIONS, sendEmote,];
             } },
         key: (emote.id),
         ...{ class: "emote-btn" },
@@ -792,21 +1299,31 @@ if (__VLS_ctx.room.phase === 'gameOver') {
     }
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "log-panel battle-log" },
+    ...{ class: "battle-log-inline" },
 });
-/** @type {__VLS_StyleScopedClasses['log-panel']} */ ;
-/** @type {__VLS_StyleScopedClasses['battle-log']} */ ;
+/** @type {__VLS_StyleScopedClasses['battle-log-inline']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "log-title" },
+    ...{ class: "log-inline-title" },
 });
-/** @type {__VLS_StyleScopedClasses['log-title']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-if (__VLS_ctx.latestShownEvent) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (__VLS_ctx.latestShownEvent.message);
-}
-__VLS_asFunctionalElement1(__VLS_intrinsics.ol, __VLS_intrinsics.ol)({});
-for (const [event, index] of __VLS_vFor((__VLS_ctx.renderedBattleLog))) {
+/** @type {__VLS_StyleScopedClasses['log-inline-title']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
+            __VLS_ctx.showBattleLog = !__VLS_ctx.showBattleLog;
+            // @ts-ignore
+            [showBattleLog, showBattleLog,];
+        } },
+    ...{ class: "ghost-btn small-btn" },
+    type: "button",
+});
+/** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+(__VLS_ctx.showBattleLog ? "收起日志" : "展开日志");
+__VLS_asFunctionalElement1(__VLS_intrinsics.ol, __VLS_intrinsics.ol)({
+    ...{ class: ({ expanded: __VLS_ctx.showBattleLog }) },
+});
+/** @type {__VLS_StyleScopedClasses['expanded']} */ ;
+for (const [event, index] of __VLS_vFor(((__VLS_ctx.showBattleLog ? __VLS_ctx.renderedBattleLog : __VLS_ctx.latestLogPreview)))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({
         key: (event.id),
         ...{ class: ({ newest: index === 0 }) },
@@ -817,7 +1334,7 @@ for (const [event, index] of __VLS_vFor((__VLS_ctx.renderedBattleLog))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     (event.message);
     // @ts-ignore
-    [latestShownEvent, latestShownEvent, renderedBattleLog,];
+    [showBattleLog, showBattleLog, showBattleLog, renderedBattleLog, latestLogPreview,];
 }
 if (__VLS_ctx.activeHighlight) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
@@ -837,30 +1354,103 @@ if (__VLS_ctx.activeHighlight) {
         (__VLS_ctx.activeHighlight.valueText);
     }
 }
+if (__VLS_ctx.detailPlayer) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ onClick: (__VLS_ctx.closePlayerDetail) },
+        ...{ class: "player-detail-backdrop" },
+        role: "presentation",
+    });
+    /** @type {__VLS_StyleScopedClasses['player-detail-backdrop']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "player-detail-panel" },
+        role: "dialog",
+        'aria-modal': "true",
+        'aria-label': (`${__VLS_ctx.detailPlayer.nickname} 状态详情`),
+    });
+    /** @type {__VLS_StyleScopedClasses['player-detail-panel']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({
+        ...{ class: "player-detail-header" },
+    });
+    /** @type {__VLS_StyleScopedClasses['player-detail-header']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "detail-avatar" },
+    });
+    /** @type {__VLS_StyleScopedClasses['detail-avatar']} */ ;
+    (__VLS_ctx.playerAvatar(__VLS_ctx.detailPlayer).emoji);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    (__VLS_ctx.detailPlayer.nickname);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    (__VLS_ctx.characterName(__VLS_ctx.detailPlayer.characterId));
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.closePlayerDetail) },
+        ...{ class: "detail-close-btn" },
+        type: "button",
+        'aria-label': "关闭详情",
+    });
+    /** @type {__VLS_StyleScopedClasses['detail-close-btn']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dl, __VLS_intrinsics.dl)({
+        ...{ class: "player-detail-list" },
+    });
+    /** @type {__VLS_StyleScopedClasses['player-detail-list']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dt, __VLS_intrinsics.dt)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dd, __VLS_intrinsics.dd)({});
+    (__VLS_ctx.detailPlayer.hp);
+    (__VLS_ctx.detailPlayer.maxHp);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dt, __VLS_intrinsics.dt)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dd, __VLS_intrinsics.dd)({});
+    (__VLS_ctx.detailPlayer.shield);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dt, __VLS_intrinsics.dt)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dd, __VLS_intrinsics.dd)({});
+    (__VLS_ctx.playerStatus(__VLS_ctx.detailPlayer));
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dt, __VLS_intrinsics.dt)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dd, __VLS_intrinsics.dd)({});
+    (__VLS_ctx.detailPlayer.isDead ? "已死亡" : "存活");
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dt, __VLS_intrinsics.dt)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.dd, __VLS_intrinsics.dd)({});
+    (__VLS_ctx.lastRollText(__VLS_ctx.detailPlayer) || "暂无");
+    if (__VLS_ctx.zhaoZilongHitText(__VLS_ctx.detailPlayer)) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.dt, __VLS_intrinsics.dt)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.dd, __VLS_intrinsics.dd)({});
+        (__VLS_ctx.zhaoZilongHitText(__VLS_ctx.detailPlayer));
+    }
+    if (__VLS_ctx.characterFor(__VLS_ctx.detailPlayer.characterId)?.description?.length) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.dt, __VLS_intrinsics.dt)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.dd, __VLS_intrinsics.dd)({});
+        (__VLS_ctx.characterFor(__VLS_ctx.detailPlayer.characterId)?.description.join("；"));
+    }
+}
 if (__VLS_ctx.showRuleGuide) {
-    const __VLS_30 = RuleGuideDialog;
+    const __VLS_54 = RuleGuideDialog;
     // @ts-ignore
-    const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({
+    const __VLS_55 = __VLS_asFunctionalComponent1(__VLS_54, new __VLS_54({
         ...{ 'onClose': {} },
         characters: (__VLS_ctx.characters),
     }));
-    const __VLS_32 = __VLS_31({
+    const __VLS_56 = __VLS_55({
         ...{ 'onClose': {} },
         characters: (__VLS_ctx.characters),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_31));
-    let __VLS_35;
-    const __VLS_36 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_55));
+    let __VLS_59;
+    const __VLS_60 = {
         ...{ close: {} },
         onClose: (...[$event]) => {
             if (!(__VLS_ctx.showRuleGuide))
                 return;
             __VLS_ctx.showRuleGuide = false;
             // @ts-ignore
-            [showRuleGuide, showRuleGuide, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, characters,];
+            [showRuleGuide, showRuleGuide, playerStatus, playerAvatar, characterName, lastRollText, zhaoZilongHitText, zhaoZilongHitText, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, closePlayerDetail, closePlayerDetail, characterFor, characterFor, characters,];
         },
     };
-    var __VLS_33;
-    var __VLS_34;
+    var __VLS_57;
+    var __VLS_58;
 }
 // @ts-ignore
 [];

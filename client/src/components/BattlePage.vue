@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
-import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, Room, SkillHint } from "@career-war/shared";
+import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectTarget: [targetId: string];
   rollDice: [];
+  confirmRollDecision: [payload: { roomId: string; pendingDecisionId: string; actionType: RollActionType; skillId?: string; decisionId: string; choice: RollDecisionChoice; summonerSkillId?: SummonerSkillId }];
 }>();
 
 type RollPhase = "idle" | "fast" | "slow" | "pause" | "reveal";
@@ -34,6 +35,10 @@ type VisibleEmote = PlayerEmoteEvent & {
   key: string;
   emoji: string;
 };
+type AvatarOption = {
+  id: string;
+  emoji: string;
+};
 
 const MAX_RENDERED_LOG = 50;
 const EMOTE_DISPLAY_MS = 1500;
@@ -46,6 +51,18 @@ const EMOTE_OPTIONS: EmoteOption[] = [
   { id: "angry", label: "愤怒", emoji: "😡" },
   { id: "like", label: "点赞", emoji: "👍" },
   { id: "question", label: "疑惑", emoji: "❓" }
+];
+const PLAYER_AVATARS: AvatarOption[] = [
+  { id: "wolf", emoji: "🐺" },
+  { id: "fox", emoji: "🦊" },
+  { id: "cat", emoji: "🐱" },
+  { id: "dog", emoji: "🐶" },
+  { id: "panda", emoji: "🐼" },
+  { id: "frog", emoji: "🐸" },
+  { id: "monkey", emoji: "🐵" },
+  { id: "dragon", emoji: "🐲" },
+  { id: "robot", emoji: "🤖" },
+  { id: "ghost", emoji: "👻" }
 ];
 
 const displayedRoom = ref<Room>(cloneRoomForDisplay(props.room));
@@ -64,6 +81,9 @@ const activeHighlight = ref<CharacterHighlight | null>(null);
 const activeSkillHints = ref<SkillHint[]>([]);
 const showRuleGuide = ref(false);
 const emoteLocked = ref(false);
+const detailPlayerId = ref<string | null>(null);
+const showBattleLog = ref(false);
+const selectedActionSlot = ref<RollActionType | null>(null);
 let rollingTimer: number | undefined;
 let emoteUnlockTimer: number | undefined;
 let highlightTimer: number | undefined;
@@ -77,13 +97,55 @@ const activePlayer = computed(() => room.value.players[room.value.activePlayerIn
 const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
 const me = computed(() => room.value.players.find((player) => player.id === props.playerId));
 const selectedTargetId = computed(() => me.value?.selectedTargetId);
+const selectedTarget = computed(() => room.value.players.find((player) => player.id === selectedTargetId.value));
+const battlePlayers = computed(() => {
+  const others = room.value.players.filter((player) => player.id !== props.playerId);
+  return others.length > 0 ? others : room.value.players;
+});
 const aliveEnemies = computed(() => room.value.players.filter((player) => !player.isDead && player.id !== props.playerId));
 const winner = computed(() => room.value.players.find((player) => player.id === room.value.winnerId));
 const pendingRoll = computed(() => room.value.pendingRoll);
+const pendingRollDecision = computed(() => room.value.pendingRollDecision);
 const isPendingMine = computed(() => pendingRoll.value?.playerId === props.playerId);
+const isDecisionMine = computed(() => pendingRollDecision.value?.actorId === props.playerId);
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
+const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
+const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
+const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
+const latestLogPreview = computed(() => room.value.battleLog.slice(0, 3));
+const actionStageText = computed(() => {
+  if (room.value.phase === "gameOver") return "游戏结束";
+  if (me.value?.isDead) return "你已死亡，等待本局结束";
+  if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
+  if (isRolling.value) return "骰子滚动中……";
+  if (pendingRollDecision.value && isDecisionMine.value) return "请选择本回合行动";
+  if (pendingRollDecision.value) return `等待 ${activePlayer.value?.nickname ?? "玩家"} 选择骰子用途`;
+  if (pendingRoll.value && isPendingMine.value) return "技能触发：请继续投骰";
+  if (!isMyTurn.value) return `等待 ${activePlayer.value?.nickname ?? "玩家"} 行动`;
+  if (!selectedTargetId.value) return "请选择一个目标";
+  return `已选择目标：${selectedTarget.value?.nickname ?? "目标"}，可以投骰`;
+});
+const selfActionStateText = computed(() => {
+  if (!me.value) return "未入场";
+  if (me.value.isDead) return "已死亡";
+  if (isMyTurn.value) return selectedTargetId.value ? "可以投骰" : "选择目标中";
+  return "等待行动";
+});
+const selfSummonerText = computed(() => {
+  const player = me.value;
+  if (!player) return "召唤师技能：无";
+  const name = summonerSkillName(player.summonerSkillId);
+  const cooldown = player.summonerSkillCooldown ?? 0;
+  return cooldown > 0 ? `${name} 冷却 ${cooldown}` : `${name} 可用`;
+});
+const actionSlots = computed<RollDecisionAvailableAction[]>(() => {
+  const decision = pendingRollDecision.value;
+  if (!decision) return [];
+  if (decision.availableActions?.length) return decision.availableActions;
+  return legacyActionSlots(decision);
+});
 
 watch(
   () => props.room,
@@ -104,6 +166,9 @@ watch(
     }
 
     displayedRoom.value = cloneRoomForDisplay(nextRoom);
+    rollRequestLocked.value = false;
+    selectedActionSlot.value = null;
+    if (visibleRollId.value) startEffectWindow(visibleRollId.value);
   },
   { deep: false }
 );
@@ -136,13 +201,11 @@ const latestActionEvents = computed(() => {
   return room.value.battleLog.slice(firstRollIndex, nextRollIndex < 0 ? undefined : nextRollIndex);
 });
 
-const latestDamage = computed(() => latestActionEvents.value.find((event) => event.type === "damage"));
-const latestHeal = computed(() => latestActionEvents.value.find((event) => event.type === "heal"));
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
-const latestShownEvent = computed(() => room.value.battleLog[0]);
 const renderedBattleLog = computed(() => room.value.battleLog.slice(0, MAX_RENDERED_LOG));
 const latestDiceText = computed(() => {
   if (isRolling.value) return pendingRoll.value?.message ?? "";
+  if (pendingRollDecision.value) return `当前骰点 ${pendingRollDecision.value.currentRoll}`;
   const dice = visibleRoll.value?.dice ?? [];
   if (dice.length === 0) return pendingRoll.value?.message ?? "等待投骰";
   return `投出了 ${dice.join("、")} 点`;
@@ -150,6 +213,7 @@ const latestDiceText = computed(() => {
 
 const rollButtonText = computed(() => {
   if (isRolling.value) return "摇骰中...";
+  if (pendingRollDecision.value) return "等待选择";
   if (pendingRoll.value) return isPendingMine.value ? "继续投骰" : "等待继续投骰";
   return "投骰";
 });
@@ -159,10 +223,12 @@ const turnGuideText = computed(() => {
   if (me.value?.isDead) return "你已死亡，等待本局结束";
   if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
   if (isRolling.value) return "骰子滚动中……";
+  if (pendingRollDecision.value && isDecisionMine.value) return "骰点已揭示：选择一个骰子行动卡槽";
+  if (pendingRollDecision.value) return `等待【${activePlayer.value?.nickname ?? "玩家"}】选择骰子用途`;
   if (pendingRoll.value && isPendingMine.value) return "技能触发：请继续投骰";
   if (!isMyTurn.value) return `等待【${activePlayer.value?.nickname ?? "玩家"}】行动`;
-  if (!selectedTargetId.value) return "轮到你了：请选择攻击目标";
-  return "轮到你了：点击投骰";
+  if (!selectedTargetId.value) return "轮到你了：点击一个头像选择攻击目标";
+  return `已选择【${selectedTarget.value?.nickname ?? "目标"}】，点击投骰`;
 });
 
 const turnGuideTone = computed(() => {
@@ -175,13 +241,25 @@ const turnGuideTone = computed(() => {
 });
 
 const canRoll = computed(() => {
-  if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || !isMyTurn.value) return false;
+  if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || pendingRollDecision.value || !isMyTurn.value) return false;
   if (pendingRoll.value) return isPendingMine.value;
   return Boolean(selectedTargetId.value) && aliveEnemies.value.length > 0;
 });
 
 function characterName(id: string | undefined): string {
   return props.characters.find((character) => character.id === id)?.name ?? "未知职业";
+}
+
+function characterFor(id: string | undefined): Character | undefined {
+  return props.characters.find((character) => character.id === id);
+}
+
+function summonerSkillName(id: SummonerSkillId | undefined): string {
+  if (id === "first_aid") return "急救术";
+  if (id === "iron_wall") return "铁壁";
+  if (id === "fate_reroll") return "命运重掷";
+  if (id === "last_stand") return "破釜";
+  return "幸运骰";
 }
 
 function hpPercent(player: Player): number {
@@ -194,8 +272,55 @@ function playerStatus(player: Player): string {
   if (player.isDead) return "死亡";
   if (pendingRoll.value?.playerId === player.id) return "待继续";
   if (player.id === activePlayer.value?.id) return "行动中";
-  if (room.value.effects.some((effect) => effect.type === "invincible")) return "无敌";
+  if (hasInvincible(player)) return "无敌";
   return "待机";
+}
+
+function hasInvincible(player: Player): boolean {
+  return room.value.effects.some((effect) => effect.type === "invincible" && effect.sourcePlayerId === player.id);
+}
+
+function playerAvatar(player: Player): AvatarOption {
+  const avatarId = (player as Player & { avatarId?: string }).avatarId;
+  const assignedAvatar = PLAYER_AVATARS.find((avatar) => avatar.id === avatarId);
+  if (assignedAvatar) return assignedAvatar;
+
+  const hash = Array.from(player.id).reduce((sum, char) => ((sum << 5) - sum + char.charCodeAt(0)) | 0, 0);
+  return PLAYER_AVATARS[Math.abs(hash) % PLAYER_AVATARS.length];
+}
+
+function playerNumber(player: Player): number {
+  const index = room.value.players.findIndex((item) => item.id === player.id);
+  return index < 0 ? 0 : index + 1;
+}
+
+function lastRollText(player: Player): string {
+  if (pendingRollDecision.value?.actorId === player.id) return `🎲 ${pendingRollDecision.value.currentRoll}`;
+  const rollEvent = room.value.battleLog.find((event) => event.type === "roll" && event.playerId === player.id && event.dice?.length);
+  if (!rollEvent?.dice?.length) return "";
+  return `🎲 ${rollEvent.dice.join("、")}`;
+}
+
+function zhaoZilongHitText(player: Player): string {
+  if (player.characterId !== "zhaoZilong") return "";
+  return `龙胆：${player.zhaoZilongHitCount ?? 0}/3`;
+}
+
+function canSelectTarget(player: Player): boolean {
+  return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.id !== props.playerId && !player.isDead;
+}
+
+function selectTargetFromSeat(player: Player): void {
+  if (!canSelectTarget(player)) return;
+  emit("selectTarget", player.id);
+}
+
+function openPlayerDetail(player: Player): void {
+  detailPlayerId.value = player.id;
+}
+
+function closePlayerDetail(): void {
+  detailPlayerId.value = null;
 }
 
 function isRecentDamageTarget(player: Player): boolean {
@@ -219,6 +344,61 @@ function rollWithAnimation(): void {
   rollRequestLocked.value = true;
   startRollAnimation(true);
   emit("rollDice");
+}
+
+function confirmDecision(choice: RollDecisionChoice, summonerSkillId?: SummonerSkillId): void {
+  const decision = pendingRollDecision.value;
+  if (!decision || !isDecisionMine.value || rollRequestLocked.value) return;
+  rollRequestLocked.value = true;
+  selectedActionSlot.value = choice === "settle" ? "normal_attack" : choice;
+  emit("confirmRollDecision", {
+    roomId: room.value.id,
+    pendingDecisionId: decision.id,
+    actionType: choice === "settle" ? "normal_attack" : choice,
+    skillId: summonerSkillId,
+    decisionId: decision.id,
+    choice,
+    summonerSkillId
+  });
+}
+
+function confirmActionSlot(slot: RollDecisionAvailableAction): void {
+  if (!pendingRollDecision.value || !isDecisionMine.value || rollRequestLocked.value || !slot.enabled) return;
+  const summonerSkillId = slot.id === "summoner_skill" && isSummonerSkillId(slot.skillId) ? slot.skillId : undefined;
+  confirmDecision(slot.id, summonerSkillId);
+}
+
+function legacyActionSlots(decision: NonNullable<Room["pendingRollDecision"]>): RollDecisionAvailableAction[] {
+  return [
+    {
+      id: "normal_attack",
+      label: "普通攻击",
+      enabled: true,
+      description: `使用 🎲 ${decision.currentRoll} 攻击目标`
+    },
+    {
+      id: "character_skill",
+      label: decision.availableCharacterSkillName ? `发动【${decision.availableCharacterSkillName}】` : "职业技能",
+      enabled: decision.canUseCharacterSkill,
+      description: decision.canUseCharacterSkill ? `消耗 🎲 ${decision.currentRoll} 发动` : "当前骰点不能发动",
+      reason: decision.canUseCharacterSkill ? undefined : "当前骰点不能发动",
+      skillId: decision.availableCharacterSkillId,
+      skillName: decision.availableCharacterSkillName
+    },
+    {
+      id: "summoner_skill",
+      label: decision.availableSummonerSkillName ? `发动【${decision.availableSummonerSkillName}】` : "召唤师技能",
+      enabled: Boolean(decision.availableSummonerSkillId),
+      description: decision.availableSummonerSkillName ? `使用 🎲 ${decision.currentRoll} 发动` : "当前不可用",
+      reason: decision.availableSummonerSkillId ? undefined : "当前不可用",
+      skillId: decision.availableSummonerSkillId,
+      skillName: decision.availableSummonerSkillName
+    }
+  ];
+}
+
+function isSummonerSkillId(value: unknown): value is SummonerSkillId {
+  return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
 }
 
 function sendEmote(emoteId: EmoteId): void {
@@ -381,8 +561,10 @@ function getLatestRoll(targetRoom: Room): GameEvent | undefined {
 
 function startEffectWindow(rollId: string): void {
   if (animatedRollIds.has(rollId)) return;
+  const effects = collectFloatingEffects(rollId);
+  if (effects.length === 0) return;
   animatedRollIds.add(rollId);
-  activeFloatingEffects.value = collectFloatingEffects(rollId);
+  activeFloatingEffects.value = effects;
   activeEffectRollId.value = rollId;
   timers.push(window.setTimeout(() => {
     if (activeEffectRollId.value === rollId) {
@@ -437,113 +619,184 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
 <template>
   <section class="battle-layout">
-    <section class="battle-header">
+    <section class="battle-status-bar">
       <div>
-        <span>房间</span>
-        <strong>{{ room.id }}</strong>
-      </div>
-      <div>
-        <span>当前回合</span>
+        <span>当前行动</span>
         <strong>{{ activePlayer?.nickname ?? "等待中" }}</strong>
       </div>
       <div>
-        <span>状态</span>
-        <strong>{{ room.phase === "gameOver" ? `${winner?.nickname ?? ""} 获胜` : pendingRoll ? "等待继续" : isMyTurn ? "轮到你" : "观战中" }}</strong>
+        <span>提示</span>
+        <strong>{{ turnGuideText }}</strong>
+      </div>
+      <div>
+        <span>骰子</span>
+        <strong>{{ latestDiceText }}</strong>
       </div>
     </section>
 
     <section class="battle-tools">
+      <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">{{ showBattleLog ? "收起日志" : "展开日志" }}</button>
       <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
     </section>
 
-    <section class="turn-guide" :class="`turn-guide-${turnGuideTone}`" aria-live="polite">
-      <span>{{ turnGuideText }}</span>
-    </section>
-
-    <section class="combat-board">
-      <article
-        v-for="(player, index) in room.players"
-        :key="player.id"
-        class="player-card battle-card"
-        :class="{
-          active: player.id === activePlayer?.id,
-          dead: player.isDead,
-          selectable: isMyTurn && !pendingRoll && player.id !== playerId && !player.isDead,
-          selected: selectedTargetId === player.id,
-          hit: isRecentDamageTarget(player),
-          healed: isRecentHealTarget(player),
-          blocked: isNoDamageTarget(player)
-        }"
-      >
-        <div class="card-title">
-          <div>
-            <strong>{{ index + 1 }}号 {{ player.nickname }}</strong>
-            <span v-if="player.id === room.hostId" class="host-mark">房主</span>
-            <small>{{ characterName(player.characterId) }}</small>
-          </div>
-          <span class="status-pill">{{ playerStatus(player) }}</span>
-        </div>
-
-        <transition name="emote-bubble">
-          <span v-if="emoteFor(player)" :key="emoteFor(player)?.key" class="emote-bubble">{{ emoteFor(player)?.emoji }}</span>
-        </transition>
-
-        <div class="hp-row">
-          <span>HP {{ player.hp }}/{{ player.maxHp }}</span>
-          <span>护盾 {{ player.shield }}</span>
-        </div>
-        <div class="hp-bar" aria-label="血量">
-          <i :style="{ width: `${hpPercent(player)}%` }"></i>
-        </div>
-        <div class="shield-bar" aria-label="护盾">
-          <i :style="{ width: `${Math.min(100, player.shield * 8)}%` }"></i>
-        </div>
-
-        <transition name="float-pop">
-          <b v-if="floatingEffectFor(player, 'damage')" :key="floatingEffectFor(player, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(player, "damage")?.value }}</b>
-        </transition>
-        <transition name="float-pop">
-          <b v-if="floatingEffectFor(player, 'heal')" :key="floatingEffectFor(player, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(player, "heal")?.value }}</b>
-        </transition>
-        <transition name="float-pop">
-          <b v-if="floatingEffectFor(player, 'noEffect')" :key="floatingEffectFor(player, 'noEffect')?.key" class="float-number no-pop">无效</b>
-        </transition>
-
-        <button
-          v-if="isMyTurn && !pendingRoll && player.id !== playerId"
-          class="target-btn"
-          type="button"
-          :disabled="player.isDead"
-          @click="emit('selectTarget', player.id)"
+    <section class="battle-zone">
+      <div class="zone-heading">
+        <strong>其他玩家</strong>
+        <span>点击头像选择攻击目标</span>
+      </div>
+      <div class="combat-board" :class="`turn-guide-${turnGuideTone}`" aria-label="玩家头像战场">
+        <article
+          v-for="player in battlePlayers"
+          :key="player.id"
+          class="battle-seat"
+          :class="{
+            active: player.id === activePlayer?.id,
+            dead: player.isDead,
+            selectable: canSelectTarget(player),
+            selected: selectedTargetId === player.id,
+            hit: isRecentDamageTarget(player),
+            healed: isRecentHealTarget(player),
+            blocked: isNoDamageTarget(player)
+          }"
         >
-          {{ selectedTargetId === player.id ? "目标锁定" : "选择攻击" }}
-        </button>
-      </article>
+          <button
+            class="seat-button"
+            type="button"
+            :aria-pressed="selectedTargetId === player.id"
+            :aria-label="`${playerNumber(player)}号 ${player.nickname}，${playerStatus(player)}`"
+            @click="selectTargetFromSeat(player)"
+          >
+            <span v-if="canSelectTarget(player) && selectedTargetId !== player.id" class="attackable-mark">可攻击</span>
+            <span v-if="selectedTargetId === player.id" class="target-mark">目标</span>
+            <span v-if="hasInvincible(player)" class="invincible-mark" aria-label="无敌">✨</span>
+            <span v-if="player.id === room.hostId" class="seat-host-mark">房</span>
+
+            <span class="avatar-ring">
+              <span class="avatar-emoji">{{ playerAvatar(player).emoji }}</span>
+            </span>
+
+            <span class="dead-label" v-if="player.isDead">已死亡</span>
+
+            <transition name="emote-bubble">
+              <span v-if="emoteFor(player)" :key="emoteFor(player)?.key" class="emote-bubble">{{ emoteFor(player)?.emoji }}</span>
+            </transition>
+
+            <transition name="float-pop">
+              <b v-if="floatingEffectFor(player, 'damage')" :key="floatingEffectFor(player, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(player, "damage")?.value }}</b>
+            </transition>
+            <transition name="float-pop">
+              <b v-if="floatingEffectFor(player, 'heal')" :key="floatingEffectFor(player, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(player, "heal")?.value }}</b>
+            </transition>
+            <transition name="float-pop">
+              <b v-if="floatingEffectFor(player, 'noEffect')" :key="floatingEffectFor(player, 'noEffect')?.key" class="float-number no-pop">无效</b>
+            </transition>
+          </button>
+
+          <div class="seat-name-row">
+            <strong>{{ playerNumber(player) }}号 {{ player.nickname }}</strong>
+            <button class="seat-info-btn" type="button" aria-label="查看玩家详情" @click.stop="openPlayerDetail(player)">i</button>
+          </div>
+
+          <div class="seat-tags">
+            <span>{{ characterName(player.characterId) }}</span>
+            <span>{{ summonerSkillName(player.summonerSkillId) }}{{ player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : "" }}</span>
+          </div>
+          <div class="seat-stats">
+            <span>♥ {{ player.hp }}</span>
+            <span v-if="player.shield > 0">🛡 {{ player.shield }}</span>
+          </div>
+          <div class="seat-roll">{{ lastRollText(player) }}</div>
+          <div v-if="zhaoZilongHitText(player)" class="seat-roll">{{ zhaoZilongHitText(player) }}</div>
+          <span class="seat-status">{{ playerStatus(player) }}</span>
+        </article>
+      </div>
     </section>
 
-    <section class="dice-panel" :class="{ ready: isMyTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
-      <div class="dice-visual">
-        <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
-          <span v-for="(dice, index) in isRolling ? [rollPhase === 'pause' ? '...' : rollingDice] : visibleRoll?.dice ?? ['?']" :key="`${visibleRoll?.id ?? 'empty'}-${index}`">{{ dice }}</span>
+    <section class="action-center" :class="`turn-guide-${turnGuideTone}`">
+      <div class="action-phase">
+        <span>当前阶段</span>
+        <strong>{{ actionStageText }}</strong>
+        <small>{{ selectedTargetText }}</small>
+      </div>
+
+      <div class="dice-panel action-arena" :class="{ ready: isMyTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
+        <div class="dice-visual">
+          <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
+            <span v-for="(dice, index) in isRolling ? [rollPhase === 'pause' ? '...' : rollingDice] : visibleRoll?.dice ?? ['?']" :key="`${visibleRoll?.id ?? 'empty'}-${index}`">{{ dice }}</span>
+          </div>
+          <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
+            <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
+              <span>{{ hint.text }}</span>
+              <b v-if="hint.valueText">{{ hint.valueText }}</b>
+            </span>
+          </transition-group>
         </div>
-        <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
-          <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
-            <span>{{ hint.text }}</span>
-            <b v-if="hint.valueText">{{ hint.valueText }}</b>
-          </span>
-        </transition-group>
+        <div class="action-summary">
+          <strong>{{ latestDiceText }}</strong>
+          <p v-if="pendingRoll && !isRolling">{{ pendingRoll.message }}</p>
+          <p v-else-if="visibleRoll">{{ visibleRoll.message }}</p>
+          <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
+        </div>
+        <div v-if="pendingRollDecision && !isRolling" class="dice-action-slots">
+          <div class="slot-heading">
+            <strong>行动卡槽 · 🎲 {{ pendingRollDecision.currentRoll }}</strong>
+            <span v-if="!isDecisionMine">等待【{{ activePlayer?.nickname ?? "玩家" }}】选择</span>
+          </div>
+          <div class="slot-grid" :class="{ spectator: !isDecisionMine }">
+            <button
+              v-for="slot in actionSlots"
+              :key="slot.id"
+              class="dice-action-slot"
+              type="button"
+              :class="{ enabled: slot.enabled && isDecisionMine, disabled: !slot.enabled || !isDecisionMine, settling: selectedActionSlot === slot.id && rollRequestLocked }"
+              :disabled="!canUseActionSlots || !slot.enabled"
+              @click="confirmActionSlot(slot)"
+            >
+              <span class="slot-dice">🎲 {{ pendingRollDecision.currentRoll }}</span>
+              <strong>{{ selectedActionSlot === slot.id && rollRequestLocked ? "结算中……" : slot.label }}</strong>
+              <small>{{ slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
+            </button>
+          </div>
+        </div>
+        <button class="roll-btn" type="button" :disabled="!canRoll" @click="rollWithAnimation">
+          {{ rollButtonText }}
+        </button>
       </div>
-      <div class="action-summary">
-        <strong>{{ latestDiceText }}</strong>
-        <p v-if="pendingRoll && !isRolling">{{ pendingRoll.message }}</p>
-        <p v-else-if="visibleRoll">{{ visibleRoll.message }}</p>
-        <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
-        <p v-if="latestDamage">伤害：{{ latestDamage.damage ?? 0 }} 点</p>
-        <p v-if="latestHeal">回复：{{ latestHeal.healing ?? 0 }} 点</p>
-      </div>
-      <button class="roll-btn" type="button" :disabled="!canRoll" @click="rollWithAnimation">
-        {{ rollButtonText }}
+    </section>
+
+    <section v-if="me" class="self-panel" :class="{ active: me.id === activePlayer?.id, dead: me.isDead }">
+      <button class="self-avatar" type="button" aria-label="查看自己详情" @click="openPlayerDetail(me)">
+        <span>{{ playerAvatar(me).emoji }}</span>
+        <transition name="emote-bubble">
+          <span v-if="emoteFor(me)" :key="emoteFor(me)?.key" class="emote-bubble">{{ emoteFor(me)?.emoji }}</span>
+        </transition>
+        <transition name="float-pop">
+          <b v-if="floatingEffectFor(me, 'damage')" :key="floatingEffectFor(me, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(me, "damage")?.value }}</b>
+        </transition>
+        <transition name="float-pop">
+          <b v-if="floatingEffectFor(me, 'heal')" :key="floatingEffectFor(me, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(me, "heal")?.value }}</b>
+        </transition>
+        <transition name="float-pop">
+          <b v-if="floatingEffectFor(me, 'noEffect')" :key="floatingEffectFor(me, 'noEffect')?.key" class="float-number no-pop">无效</b>
+        </transition>
       </button>
+      <div class="self-main">
+        <div class="self-title">
+          <strong>{{ me.nickname }}</strong>
+          <span>{{ characterName(me.characterId) }}</span>
+        </div>
+        <div class="self-meta">
+          <span>♥ {{ me.hp }}/{{ me.maxHp }}</span>
+          <span v-if="me.shield > 0">🛡 {{ me.shield }}</span>
+          <span>{{ playerStatus(me) }} · {{ selfActionStateText }}</span>
+          <span>{{ selfSummonerText }}</span>
+          <span v-if="lastRollText(me)">{{ lastRollText(me) }}</span>
+        </div>
+        <div class="self-hp-bar" aria-label="自己的血量">
+          <i :style="{ width: `${hpPercent(me)}%` }"></i>
+        </div>
+      </div>
+      <button class="seat-info-btn self-info-btn" type="button" aria-label="查看自己详情" @click="openPlayerDetail(me)">i</button>
     </section>
 
     <section class="emote-panel" aria-label="固定表情">
@@ -569,13 +822,13 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
     </section>
 
-    <section class="log-panel battle-log">
-      <div class="log-title">
-        <h2>战斗日志</h2>
-        <span v-if="latestShownEvent">{{ latestShownEvent.message }}</span>
+    <section class="battle-log-inline">
+      <div class="log-inline-title">
+        <strong>战斗日志</strong>
+        <button class="ghost-btn small-btn" type="button" @click="showBattleLog = !showBattleLog">{{ showBattleLog ? "收起日志" : "展开日志" }}</button>
       </div>
-      <ol>
-        <li v-for="(event, index) in renderedBattleLog" :key="event.id" :class="{ newest: index === 0 }">
+      <ol :class="{ expanded: showBattleLog }">
+        <li v-for="(event, index) in (showBattleLog ? renderedBattleLog : latestLogPreview)" :key="event.id" :class="{ newest: index === 0 }">
           <time>{{ new Date(event.createdAt).toLocaleTimeString() }}</time>
           <span>{{ event.message }}</span>
         </li>
@@ -589,6 +842,259 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
     </div>
 
+    <div v-if="detailPlayer" class="player-detail-backdrop" role="presentation" @click.self="closePlayerDetail">
+      <section class="player-detail-panel" role="dialog" aria-modal="true" :aria-label="`${detailPlayer.nickname} 状态详情`">
+        <header class="player-detail-header">
+          <div>
+            <span class="detail-avatar">{{ playerAvatar(detailPlayer).emoji }}</span>
+            <h2>{{ detailPlayer.nickname }}</h2>
+            <p>{{ characterName(detailPlayer.characterId) }}</p>
+          </div>
+          <button class="detail-close-btn" type="button" aria-label="关闭详情" @click="closePlayerDetail">×</button>
+        </header>
+        <dl class="player-detail-list">
+          <div>
+            <dt>血量</dt>
+            <dd>{{ detailPlayer.hp }} / {{ detailPlayer.maxHp }}</dd>
+          </div>
+          <div>
+            <dt>护盾</dt>
+            <dd>{{ detailPlayer.shield }}</dd>
+          </div>
+          <div>
+            <dt>状态</dt>
+            <dd>{{ playerStatus(detailPlayer) }}</dd>
+          </div>
+          <div>
+            <dt>是否死亡</dt>
+            <dd>{{ detailPlayer.isDead ? "已死亡" : "存活" }}</dd>
+          </div>
+          <div>
+            <dt>最近骰点</dt>
+            <dd>{{ lastRollText(detailPlayer) || "暂无" }}</dd>
+          </div>
+          <div v-if="zhaoZilongHitText(detailPlayer)">
+            <dt>龙胆</dt>
+            <dd>{{ zhaoZilongHitText(detailPlayer) }}</dd>
+          </div>
+          <div v-if="characterFor(detailPlayer.characterId)?.description?.length">
+            <dt>职业技能</dt>
+            <dd>{{ characterFor(detailPlayer.characterId)?.description.join("；") }}</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+
     <RuleGuideDialog v-if="showRuleGuide" :characters="characters" @close="showRuleGuide = false" />
   </section>
 </template>
+
+<style scoped>
+.battle-layout {
+  gap: 10px;
+  padding-bottom: 12px;
+}
+
+.battle-status-bar {
+  grid-template-columns: 0.9fr minmax(0, 1.5fr) 0.9fr;
+}
+
+.battle-tools {
+  align-items: center;
+}
+
+.battle-zone,
+.action-center,
+.battle-log-inline {
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.zone-heading,
+.log-inline-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.zone-heading strong,
+.log-inline-title strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.zone-heading span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.battle-zone .combat-board {
+  border: 0;
+  border-radius: 0 0 8px 8px;
+  padding-top: 14px;
+}
+
+.seat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.seat-tags span {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 1px 5px;
+  background: #eef2ff;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-center {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+
+.action-phase {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  background: #172033;
+  color: #ffffff;
+}
+
+.action-phase span {
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.action-phase strong {
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.action-phase small {
+  color: #bfdbfe;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.action-center .dice-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.slot-heading {
+  align-items: start;
+}
+
+.dice-action-slot small {
+  min-height: 30px;
+}
+
+.self-panel {
+  position: relative;
+}
+
+.self-title span {
+  flex: 0 0 auto;
+}
+
+.battle-log-inline {
+  overflow: hidden;
+}
+
+.battle-log-inline ol {
+  display: grid;
+  gap: 7px;
+  max-height: 104px;
+  margin: 0;
+  padding: 10px;
+  overflow: hidden;
+  list-style: none;
+}
+
+.battle-log-inline ol.expanded {
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.battle-log-inline li {
+  display: grid;
+  gap: 2px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 7px;
+  color: #172033;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.battle-log-inline li:last-child {
+  border-bottom: 0;
+}
+
+.battle-log-inline li.newest {
+  border-radius: 6px;
+  border-bottom: 0;
+  padding: 7px;
+  background: #fff7ed;
+}
+
+.battle-log-inline time {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .battle-status-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .battle-tools {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .battle-tools .small-btn,
+  .log-inline-title .small-btn {
+    min-height: 38px;
+  }
+
+  .zone-heading,
+  .log-inline-title {
+    align-items: start;
+  }
+
+  .action-phase strong {
+    font-size: 16px;
+  }
+
+  .slot-grid {
+    padding-bottom: 4px;
+  }
+
+  .self-panel {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .self-info-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+  }
+}
+</style>

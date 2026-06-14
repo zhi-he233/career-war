@@ -1,4 +1,4 @@
-import type { CharacterId, GameEvent, Player, Room, RollResult } from "./types.js";
+import type { CharacterId, GameEvent, Player, RollDecisionChoice, Room, RollResult, SummonerSkillId } from "./types.js";
 export type DiceRoller = () => number;
 export type IdFactory = () => string;
 interface EngineContext {
@@ -19,4 +19,5 @@ export declare function resetToLobbyForRematch(room: Room): void;
 export declare function selectTarget(room: Room, playerId: string, targetId: string): void;
 export declare function rollForActivePlayer(room: Room, playerId: string, ctx: EngineContext): RollResult;
 export declare function serializeRoom(room: Room): Room;
+export declare function confirmRollDecision(room: Room, playerId: string, decisionId: string, choice: RollDecisionChoice, ctx: EngineContext, summonerSkillId?: SummonerSkillId): RollResult;
 export {};

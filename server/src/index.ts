@@ -8,6 +8,7 @@ import {
   EMOTE_IDS,
   characterList,
   chooseCharacter,
+  confirmRollDecision,
   createPlayer,
   resetToLobbyForRematch,
   rollForActivePlayer,
@@ -21,7 +22,10 @@ import {
   type Room,
   type RoomListItem,
   type RoomListStatus,
-  type RoomSettings
+  type RoomSettings,
+  type RollActionType,
+  type RollDecisionChoice,
+  type SummonerSkillId
 } from "@career-war/shared";
 
 const MAX_BATTLE_LOG = 80;
@@ -183,6 +187,20 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("chooseSummonerSkill", (payload: { summonerSkillId?: SummonerSkillId }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (room.phase !== "lobby") throw new Error("游戏开始后不能更换召唤师技能");
+      if (!payload.summonerSkillId || !isSummonerSkillId(payload.summonerSkillId)) throw new Error("请选择召唤师技能");
+      const player = room.players.find((item) => item.id === socket.id);
+      if (!player) throw new Error("玩家不存在");
+      player.summonerSkillId = payload.summonerSkillId;
+      player.summonerSkillCooldown = 0;
+      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      return { ok: true };
+    });
+  });
+
   socket.on("updateRoomSettings", (payload: Partial<RoomSettings> | undefined, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
@@ -217,6 +235,24 @@ io.on("connection", (socket) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       const result = rollForActivePlayer(room, socket.id, serverContext);
+      broadcastRoom(room, result.events);
+      if (result.gameOver) {
+        io.to(room.id).emit("gameOver", result.gameOver);
+      }
+      return { ok: true };
+    });
+  });
+
+  socket.on("confirmRollDecision", (payload: { roomId?: string; pendingDecisionId?: string; decisionId?: string; actionType?: RollActionType; choice?: RollDecisionChoice; skillId?: string; summonerSkillId?: SummonerSkillId }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (payload.roomId && payload.roomId !== room.id) throw new Error("房间不匹配");
+      const decisionId = payload.pendingDecisionId ?? payload.decisionId;
+      const choice = payload.actionType ?? payload.choice;
+      const summonerSkillId = payload.summonerSkillId ?? (isSummonerSkillId(payload.skillId) ? payload.skillId : undefined);
+      if (!decisionId || !choice) throw new Error("缺少投后选择");
+      if (!isRollDecisionChoice(choice)) throw new Error("未知的投后选择");
+      const result = confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId);
       broadcastRoom(room, result.events);
       if (result.gameOver) {
         io.to(room.id).emit("gameOver", result.gameOver);
@@ -416,6 +452,14 @@ function isEmoteId(value: unknown): value is EmoteId {
   return typeof value === "string" && allowedEmoteIds.has(value);
 }
 
+function isSummonerSkillId(value: unknown): value is SummonerSkillId {
+  return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
+}
+
+function isRollDecisionChoice(value: unknown): value is RollDecisionChoice {
+  return value === "normal_attack" || value === "settle" || value === "character_skill" || value === "summoner_skill";
+}
+
 function bindSocketToRoom(socketId: string, clientId: string, roomId: string): void {
   socketToRoom.set(socketId, roomId);
   socketToClient.set(socketId, clientId);
@@ -482,6 +526,8 @@ function rebindPlayerReferences(room: Room, previousId: string, nextId: string):
   room.rematchReadyPlayerIds = room.rematchReadyPlayerIds.map((playerId) => (playerId === previousId ? nextId : playerId));
   if (room.pendingRoll?.playerId === previousId) room.pendingRoll.playerId = nextId;
   if (room.pendingRoll?.targetId === previousId) room.pendingRoll.targetId = nextId;
+  if (room.pendingRollDecision?.actorId === previousId) room.pendingRollDecision.actorId = nextId;
+  if (room.pendingRollDecision?.targetId === previousId) room.pendingRollDecision.targetId = nextId;
   for (const player of room.players) {
     if (player.selectedTargetId === previousId) player.selectedTargetId = nextId;
   }

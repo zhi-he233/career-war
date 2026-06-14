@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import type { Character, GameEvent, PlayerEmoteEvent, Room, RoomListItem, RoomSettings } from "@career-war/shared";
+import type { Character, GameEvent, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import { getClientId, resetClientId, socket, type Ack } from "./socket";
 import HomePage from "./components/HomePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
@@ -141,6 +141,10 @@ function chooseCharacter(characterId: string): void {
   emitWithAck("chooseCharacter", { characterId });
 }
 
+function chooseSummonerSkill(summonerSkillId: SummonerSkillId): void {
+  emitWithAck("chooseSummonerSkill", { summonerSkillId });
+}
+
 function startGame(): void {
   emitWithAck("startGame", {});
 }
@@ -155,6 +159,10 @@ function selectTarget(targetId: string): void {
 
 function rollDice(): void {
   emitWithAck("rollDice", {});
+}
+
+function confirmRollDecision(payload: { roomId?: string; pendingDecisionId?: string; actionType?: RollActionType; skillId?: string; decisionId: string; choice: RollDecisionChoice; summonerSkillId?: SummonerSkillId }): void {
+  emitWithAck("confirmRollDecision", payload);
 }
 
 function leaveRoom(): void {
@@ -214,6 +222,7 @@ function showError(message: string): void {
       :player-id="playerId"
       :characters="characters"
       @choose-character="chooseCharacter"
+      @choose-summoner-skill="chooseSummonerSkill"
       @update-room-settings="updateRoomSettings"
       @start-game="startGame"
     />
@@ -226,6 +235,7 @@ function showError(message: string): void {
       :last-emote="lastEmote"
       @select-target="selectTarget"
       @roll-dice="rollDice"
+      @confirm-roll-decision="confirmRollDecision"
     />
   </main>
 </template>

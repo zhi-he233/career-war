@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { Character, CharacterId, Room, RoomSettings } from "@career-war/shared";
+import type { Character, CharacterId, Room, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
 const props = defineProps<{
@@ -11,6 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   chooseCharacter: [characterId: CharacterId];
+  chooseSummonerSkill: [summonerSkillId: SummonerSkillId];
   updateRoomSettings: [settings: Partial<RoomSettings>];
   startGame: [];
 }>();
@@ -48,19 +49,15 @@ const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
   allowDuplicateCharacters: true
 };
+const SUMMONER_SKILLS: Array<{ id: SummonerSkillId; name: string; description: string }> = [
+  { id: "lucky_plus_one", name: "幸运骰", description: "投后让本次主骰 +1，最高 6。冷却：3 次自己的行动。" },
+  { id: "first_aid", name: "急救术", description: "本次不攻击，改为回复自己等于骰点的血量。冷却：3 次自己的行动。" },
+  { id: "iron_wall", name: "铁壁", description: "本次不攻击，改为获得等于骰点的护盾。冷却：3 次自己的行动。" },
+  { id: "fate_reroll", name: "命运重掷", description: "服务器重新投一次主骰，必须接受新骰点。冷却：3 次自己的行动。" },
+  { id: "last_stand", name: "破釜", description: "攻击伤害行动可用，最终伤害 +2，自己受 2 点反噬。冷却：3 次自己的行动。" }
+];
 
 const LOCKED_CHARACTERS: CharacterCard[] = [
-  {
-    id: "stoneTitan",
-    name: "巨石泰坦",
-    maxHp: 25,
-    description: ["未开放"],
-    difficulty: "normal",
-    role: "defense",
-    tags: ["防御", "未开放"],
-    shortDescription: "厚重防御型职业，后续版本开放。",
-    isImplemented: false
-  },
   {
     id: "warKnight",
     name: "战争骑士",
@@ -115,6 +112,7 @@ const showRuleGuide = ref(false);
 const me = computed(() => props.room.players.find((player) => player.id === props.playerId));
 const isHost = computed(() => props.room.hostId === props.playerId);
 const roomSettings = computed(() => ({ ...DEFAULT_ROOM_SETTINGS, ...(props.room.settings ?? {}) }));
+const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]!);
 const canStart = computed(() => props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
 const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && duplicateCharacterIds.value.size > 0);
 const duplicateCharacterIds = computed(() => {
@@ -292,6 +290,27 @@ function fullDescription(character: CharacterCard): string[] {
         </p>
 
         <p v-if="hasDuplicateCharacterConflict" class="settings-warning">当前已有重复职业，请玩家重新选择。</p>
+      </section>
+
+      <section class="summoner-select-panel">
+        <div class="settings-title">
+          <h2>召唤师技能</h2>
+          <span class="hint">每人选择 1 个</span>
+        </div>
+        <div class="summoner-options">
+          <button
+            v-for="skill in SUMMONER_SKILLS"
+            :key="skill.id"
+            class="summoner-option"
+            :class="{ selected: (me?.summonerSkillId ?? 'lucky_plus_one') === skill.id }"
+            type="button"
+            @click="emit('chooseSummonerSkill', skill.id)"
+          >
+            <strong>{{ skill.name }}</strong>
+            <small>{{ skill.description }}</small>
+          </button>
+        </div>
+        <p class="hint">当前已选择：{{ selectedSummonerSkill.name }}</p>
       </section>
 
       <section class="lobby-start-bar">

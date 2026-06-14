@@ -1,4 +1,4 @@
-export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker";
+export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin";
 export type RoomPhase = "lobby" | "battle" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
 export type CharacterDifficulty = "simple" | "normal" | "complex" | "expert";
@@ -31,9 +31,12 @@ export interface Player {
     isHost: boolean;
     isOnline: boolean;
     characterId?: CharacterId;
+    summonerSkillId?: SummonerSkillId;
+    summonerSkillCooldown?: number;
     hp: number;
     maxHp: number;
     shield: number;
+    zhaoZilongHitCount?: number;
     isDead: boolean;
     selectedTargetId?: string;
 }
@@ -74,6 +77,37 @@ export interface RoomSettings {
     maxPlayers: number;
     allowDuplicateCharacters: boolean;
 }
+export type CharacterReactionSkillId = "gunslinger_barrage" | "vampire_blood_rite" | "paladin_invincible";
+export type SummonerSkillId = "lucky_plus_one" | "first_aid" | "iron_wall" | "fate_reroll" | "last_stand";
+export type RollActionType = "normal_attack" | "character_skill" | "summoner_skill";
+export type RollDecisionChoice = RollActionType | "settle";
+export interface RollDecisionAvailableAction {
+    id: RollActionType;
+    label: string;
+    enabled: boolean;
+    description: string;
+    reason?: string;
+    skillId?: CharacterReactionSkillId | SummonerSkillId;
+    skillName?: string;
+}
+export interface PendingRollDecision {
+    id: string;
+    actorId: string;
+    targetId: string;
+    rawRoll: number;
+    currentRoll: number;
+    phase: "waiting_reaction";
+    canUseCharacterSkill: boolean;
+    availableCharacterSkillId?: CharacterReactionSkillId;
+    availableCharacterSkillName?: string;
+    availableSummonerSkillId?: SummonerSkillId;
+    availableSummonerSkillName?: string;
+    usedSummonerSkillId?: SummonerSkillId;
+    availableActions?: RollDecisionAvailableAction[];
+    rollEventId: string;
+    createdAt: number;
+    isFollowUpRoll?: boolean;
+}
 export type PendingRollType = "gunslinger_bonus_damage" | "vampire_bonus_heal" | string;
 export interface PendingRoll {
     playerId: string;
@@ -105,6 +139,7 @@ export interface Room {
     snapshots: ActionSnapshot[];
     previousFinalDamage: number;
     pendingRoll?: PendingRoll;
+    pendingRollDecision?: PendingRollDecision;
     winnerId?: string;
     highlight?: CharacterHighlight;
     skillHints?: SkillHint[];

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { createClientId } from "./utils/id";
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import type { Character, GameEvent, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
+import type { Character, CharacterId, GameEvent, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import { getClientId, resetClientId, socket, type Ack } from "./socket";
 import HomePage from "./components/HomePage.vue";
 import PvpModePage from "./components/PvpModePage.vue";
@@ -185,6 +185,14 @@ function chooseSummonerSkill(summonerSkillId: SummonerSkillId): void {
   emitWithAck("chooseSummonerSkill", { summonerSkillId });
 }
 
+function chooseDuoSlotCharacter(payload: { slotIndex: 0 | 1; characterId: CharacterId }): void {
+  emitWithAck("chooseDuoSlotCharacter", payload);
+}
+
+function chooseDuoSlotSummonerSkill(payload: { slotIndex: 0 | 1; summonerSkillId: SummonerSkillId }): void {
+  emitWithAck("chooseDuoSlotSummonerSkill", payload);
+}
+
 function startGame(): void {
   emitWithAck("startGame", {});
 }
@@ -195,6 +203,10 @@ function updateRoomSettings(settings: Partial<RoomSettings>): void {
 
 function selectTarget(targetId: string): void {
   emitWithAck("selectTarget", { targetId });
+}
+
+function selectActor(actorId: string): void {
+  emitWithAck("selectActor", { actorId });
 }
 
 function rollDice(): void {
@@ -351,6 +363,8 @@ function getTransportName(transport: unknown): string {
       :characters="characters"
       @choose-character="chooseCharacter"
       @choose-summoner-skill="chooseSummonerSkill"
+      @choose-duo-slot-character="chooseDuoSlotCharacter"
+      @choose-duo-slot-summoner-skill="chooseDuoSlotSummonerSkill"
       @update-room-settings="updateRoomSettings"
       @start-game="startGame"
     />
@@ -362,6 +376,7 @@ function getTransportName(transport: unknown): string {
       :last-event="lastEvent"
       :last-emote="lastEmote"
       @select-target="selectTarget"
+      @select-actor="selectActor"
       @roll-dice="rollDice"
       @confirm-roll-decision="confirmRollDecision"
     />

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { Character, CharacterId, GameMode, Room, RoomSettings, SummonerSkillId } from "@career-war/shared";
+import type { Character, CharacterId, DuoCharacterSlot, GameMode, Player, Room, RoomSettings, SummonerSkillId, TeamId } from "@career-war/shared";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
 const props = defineProps<{
@@ -12,6 +12,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   chooseCharacter: [characterId: CharacterId];
   chooseSummonerSkill: [summonerSkillId: SummonerSkillId];
+  chooseDuoSlotCharacter: [payload: { slotIndex: 0 | 1; characterId: CharacterId }];
+  chooseDuoSlotSummonerSkill: [payload: { slotIndex: 0 | 1; summonerSkillId: SummonerSkillId }];
   updateRoomSettings: [settings: Partial<RoomSettings>];
   startGame: [];
 }>();
@@ -115,9 +117,15 @@ const isHost = computed(() => props.room.hostId === props.playerId);
 const roomSettings = computed(() => ({ ...DEFAULT_ROOM_SETTINGS, ...(props.room.settings ?? {}) }));
 const roomMode = computed<GameMode>(() => props.room.gameMode ?? roomSettings.value.gameMode ?? "classic");
 const isDuoModeDevelopment = computed(() => roomMode.value === "duo_2v2");
+const duoSlots = computed(() => props.room.duoSlots ?? []);
+const duoTeams = computed<Array<{ id: TeamId; label: string; player: Player | undefined }>>(() => [
+  { id: "A", label: "A 队", player: props.room.players[0] },
+  { id: "B", label: "B 队", player: props.room.players[1] }
+]);
 const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]!);
-const canStart = computed(() => !isDuoModeDevelopment.value && props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
-const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && duplicateCharacterIds.value.size > 0);
+const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => slot.characterId && slot.summonerSkillId) && !hasDuplicateCharacterConflict.value);
+const canStart = computed(() => isDuoModeDevelopment.value ? isDuoReadyToStart.value : props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
+const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && (isDuoModeDevelopment.value ? duoDuplicateCharacterIds.value.size > 0 : duplicateCharacterIds.value.size > 0));
 const duplicateCharacterIds = computed(() => {
   const counts = new Map<CharacterId, number>();
   for (const player of props.room.players) {
@@ -126,8 +134,19 @@ const duplicateCharacterIds = computed(() => {
   }
   return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([characterId]) => characterId));
 });
+const duoDuplicateCharacterIds = computed(() => {
+  const counts = new Map<CharacterId, number>();
+  for (const slot of duoSlots.value) {
+    if (!slot.characterId) continue;
+    counts.set(slot.characterId, (counts.get(slot.characterId) ?? 0) + 1);
+  }
+  return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([characterId]) => characterId));
+});
 const startHint = computed(() => {
-  if (isDuoModeDevelopment.value) return "2V2 双角色模式开发中，暂不可开始。";
+  if (isDuoModeDevelopment.value && hasDuplicateCharacterConflict.value) return "当前设置不允许重复职业，请重新选择 2V2 槽位。";
+  if (isDuoModeDevelopment.value && props.room.players.length !== 2) return "2V2 需要 2 名玩家后才能开始。";
+  if (isDuoModeDevelopment.value && !isDuoReadyToStart.value) return "请完成 4 个角色槽位和召唤师技能选择。";
+  if (isDuoModeDevelopment.value) return "将进入 2V2 V0：选择行动角色阶段，暂不开放投骰结算。";
   if (hasDuplicateCharacterConflict.value) return "当前已有重复职业，请玩家重新选择。";
   if (!canStart.value) return "至少 2 人，且所有玩家都选择职业后可开始。";
   return `当前选择：${characterName(me.value?.characterId)}`;
@@ -136,7 +155,8 @@ const inviteLink = computed(() => `${window.location.origin}${window.location.pa
 const visibleCharacters = computed<CharacterCard[]>(() => [...props.characters, ...LOCKED_CHARACTERS].filter((character) => !character.isHidden));
 const filteredCharacters = computed(() => visibleCharacters.value.filter((character) => matchesFilter(character) && matchesSearch(character)));
 const randomCandidates = computed(() => filteredCharacters.value.filter(isSelectableCharacter));
-const selectableMaxPlayerOptions = computed(() => MAX_PLAYER_OPTIONS.map((count) => ({ count, disabled: count < props.room.players.length })));
+const visibleMaxPlayers = computed(() => (isDuoModeDevelopment.value ? 2 : roomSettings.value.maxPlayers));
+const selectableMaxPlayerOptions = computed(() => (isDuoModeDevelopment.value ? [2] : MAX_PLAYER_OPTIONS).map((count) => ({ count, disabled: count < props.room.players.length })));
 
 async function copyInviteLink(): Promise<void> {
   await navigator.clipboard.writeText(inviteLink.value);
@@ -181,6 +201,35 @@ function updateGameMode(event: Event): void {
 
 function gameModeLabel(gameMode: GameMode): string {
   return gameMode === "duo_2v2" ? "2V2 双角色（开发中）" : "经典对战";
+}
+
+function duoSlotsForTeam(teamId: TeamId): DuoCharacterSlot[] {
+  return duoSlots.value.filter((slot) => slot.teamId === teamId).sort((a, b) => a.slotIndex - b.slotIndex);
+}
+
+function canEditDuoSlot(slot: DuoCharacterSlot): boolean {
+  return slot.controllerId === props.playerId;
+}
+
+function updateDuoSlotCharacter(slot: DuoCharacterSlot, event: Event): void {
+  if (!canEditDuoSlot(slot)) return;
+  const characterId = (event.target as HTMLSelectElement).value as CharacterId | "";
+  if (!characterId) return;
+  emit("chooseDuoSlotCharacter", { slotIndex: slot.slotIndex, characterId });
+}
+
+function updateDuoSlotSummonerSkill(slot: DuoCharacterSlot, event: Event): void {
+  if (!canEditDuoSlot(slot)) return;
+  const summonerSkillId = (event.target as HTMLSelectElement).value as SummonerSkillId;
+  emit("chooseDuoSlotSummonerSkill", { slotIndex: slot.slotIndex, summonerSkillId });
+}
+
+function isDuoCharacterTakenByOtherSlot(slot: DuoCharacterSlot, characterId: string): boolean {
+  return !roomSettings.value.allowDuplicateCharacters && duoSlots.value.some((item) => !(item.controllerId === slot.controllerId && item.slotIndex === slot.slotIndex) && item.characterId === characterId);
+}
+
+function summonerSkillDescription(id: SummonerSkillId | undefined): string {
+  return SUMMONER_SKILLS.find((skill) => skill.id === (id ?? "lucky_plus_one"))?.name ?? "幸运骰";
 }
 
 function isSelectableCharacter(character: CharacterCard | null | undefined): boolean {
@@ -263,7 +312,7 @@ function fullDescription(character: CharacterCard): string[] {
       </div>
 
       <section>
-        <h2>玩家 {{ room.players.length }}/{{ roomSettings.maxPlayers }}</h2>
+        <h2>玩家 {{ room.players.length }}/{{ visibleMaxPlayers }}</h2>
         <div class="player-list lobby-player-list">
           <article v-for="(player, index) in room.players" :key="player.id" class="player-card lobby-player-card">
             <div>
@@ -293,7 +342,7 @@ function fullDescription(character: CharacterCard): string[] {
 
           <label class="compact-field">
             <span>最大人数</span>
-            <select :value="roomSettings.maxPlayers" :disabled="room.phase !== 'lobby'" @change="updateMaxPlayers">
+            <select :value="visibleMaxPlayers" :disabled="room.phase !== 'lobby'" @change="updateMaxPlayers">
               <option v-for="option in selectableMaxPlayerOptions" :key="option.count" :value="option.count" :disabled="option.disabled">
                 {{ option.count }} 人
               </option>
@@ -308,14 +357,14 @@ function fullDescription(character: CharacterCard): string[] {
 
         <p v-else class="settings-readonly">
           模式：{{ gameModeLabel(roomMode) }} /
-          最大 {{ roomSettings.maxPlayers }} 人 · {{ roomSettings.allowDuplicateCharacters ? "允许重复职业" : "不允许重复职业" }}
+          最大 {{ visibleMaxPlayers }} 人 · {{ roomSettings.allowDuplicateCharacters ? "允许重复职业" : "不允许重复职业" }}
         </p>
 
         <p v-if="hasDuplicateCharacterConflict" class="settings-warning">当前已有重复职业，请玩家重新选择。</p>
-        <p v-if="isDuoModeDevelopment" class="settings-warning">2V2 双角色模式开发中，暂不可开始。</p>
+        <p v-if="isDuoModeDevelopment" class="settings-warning">2V2 V0 仅开放开战入场和行动角色选择，投骰结算仍在开发中。</p>
       </section>
 
-      <section class="summoner-select-panel">
+      <section v-if="!isDuoModeDevelopment" class="summoner-select-panel">
         <div class="settings-title">
           <h2>召唤师技能</h2>
           <span class="hint">每人选择 1 个</span>
@@ -339,15 +388,70 @@ function fullDescription(character: CharacterCard): string[] {
       <section class="lobby-start-bar">
         <div>
           <strong>{{ isHost ? "房主操作" : "游戏状态" }}</strong>
-          <p class="hint">{{ isHost ? startHint : `当前选择：${characterName(me?.characterId)}` }}</p>
+          <p class="hint">{{ isHost || isDuoModeDevelopment ? startHint : `当前选择：${characterName(me?.characterId)}` }}</p>
         </div>
         <button class="primary-btn" type="button" :disabled="!isHost || !canStart" @click="emit('startGame')">
-          {{ isHost ? "开始游戏" : "等待房主开始" }}
+          {{ isDuoModeDevelopment ? isHost ? canStart ? "开始 2V2（V0）" : "2V2 选择未完成" : "等待房主开始" : isHost ? "开始游戏" : "等待房主开始" }}
         </button>
       </section>
     </section>
 
-    <section class="character-picker">
+    <section v-if="isDuoModeDevelopment" class="character-picker duo-slot-picker">
+      <div class="picker-heading">
+        <div>
+          <h2>2V2 双角色选角草稿</h2>
+          <p class="hint">每名真实玩家选择 2 个角色槽位。当前可进入 V0 战斗页选择行动角色，投骰和结算后续开放。</p>
+        </div>
+      </div>
+
+      <div class="duo-team-grid">
+        <article v-for="team in duoTeams" :key="team.id" class="duo-team-panel">
+          <div class="settings-title">
+            <h2>{{ team.label }}</h2>
+            <span class="hint">{{ team.player ? team.player.nickname : "等待玩家加入" }}</span>
+          </div>
+
+          <div v-if="team.player" class="duo-slot-list">
+            <article v-for="slot in duoSlotsForTeam(team.id)" :key="`${slot.controllerId}-${slot.slotIndex}`" class="duo-slot-card">
+              <div class="settings-title">
+                <h3>槽位 {{ slot.slotIndex + 1 }}</h3>
+                <span class="badge" :class="{ 'host-badge': canEditDuoSlot(slot) }">{{ canEditDuoSlot(slot) ? "你的槽位" : "对方槽位" }}</span>
+              </div>
+
+              <label class="compact-field">
+                <span>职业</span>
+                <select :value="slot.characterId ?? ''" :disabled="!canEditDuoSlot(slot)" @change="updateDuoSlotCharacter(slot, $event)">
+                  <option value="">未选择职业</option>
+                  <option
+                    v-for="character in props.characters"
+                    :key="character.id"
+                    :value="character.id"
+                    :disabled="isDuoCharacterTakenByOtherSlot(slot, character.id)"
+                  >
+                    {{ character.name }}{{ isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "" }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="compact-field">
+                <span>召唤师技能</span>
+                <select :value="slot.summonerSkillId ?? 'lucky_plus_one'" :disabled="!canEditDuoSlot(slot)" @change="updateDuoSlotSummonerSkill(slot, $event)">
+                  <option v-for="skill in SUMMONER_SKILLS" :key="skill.id" :value="skill.id">
+                    {{ skill.name }}
+                  </option>
+                </select>
+              </label>
+
+              <p class="hint">当前：{{ characterName(slot.characterId) }} / {{ summonerSkillDescription(slot.summonerSkillId) }}</p>
+            </article>
+          </div>
+
+          <p v-else class="empty-state">等待玩家加入后生成两个角色槽位。</p>
+        </article>
+      </div>
+    </section>
+
+    <section v-else class="character-picker">
       <div class="picker-heading">
         <div>
           <h2>选择职业</h2>
@@ -438,3 +542,41 @@ function fullDescription(character: CharacterCard): string[] {
     <RuleGuideDialog v-if="showRuleGuide" :characters="characters" @close="showRuleGuide = false" />
   </section>
 </template>
+
+<style scoped>
+.duo-slot-picker {
+  gap: 12px;
+}
+
+.duo-team-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.duo-team-panel,
+.duo-slot-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.duo-slot-list {
+  display: grid;
+  gap: 10px;
+}
+
+.duo-slot-card h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 15px;
+}
+
+@media (min-width: 760px) {
+  .duo-team-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>

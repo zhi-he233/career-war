@@ -14,6 +14,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   selectTarget: [targetId: string];
+  selectActor: [actorId: string];
   rollDice: [];
   confirmRollDecision: [payload: { roomId: string; pendingDecisionId: string; actionType: RollActionType; skillId?: string; decisionId: string; choice: RollDecisionChoice; summonerSkillId?: SummonerSkillId }];
 }>();
@@ -93,9 +94,23 @@ const playedHighlightKeys = new Set<string>();
 const playedSkillHintIds = new Set<string>();
 
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
-const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
+const isDuoMode = computed(() => room.value.gameMode === "duo_2v2");
+const activeControllerId = computed(() => room.value.activeControllerId);
+const isMyDuoControllerTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId);
+const selectedActor = computed(() => room.value.players.find((player) => player.id === room.value.selectedActorId));
+const duoTeams = computed(() => [
+  { id: "A", label: "A 队", players: room.value.players.filter((player) => player.teamId === "A") },
+  { id: "B", label: "B 队", players: room.value.players.filter((player) => player.teamId === "B") }
+]);
+const isMyTurn = computed(() => !isDuoMode.value && activePlayer.value?.id === props.playerId && room.value.phase === "battle");
+const isMyDuoActionTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId && Boolean(selectedActor.value));
 const me = computed(() => room.value.players.find((player) => player.id === props.playerId));
-const selectedTargetId = computed(() => me.value?.selectedTargetId);
+const selectedTargetId = computed(() => {
+  if (isDuoMode.value) {
+    return selectedActor.value?.selectedTargetId;
+  }
+  return me.value?.selectedTargetId;
+});
 const selectedTarget = computed(() => room.value.players.find((player) => player.id === selectedTargetId.value));
 const battlePlayers = computed(() => {
   const others = room.value.players.filter((player) => player.id !== props.playerId);
@@ -105,8 +120,16 @@ const aliveEnemies = computed(() => room.value.players.filter((player) => !playe
 const winner = computed(() => room.value.players.find((player) => player.id === room.value.winnerId));
 const pendingRoll = computed(() => room.value.pendingRoll);
 const pendingRollDecision = computed(() => room.value.pendingRollDecision);
-const isPendingMine = computed(() => pendingRoll.value?.playerId === props.playerId);
-const isDecisionMine = computed(() => pendingRollDecision.value?.actorId === props.playerId);
+const isPendingMine = computed(() => pendingRoll.value?.playerId === (selectedActor.value?.id || props.playerId));
+const isDecisionMine = computed(() => {
+  const decision = pendingRollDecision.value;
+  if (!decision) return false;
+  if (isDuoMode.value) {
+    const actor = room.value.players.find((p) => p.id === decision.actorId);
+    return actor?.controllerId === props.playerId;
+  }
+  return decision.actorId === props.playerId;
+});
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
 const isSelfDead = computed(() => Boolean(me.value?.isDead));
 const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
@@ -265,6 +288,15 @@ const canRoll = computed(() => {
   return Boolean(selectedTargetId.value) && aliveEnemies.value.length > 0;
 });
 
+const canRollForDuo = computed(() => {
+  if (isDuoMode.value && room.value.phase === "battle") {
+    if (rollRequestLocked.value || isRolling.value || pendingRollDecision.value) return false;
+    if (pendingRoll.value) return isPendingMine.value;
+    return isMyDuoActionTurn.value && Boolean(selectedActor.value?.selectedTargetId);
+  }
+  return false;
+});
+
 function characterName(id: string | undefined): string {
   return props.characters.find((character) => character.id === id)?.name ?? "未知职业";
 }
@@ -332,6 +364,27 @@ function canSelectTarget(player: Player): boolean {
 function selectTargetFromSeat(player: Player): void {
   if (!canSelectTarget(player)) return;
   emit("selectTarget", player.id);
+}
+
+function canSelectDuoActor(player: Player): boolean {
+  return isMyDuoControllerTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.controllerId === props.playerId && !player.isDead;
+}
+
+function canSelectDuoEnemy(player: Player): boolean {
+  return isDuoMode.value && Boolean(selectedActor.value) && !pendingRoll.value && !pendingRollDecision.value && player.teamId !== selectedActor.value?.teamId && player.controllerId !== props.playerId && !player.isDead;
+}
+
+function handleDuoSeatClick(player: Player): void {
+  if (canSelectDuoActor(player)) {
+    selectDuoActor(player);
+  } else if (canSelectDuoEnemy(player)) {
+    emit("selectTarget", player.id);
+  }
+}
+
+function selectDuoActor(player: Player): void {
+  if (!canSelectDuoActor(player)) return;
+  emit("selectActor", player.id);
 }
 
 function openPlayerDetail(player: Player): void {
@@ -613,7 +666,138 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
     </section>
 
-    <section class="battle-zone">
+    <section v-if="isDuoMode" class="battle-zone duo-battle-zone">
+      <div class="zone-heading">
+        <strong>2V2 双角色模式</strong>
+        <span>{{ selectedActor ? `当前行动角色：${selectedActor.nickname}` : isMyDuoControllerTurn ? "请选择你的一个角色行动" : "等待对方选择行动角色" }}</span>
+      </div>
+            <div class="duo-battle-board" aria-label="2V2 阵营战场">
+        <article v-for="team in duoTeams" :key="team.id" class="duo-team-column" :class="`team-${team.id.toLowerCase()}`">
+          <header>
+            <strong>{{ team.label }}</strong>
+            <span>{{ team.players[0]?.controllerId === props.playerId ? "你的队伍" : "对方队伍" }}</span>
+          </header>
+          <div class="combat-board duo-combat-board">
+            <article
+              v-for="player in team.players"
+              :key="player.id"
+              class="battle-seat duo-actor-seat"
+              :class="{
+                active: player.controllerId === activeControllerId,
+                dead: player.isDead,
+                selectable: canSelectDuoActor(player) || canSelectDuoEnemy(player),
+                selected: selectedActor?.id === player.id || selectedTargetId === player.id,
+                hit: isRecentDamageTarget(player),
+                healed: isRecentHealTarget(player),
+                blocked: isNoDamageTarget(player)
+              }"
+            >
+              <button
+                class="seat-button"
+                type="button"
+                :aria-pressed="selectedActor?.id === player.id || selectedTargetId === player.id"
+                :aria-label="`${team.label} ${player.nickname}，${playerStatus(player)}`"
+                @click="handleDuoSeatClick(player)"
+              >
+                <span v-if="canSelectDuoActor(player) && selectedActor?.id !== player.id" class="attackable-mark">可行动</span>
+                <span v-if="canSelectDuoEnemy(player) && selectedTargetId !== player.id" class="attackable-mark">可攻击</span>
+                <span v-if="selectedActor?.id === player.id" class="target-mark">行动</span>
+                <span v-if="selectedTargetId === player.id" class="target-mark">目标</span>
+                <span v-if="hasInvincible(player)" class="invincible-mark" aria-label="无敌">✨</span>
+                <span class="avatar-ring">
+                  <span class="avatar-emoji">{{ playerAvatar(player).emoji }}</span>
+                </span>
+                <span class="dead-label" v-if="player.isDead">已死亡</span>
+                <transition name="emote-bubble">
+                  <span v-if="emoteFor(player)" :key="emoteFor(player)?.key" class="emote-bubble">{{ emoteFor(player)?.emoji }}</span>
+                </transition>
+                <transition name="float-pop">
+                  <b v-if="floatingEffectFor(player, 'damage')" :key="floatingEffectFor(player, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(player, "damage")?.value }}</b>
+                </transition>
+                <transition name="float-pop">
+                  <b v-if="floatingEffectFor(player, 'heal')" :key="floatingEffectFor(player, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(player, "heal")?.value }}</b>
+                </transition>
+                <transition name="float-pop">
+                  <b v-if="floatingEffectFor(player, 'noEffect')" :key="floatingEffectFor(player, 'noEffect')?.key" class="float-number no-pop">无效</b>
+                </transition>
+              </button>
+
+              <div class="seat-name-row">
+                <strong>{{ player.nickname }}</strong>
+                <button class="seat-info-btn" type="button" aria-label="查看角色详情" @click.stop="openPlayerDetail(player)">i</button>
+              </div>
+              <div class="seat-tags">
+                <span>{{ characterName(player.characterId) }}</span>
+                <span>{{ summonerSkillName(player.summonerSkillId) }}</span>
+              </div>
+              <div class="seat-stats">
+                <span>♥ {{ player.hp }}/{{ player.maxHp }}</span>
+                <span v-if="player.shield > 0">盾 {{ player.shield }}</span>
+              </div>
+              <div class="seat-roll">{{ lastRollText(player) }}</div>
+              <span class="seat-status">{{ playerStatus(player) }}</span>
+            </article>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section v-if="isDuoMode" class="action-center duo-action-center">
+      <div class="action-phase">
+        <span>当前阶段</span>
+        <strong v-if="selectedActor && !selectedActor.selectedTargetId">已选角色：{{ selectedActor.nickname }}，请选择攻击目标</strong>
+        <strong v-else-if="selectedActor && selectedActor.selectedTargetId">已选目标，可以投骰</strong>
+        <strong v-else-if="isMyDuoControllerTurn">请选择你的一个角色行动</strong>
+        <strong v-else>等待对方选择行动角色</strong>
+        <small v-if="isMyDuoControllerTurn && !selectedActor">只能选择自己队伍中存活的角色。</small>
+        <small v-else-if="selectedActor && !selectedActor.selectedTargetId">点击敌方角色头像选择目标。</small>
+        <small v-else-if="selectedActor && selectedActor.selectedTargetId">点击投骰按钮进行骰子投掷。</small>
+      </div>
+      <div class="dice-panel action-arena" :class="{ ready: isMyDuoControllerTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
+        <div class="dice-visual">
+          <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
+            <span v-for="(dice, index) in isRolling ? [rollPhase === 'pause' ? '...' : rollingDice] : visibleRoll?.dice ?? ['?']" :key="`${visibleRoll?.id ?? 'empty'}-${index}`">{{ dice }}</span>
+          </div>
+          <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
+            <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
+              <span>{{ hint.text }}</span>
+              <b v-if="hint.valueText">{{ hint.valueText }}</b>
+            </span>
+          </transition-group>
+        </div>
+        <div class="action-summary">
+          <strong>{{ latestDiceText }}</strong>
+          <p v-if="pendingRoll && !isRolling">{{ pendingRoll.message }}</p>
+          <p v-else-if="visibleRoll">{{ visibleRoll.message }}</p>
+          <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
+        </div>
+        <div v-if="shouldShowActionSlots" class="dice-action-slots">
+          <div class="slot-heading">
+            <strong>行动卡槽 · 🎲 {{ pendingRollDecision?.currentRoll }}</strong>
+          </div>
+          <div class="slot-grid">
+            <button
+              v-for="slot in actionSlots"
+              :key="slot.id"
+              class="dice-action-slot"
+              type="button"
+              :class="{ enabled: slot.enabled, disabled: !slot.enabled, settling: selectedActionSlot === slot.id && rollRequestLocked }"
+              :disabled="!canUseActionSlots || !slot.enabled"
+              @click="confirmActionSlot(slot)"
+            >
+              <span class="slot-dice">🎲 {{ pendingRollDecision?.currentRoll }}</span>
+              <strong>{{ selectedActionSlot === slot.id && rollRequestLocked ? "结算中……" : slot.label }}</strong>
+              <small>{{ slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
+            </button>
+          </div>
+        </div>
+        <button class="roll-btn" type="button" :disabled="!canRollForDuo" @click="rollWithAnimation">
+          {{ rollButtonText }}
+        </button>
+      </div>
+    </section>
+
+    <section v-if="!isDuoMode" class="battle-zone">
       <div class="zone-heading">
         <strong>其他玩家</strong>
         <span>点击头像选择攻击目标</span>
@@ -686,7 +870,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
     </section>
 
-    <section class="action-center" :class="`turn-guide-${turnGuideTone}`">
+    <section v-if="!isDuoMode" class="action-center" :class="`turn-guide-${turnGuideTone}`">
       <div class="action-phase">
         <span>当前阶段</span>
         <strong>{{ currentActionTitle }}</strong>
@@ -737,7 +921,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
     </section>
 
-    <section v-if="me" class="self-panel" :class="{ active: me.id === activePlayer?.id, dead: me.isDead }">
+    <section v-if="!isDuoMode && me" class="self-panel" :class="{ active: me.id === activePlayer?.id, dead: me.isDead }">
       <button class="self-avatar" type="button" aria-label="查看自己详情" @click="openPlayerDetail(me)">
         <span>{{ playerAvatar(me).emoji }}</span>
         <transition name="emote-bubble">
@@ -892,6 +1076,49 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   border: 0;
   border-radius: 0 0 8px 8px;
   padding: 8px;
+}
+
+.duo-battle-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+
+.duo-team-column {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.duo-team-column header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #172033;
+}
+
+.duo-team-column header span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.duo-combat-board {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.duo-actor-seat.selected .seat-button {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+
+.duo-action-center .action-summary {
+  text-align: center;
 }
 
 .battle-seat {
@@ -1069,6 +1296,16 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
   .battle-zone .combat-board {
     padding: 6px;
+  }
+
+  .duo-battle-board {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .duo-combat-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .seat-button {

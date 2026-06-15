@@ -109,6 +109,14 @@ export interface SkillHint {
   rollId?: string;
 }
 
+export interface DuoCharacterSlot {
+  controllerId: string;
+  teamId: TeamId;
+  slotIndex: 0 | 1;
+  characterId?: CharacterId;
+  summonerSkillId?: SummonerSkillId;
+}
+
 export interface RoomSettings {
   maxPlayers: number;
   allowDuplicateCharacters: boolean;
@@ -191,6 +199,7 @@ export interface Room {
   selectedActorId?: string;
   winnerTeamId?: TeamId;
   controllerTurnOrder?: string[];
+  duoSlots?: DuoCharacterSlot[];
   highlight?: CharacterHighlight;
   skillHints?: SkillHint[];
 }

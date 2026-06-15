@@ -16,6 +16,7 @@ import {
   serializeRoom,
   startGame,
   type CharacterId,
+  type DuoCharacterSlot,
   type EmoteId,
   type GameMode,
   type GameEvent,
@@ -26,7 +27,8 @@ import {
   type RoomSettings,
   type RollActionType,
   type RollDecisionChoice,
-  type SummonerSkillId
+  type SummonerSkillId,
+  type TeamId
 } from "@career-war/shared";
 
 const MAX_BATTLE_LOG = 80;
@@ -35,6 +37,7 @@ const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000;
 const ROOM_CLEANUP_INTERVAL_MS = 30 * 1000;
 const ROOM_MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8] as const;
 const DEFAULT_GAME_MODE: GameMode = "classic";
+const DUO_MAX_CONTROLLERS = 2;
 const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
   allowDuplicateCharacters: true,
@@ -138,14 +141,27 @@ io.on("connection", (socket) => {
       const roomId = (payload.roomId ?? "").trim().toUpperCase();
       const room = getRoom(roomId);
       const settings = ensureRoomSettings(room);
+      const gameMode = ensureRoomGameMode(room);
+      const maxPlayers = gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : settings.maxPlayers;
       const clientId = sanitizeClientId(payload.clientId);
       const existing = room.players.find((player) => player.clientId === clientId);
 
       if (existing) {
+        if (gameMode === "duo_2v2" && room.phase === "battle") {
+          const previousControllerId = existing.controllerId;
+          if (!previousControllerId) throw new Error("没有可恢复的 2V2 控制者身份");
+          rebindDuoControllerReferences(room, previousControllerId, socket.id, clientId);
+          bindSocketToRoom(socket.id, clientId, roomId);
+          const event = addEvent(room, "system", `${existing.nickname} 已重新连接`);
+          broadcastRoom(room, [event]);
+          broadcastRoomList();
+          return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+        }
         const previousId = existing.id;
         existing.id = socket.id;
         existing.isOnline = true;
         rebindPlayerReferences(room, previousId, socket.id);
+        ensureDuoSlots(room);
         bindSocketToRoom(socket.id, clientId, roomId);
         const event = addEvent(room, "system", `${existing.nickname} 已重新连接`);
         broadcastRoom(room, [event]);
@@ -154,11 +170,12 @@ io.on("connection", (socket) => {
       }
 
       if (room.phase !== "lobby") throw new Error("游戏已经开始，不能加入");
-      if (room.players.length >= settings.maxPlayers) throw new Error("房间已满");
+      if (room.players.length >= maxPlayers) throw new Error("房间已满");
 
       const nickname = sanitizeNickname(payload.nickname);
       const player = createPlayer(socket.id, clientId, nickname, false);
       room.players.push(player);
+      ensureDuoSlots(room);
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${nickname} 加入了房间`);
       broadcastRoom(room, [event]);
@@ -174,10 +191,21 @@ io.on("connection", (socket) => {
       const room = getRoom(roomId);
       const player = room.players.find((item) => item.clientId === clientId);
       if (!player) throw new Error("没有可恢复的房间身份");
+      if (ensureRoomGameMode(room) === "duo_2v2" && room.phase === "battle") {
+        const previousControllerId = player.controllerId;
+        if (!previousControllerId) throw new Error("没有可恢复的 2V2 控制者身份");
+        rebindDuoControllerReferences(room, previousControllerId, socket.id, clientId);
+        bindSocketToRoom(socket.id, clientId, roomId);
+        const event = addEvent(room, "system", `${player.nickname} 已重新连接`);
+        broadcastRoom(room, [event]);
+        broadcastRoomList();
+        return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+      }
       const previousId = player.id;
       player.id = socket.id;
       player.isOnline = true;
       rebindPlayerReferences(room, previousId, socket.id);
+      ensureDuoSlots(room);
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${player.nickname} 已重新连接`);
       broadcastRoom(room, [event]);
@@ -221,6 +249,33 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on("chooseDuoSlotCharacter", (payload: { slotIndex?: 0 | 1; characterId?: CharacterId }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (ensureRoomGameMode(room) !== "duo_2v2") throw new Error("当前房间不是 2V2 模式");
+      if (room.phase !== "lobby") throw new Error("游戏开始后不能更换职业");
+      if (payload.slotIndex !== 0 && payload.slotIndex !== 1) throw new Error("2V2 槽位无效");
+      if (!payload.characterId || !isCharacterId(payload.characterId)) throw new Error("请选择有效职业");
+      chooseDuoSlotCharacter(room, socket.id, payload.slotIndex, payload.characterId);
+      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      broadcastRoomList();
+      return { ok: true };
+    });
+  });
+
+  socket.on("chooseDuoSlotSummonerSkill", (payload: { slotIndex?: 0 | 1; summonerSkillId?: SummonerSkillId }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (ensureRoomGameMode(room) !== "duo_2v2") throw new Error("当前房间不是 2V2 模式");
+      if (room.phase !== "lobby") throw new Error("游戏开始后不能更换召唤师技能");
+      if (payload.slotIndex !== 0 && payload.slotIndex !== 1) throw new Error("2V2 槽位无效");
+      if (!payload.summonerSkillId || !isSummonerSkillId(payload.summonerSkillId)) throw new Error("请选择有效召唤师技能");
+      chooseDuoSlotSummonerSkill(room, socket.id, payload.slotIndex, payload.summonerSkillId);
+      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      return { ok: true };
+    });
+  });
+
   socket.on("updateRoomSettings", (payload: Partial<RoomSettings> | undefined, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
@@ -234,6 +289,12 @@ io.on("connection", (socket) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       if (room.hostId !== socket.id) throw new Error("只有房主可以开始游戏");
+      if (ensureRoomGameMode(room) === "duo_2v2") {
+        const events = startDuoGameV0(room);
+        broadcastRoom(room, events);
+        broadcastRoomList();
+        return { ok: true };
+      }
       validateStartGame(room);
       const events = startGame(room, serverContext);
       broadcastRoom(room, events);
@@ -241,20 +302,46 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("selectTarget", (payload: { targetId?: string }, reply?: Ack) => {
+  socket.on("selectActor", (payload: { actorId?: string }, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
-      if (!payload.targetId) throw new Error("请选择目标");
-      selectTarget(room, socket.id, payload.targetId);
+      if (ensureRoomGameMode(room) !== "duo_2v2") throw new Error("当前房间不是 2V2 模式");
+      if (room.phase !== "battle") throw new Error("2V2 尚未进入战斗阶段");
+      if (room.activeControllerId !== socket.id) throw new Error("轮到你时才能选择行动角色");
+      if (!payload.actorId) throw new Error("请选择行动角色");
+      if (room.pendingRoll || room.pendingRollDecision) throw new Error("请先完成当前投骰流程");
+
+      const actor = room.players.find((player) => player.id === payload.actorId);
+      if (!actor) throw new Error("行动角色不存在");
+      if (actor.controllerId !== room.activeControllerId) throw new Error("只能选择自己控制的角色");
+      if (actor.isDead) throw new Error("死亡角色不能行动");
+
+      room.selectedActorId = actor.id;
       io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
       return { ok: true };
     });
   });
 
-  socket.on("rollDice", (_payload: unknown, reply?: Ack) => {
+    socket.on("selectTarget", (payload: { targetId?: string }, reply?: Ack) => {
+      handle(socket.id, reply, () => {
+        const room = getSocketRoom(socket.id);
+        if (!payload.targetId) throw new Error("请选择目标");
+        if (ensureRoomGameMode(room) === "duo_2v2") {
+          selectTarget(room, socket.id, payload.targetId, socket.id);
+        } else {
+          selectTarget(room, socket.id, payload.targetId);
+        }
+        io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+        return { ok: true };
+      });
+    });
+
+    socket.on("rollDice", (_payload: unknown, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
-      const result = rollForActivePlayer(room, socket.id, serverContext);
+      const result = ensureRoomGameMode(room) === "duo_2v2"
+        ? rollForActivePlayer(room, socket.id, serverContext, socket.id)
+        : rollForActivePlayer(room, socket.id, serverContext);
       broadcastRoom(room, result.events);
       if (result.gameOver) {
         io.to(room.id).emit("gameOver", result.gameOver);
@@ -263,7 +350,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("confirmRollDecision", (payload: { roomId?: string; pendingDecisionId?: string; decisionId?: string; actionType?: RollActionType; choice?: RollDecisionChoice; skillId?: string; summonerSkillId?: SummonerSkillId }, reply?: Ack) => {
+    socket.on("confirmRollDecision", (payload: { roomId?: string; pendingDecisionId?: string; decisionId?: string; actionType?: RollActionType; choice?: RollDecisionChoice; skillId?: string; summonerSkillId?: SummonerSkillId }, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       if (payload.roomId && payload.roomId !== room.id) throw new Error("房间不匹配");
@@ -272,7 +359,9 @@ io.on("connection", (socket) => {
       const summonerSkillId = payload.summonerSkillId ?? (isSummonerSkillId(payload.skillId) ? payload.skillId : undefined);
       if (!decisionId || !choice) throw new Error("缺少投后选择");
       if (!isRollDecisionChoice(choice)) throw new Error("未知的投后选择");
-      const result = confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId);
+      const result = ensureRoomGameMode(room) === "duo_2v2"
+        ? confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId, socket.id)
+        : confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId);
       broadcastRoom(room, result.events);
       if (result.gameOver) {
         io.to(room.id).emit("gameOver", result.gameOver);
@@ -383,6 +472,7 @@ function addEvent(room: Room, type: GameEvent["type"], message: string): GameEve
 function serializePublicRoom(room: Room): Room {
   ensureRoomSettings(room);
   ensureRoomGameMode(room);
+  ensureDuoSlots(room);
   const publicRoom = serializeRoom(room);
   publicRoom.battleLog = publicRoom.battleLog.slice(0, MAX_BATTLE_LOG);
   publicRoom.snapshots = [];
@@ -395,14 +485,16 @@ function getPublicRoomList(): RoomListItem[] {
     .filter((room) => room.phase !== "gameOver" && getRoomOnlineCount(room) > 0)
     .map((room) => {
       const settings = ensureRoomSettings(room);
+      const gameMode = ensureRoomGameMode(room);
+      const maxPlayers = gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : settings.maxPlayers;
       const host = room.players.find((player) => player.id === room.hostId) ?? room.players.find((player) => player.isHost);
       return {
         roomId: room.id,
         hostName: host?.nickname ?? "未知房主",
         playerCount: room.players.length,
-        maxPlayers: settings.maxPlayers,
+        maxPlayers,
         phase: mapRoomPhase(room.phase),
-        canJoin: room.phase === "lobby" && room.players.length < settings.maxPlayers
+        canJoin: room.phase === "lobby" && room.players.length < maxPlayers
       };
     });
 }
@@ -421,6 +513,65 @@ function ensureRoomGameMode(room: Room): GameMode {
   const currentMode = room.gameMode ?? room.settings?.gameMode;
   room.gameMode = isGameMode(currentMode) ? currentMode : DEFAULT_GAME_MODE;
   return room.gameMode;
+}
+
+function ensureDuoSlots(room: Room): void {
+  if (ensureRoomGameMode(room) !== "duo_2v2") return;
+  if (room.phase !== "lobby") return;
+
+  const activeControllerIds = new Set(room.players.slice(0, DUO_MAX_CONTROLLERS).map((player) => player.id));
+  const existingSlots = new Map<string, DuoCharacterSlot>();
+  for (const slot of room.duoSlots ?? []) {
+    if (activeControllerIds.has(slot.controllerId)) {
+      existingSlots.set(duoSlotKey(slot.controllerId, slot.slotIndex), slot);
+    }
+  }
+
+  const nextSlots: DuoCharacterSlot[] = [];
+  for (const [playerIndex, player] of room.players.slice(0, DUO_MAX_CONTROLLERS).entries()) {
+    const teamId: TeamId = playerIndex === 0 ? "A" : "B";
+    for (const slotIndex of [0, 1] as const) {
+      const existing = existingSlots.get(duoSlotKey(player.id, slotIndex));
+      nextSlots.push({
+        controllerId: player.id,
+        teamId,
+        slotIndex,
+        characterId: existing?.characterId,
+        summonerSkillId: existing?.summonerSkillId ?? "lucky_plus_one"
+      });
+    }
+  }
+
+  room.duoSlots = nextSlots;
+}
+
+function chooseDuoSlotCharacter(room: Room, controllerId: string, slotIndex: 0 | 1, characterId: CharacterId): void {
+  ensureDuoSlots(room);
+  const slot = getDuoSlotOrThrow(room, controllerId, slotIndex);
+  const settings = ensureRoomSettings(room);
+  if (!settings.allowDuplicateCharacters) {
+    const takenByOtherSlot = (room.duoSlots ?? []).some(
+      (item) => !(item.controllerId === controllerId && item.slotIndex === slotIndex) && item.characterId === characterId
+    );
+    if (takenByOtherSlot) throw new Error("该职业已被其他 2V2 槽位选择");
+  }
+  slot.characterId = characterId;
+}
+
+function chooseDuoSlotSummonerSkill(room: Room, controllerId: string, slotIndex: 0 | 1, summonerSkillId: SummonerSkillId): void {
+  ensureDuoSlots(room);
+  const slot = getDuoSlotOrThrow(room, controllerId, slotIndex);
+  slot.summonerSkillId = summonerSkillId;
+}
+
+function getDuoSlotOrThrow(room: Room, controllerId: string, slotIndex: 0 | 1): DuoCharacterSlot {
+  const slot = room.duoSlots?.find((item) => item.controllerId === controllerId && item.slotIndex === slotIndex);
+  if (!slot) throw new Error("2V2 槽位不存在");
+  return slot;
+}
+
+function duoSlotKey(controllerId: string, slotIndex: 0 | 1): string {
+  return `${controllerId}:${slotIndex}`;
 }
 
 function updateRoomSettings(room: Room, actorId: string, payload: Partial<RoomSettings>): void {
@@ -444,11 +595,18 @@ function updateRoomSettings(room: Room, actorId: string, payload: Partial<RoomSe
 
   if (payload.gameMode !== undefined) {
     if (!isGameMode(payload.gameMode)) throw new Error("游戏模式设置无效");
+    if (payload.gameMode === "duo_2v2" && room.players.length > DUO_MAX_CONTROLLERS) throw new Error("2V2 模式最多支持 2 名玩家");
     room.gameMode = payload.gameMode;
     nextSettings.gameMode = payload.gameMode;
+    if (payload.gameMode === "duo_2v2") nextSettings.maxPlayers = DUO_MAX_CONTROLLERS;
+  }
+
+  if (ensureRoomGameMode(room) === "duo_2v2") {
+    nextSettings.maxPlayers = DUO_MAX_CONTROLLERS;
   }
 
   room.settings = nextSettings;
+  ensureDuoSlots(room);
 }
 
 function validateCharacterChoice(room: Room, actorId: string, characterId: CharacterId): void {
@@ -459,10 +617,6 @@ function validateCharacterChoice(room: Room, actorId: string, characterId: Chara
 }
 
 function validateStartGame(room: Room): void {
-  if (ensureRoomGameMode(room) === "duo_2v2") {
-    throw new Error("2V2 模式开发中，暂时不能开始");
-  }
-
   const settings = ensureRoomSettings(room);
   if (room.players.length > settings.maxPlayers) throw new Error("当前玩家数超过房间最大人数");
   if (settings.allowDuplicateCharacters) return;
@@ -472,6 +626,87 @@ function validateStartGame(room: Room): void {
   if (uniqueCharacters.size !== selectedCharacters.length) {
     throw new Error("当前已有重复职业，请玩家重新选择");
   }
+}
+
+function validateDuoStartGame(room: Room): DuoCharacterSlot[] {
+  if (ensureRoomGameMode(room) !== "duo_2v2") throw new Error("当前房间不是 2V2 模式");
+  if (room.players.length !== DUO_MAX_CONTROLLERS) throw new Error("2V2 需要 2 名玩家");
+
+  ensureDuoSlots(room);
+  const slots = room.duoSlots ?? [];
+  const aSlots = slots.filter((slot) => slot.teamId === "A");
+  const bSlots = slots.filter((slot) => slot.teamId === "B");
+  if (aSlots.length !== 2 || bSlots.length !== 2) throw new Error("请完成 4 个角色槽位选择");
+  if (slots.length !== 4 || slots.some((slot) => !slot.characterId)) throw new Error("请完成 4 个角色槽位选择");
+  if (slots.some((slot) => !slot.summonerSkillId)) throw new Error("请为所有角色选择召唤师技能");
+
+  const settings = ensureRoomSettings(room);
+  if (!settings.allowDuplicateCharacters) {
+    const selectedCharacters = slots.map((slot) => slot.characterId).filter((characterId): characterId is CharacterId => Boolean(characterId));
+    const uniqueCharacters = new Set(selectedCharacters);
+    if (uniqueCharacters.size !== selectedCharacters.length) throw new Error("当前设置不允许重复职业");
+  }
+
+  return slots;
+}
+
+function startDuoGameV0(room: Room): GameEvent[] {
+  const slots = validateDuoStartGame(room);
+  const controllers = [...room.players];
+  const controllerById = new Map(controllers.map((player) => [player.id, player]));
+  const sortedSlots = [...slots].sort((left, right) => left.teamId.localeCompare(right.teamId) || left.slotIndex - right.slotIndex);
+  const aControllerId = sortedSlots.find((slot) => slot.teamId === "A")?.controllerId;
+  const bControllerId = sortedSlots.find((slot) => slot.teamId === "B")?.controllerId;
+  if (!aControllerId || !bControllerId) throw new Error("2V2 队伍信息不完整");
+
+  room.phase = "battle";
+  room.activePlayerIndex = 0;
+  room.effects = [];
+  room.snapshots = [];
+  room.previousFinalDamage = 0;
+  room.pendingRoll = undefined;
+  room.pendingRollDecision = undefined;
+  room.rematchReadyPlayerIds = [];
+  room.winnerId = undefined;
+  room.winnerTeamId = undefined;
+  room.highlight = undefined;
+  room.skillHints = undefined;
+  room.controllerTurnOrder = [aControllerId, bControllerId];
+  room.activeControllerId = aControllerId;
+  room.selectedActorId = undefined;
+
+  room.players = sortedSlots.map((slot) => {
+    const controller = controllerById.get(slot.controllerId);
+    const character = characterList.find((item) => item.id === slot.characterId);
+    if (!controller || !character || !slot.characterId || !slot.summonerSkillId) throw new Error("2V2 战斗单位初始化失败");
+
+    return {
+      id: `${slot.controllerId}-slot-${slot.slotIndex}`,
+      clientId: controller.clientId,
+      controllerId: slot.controllerId,
+      teamId: slot.teamId,
+      slotIndex: slot.slotIndex,
+      nickname: `${controller.nickname} 角色${slot.slotIndex + 1}`,
+      isHost: controller.isHost,
+      isOnline: controller.isOnline,
+      characterId: slot.characterId,
+      summonerSkillId: slot.summonerSkillId,
+      summonerSkillCooldown: 0,
+      hp: character.maxHp,
+      maxHp: character.maxHp,
+      shield: 0,
+      zhaoZilongHitCount: 0,
+      isDead: false,
+      selectedTargetId: undefined
+    };
+  });
+
+  const activeController = controllerById.get(aControllerId);
+  const events = [
+    addEvent(room, "startGame", "2V2 V0 开始：已生成 4 个战斗单位"),
+    addEvent(room, "turn", `轮到 ${activeController?.nickname ?? "A 队玩家"} 选择行动角色`)
+  ];
+  return events;
 }
 
 function mapRoomPhase(phase: Room["phase"]): RoomListStatus {
@@ -504,6 +739,10 @@ function isEmoteId(value: unknown): value is EmoteId {
 
 function isSummonerSkillId(value: unknown): value is SummonerSkillId {
   return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
+}
+
+function isCharacterId(value: unknown): value is CharacterId {
+  return typeof value === "string" && characterList.some((character) => character.id === value);
 }
 
 function isRollDecisionChoice(value: unknown): value is RollDecisionChoice {
@@ -543,6 +782,7 @@ function removePlayerFromRoom(socketId: string): void {
   room.players = room.players.filter((player) => player.clientId !== clientId);
   if (leaving) {
     room.rematchReadyPlayerIds = room.rematchReadyPlayerIds.filter((playerId) => playerId !== leaving.id);
+    room.duoSlots = room.duoSlots?.filter((slot) => slot.controllerId !== leaving.id);
   }
 
   if (room.players.length === 0) {
@@ -559,6 +799,7 @@ function removePlayerFromRoom(socketId: string): void {
   if (room.activePlayerIndex >= room.players.length) {
     room.activePlayerIndex = 0;
   }
+  ensureDuoSlots(room);
 
   const event = addEvent(room, "system", `${leaving?.nickname ?? "玩家"} 离开了房间`);
   refreshRoomEmptySince(room);
@@ -577,6 +818,7 @@ function removeClientFromRooms(clientId: string): void {
     unbindClientSocketsFromRoom(clientId, room.id);
     room.players = room.players.filter((player) => player.clientId !== clientId);
     room.rematchReadyPlayerIds = room.rematchReadyPlayerIds.filter((playerId) => playerId !== leaving.id);
+    room.duoSlots = room.duoSlots?.filter((slot) => slot.controllerId !== leaving.id);
 
     if (room.players.length === 0) {
       rooms.delete(room.id);
@@ -591,6 +833,7 @@ function removeClientFromRooms(clientId: string): void {
     if (room.activePlayerIndex >= room.players.length) {
       room.activePlayerIndex = 0;
     }
+    ensureDuoSlots(room);
 
     const event = addEvent(room, "system", `${leaving.nickname} 离开了房间`);
     refreshRoomEmptySince(room);
@@ -620,9 +863,11 @@ function markPlayerOffline(socketId: string): void {
   socketToClient.delete(socketId);
   if (!room) return;
 
-  const player = room.players.find((item) => item.id === socketId);
+  const player = room.players.find((item) => item.id === socketId || item.controllerId === socketId);
   if (!player) return;
-  player.isOnline = false;
+  for (const item of room.players) {
+    if (item.id === socketId || item.controllerId === socketId) item.isOnline = false;
+  }
   const event = addEvent(room, "system", `${player.nickname} 已离线`);
   refreshRoomEmptySince(room);
   broadcastRoom(room, [event]);
@@ -630,6 +875,10 @@ function markPlayerOffline(socketId: string): void {
 }
 
 function getRoomOnlineCount(room: Room): number {
+  if (ensureRoomGameMode(room) === "duo_2v2" && room.phase === "battle") {
+    const controllerIds = new Set(room.players.map((player) => player.controllerId).filter((controllerId): controllerId is string => Boolean(controllerId)));
+    return Array.from(controllerIds).filter((controllerId) => socketToRoom.get(controllerId) === room.id && io.sockets.sockets.has(controllerId)).length;
+  }
   return room.players.filter((player) => socketToRoom.get(player.id) === room.id && socketToClient.get(player.id) === player.clientId && io.sockets.sockets.has(player.id)).length;
 }
 
@@ -665,6 +914,9 @@ function rebindPlayerReferences(room: Room, previousId: string, nextId: string):
   if (room.pendingRoll?.targetId === previousId) room.pendingRoll.targetId = nextId;
   if (room.pendingRollDecision?.actorId === previousId) room.pendingRollDecision.actorId = nextId;
   if (room.pendingRollDecision?.targetId === previousId) room.pendingRollDecision.targetId = nextId;
+  for (const slot of room.duoSlots ?? []) {
+    if (slot.controllerId === previousId) slot.controllerId = nextId;
+  }
   for (const player of room.players) {
     if (player.selectedTargetId === previousId) player.selectedTargetId = nextId;
   }
@@ -681,6 +933,23 @@ function rebindPlayerReferences(room: Room, previousId: string, nextId: string):
     for (const effect of snapshot.effects) {
       if (effect.sourcePlayerId === previousId) effect.sourcePlayerId = nextId;
       if (effect.expiresAtSourceTurnStartPlayerId === previousId) effect.expiresAtSourceTurnStartPlayerId = nextId;
+    }
+  }
+}
+
+function rebindDuoControllerReferences(room: Room, previousId: string, nextId: string, clientId: string): void {
+  if (previousId === nextId) return;
+  if (room.hostId === previousId) room.hostId = nextId;
+  if (room.activeControllerId === previousId) room.activeControllerId = nextId;
+  room.controllerTurnOrder = room.controllerTurnOrder?.map((controllerId) => (controllerId === previousId ? nextId : controllerId));
+  for (const slot of room.duoSlots ?? []) {
+    if (slot.controllerId === previousId) slot.controllerId = nextId;
+  }
+  for (const player of room.players) {
+    if (player.controllerId === previousId || player.clientId === clientId) {
+      player.controllerId = nextId;
+      player.clientId = clientId;
+      player.isOnline = true;
     }
   }
 }

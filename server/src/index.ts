@@ -104,10 +104,11 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("createRoom", (payload: { nickname?: string; clientId?: string }, reply?: Ack) => {
+  socket.on("createRoom", (payload: { nickname?: string; clientId?: string; gameMode?: GameMode }, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const nickname = sanitizeNickname(payload.nickname);
       const clientId = sanitizeClientId(payload.clientId);
+      const gameMode = isGameMode(payload.gameMode) ? payload.gameMode : DEFAULT_GAME_MODE;
       removePlayerFromRoom(socket.id);
       removeClientFromRooms(clientId);
       const roomId = createRoomId();
@@ -116,8 +117,12 @@ io.on("connection", (socket) => {
         id: roomId,
         hostId: socket.id,
         phase: "lobby",
-        gameMode: DEFAULT_GAME_MODE,
-        settings: { ...DEFAULT_ROOM_SETTINGS },
+        gameMode,
+        settings: {
+          ...DEFAULT_ROOM_SETTINGS,
+          gameMode,
+          maxPlayers: gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : DEFAULT_ROOM_SETTINGS.maxPlayers
+        },
         players: [player],
         rematchReadyPlayerIds: [],
         activePlayerIndex: 0,
@@ -127,6 +132,7 @@ io.on("connection", (socket) => {
         previousFinalDamage: 0
       };
 
+      ensureDuoSlots(room);
       rooms.set(roomId, room);
       bindSocketToRoom(socket.id, clientId, roomId);
       const event = addEvent(room, "system", `${nickname} 创建了房间 ${roomId}`);
@@ -136,13 +142,13 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("joinRoom", (payload: { roomId?: string; nickname?: string; clientId?: string }, reply?: Ack) => {
+  socket.on("joinRoom", (payload: { roomId?: string; nickname?: string; clientId?: string; gameMode?: GameMode }, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const roomId = (payload.roomId ?? "").trim().toUpperCase();
       const room = getRoom(roomId);
-      const settings = ensureRoomSettings(room);
       const gameMode = ensureRoomGameMode(room);
-      const maxPlayers = gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : settings.maxPlayers;
+      if (payload.gameMode !== undefined && payload.gameMode !== gameMode) throw new Error("房间模式与当前入口不匹配");
+      const maxPlayers = getRoomMaxPlayers(room);
       const clientId = sanitizeClientId(payload.clientId);
       const existing = room.players.find((player) => player.clientId === clientId);
 
@@ -170,7 +176,7 @@ io.on("connection", (socket) => {
       }
 
       if (room.phase !== "lobby") throw new Error("游戏已经开始，不能加入");
-      if (room.players.length >= maxPlayers) throw new Error("房间已满");
+      if (getRoomParticipantCount(room) >= maxPlayers) throw new Error("房间已满");
 
       const nickname = sanitizeNickname(payload.nickname);
       const player = createPlayer(socket.id, clientId, nickname, false);
@@ -374,11 +380,23 @@ io.on("connection", (socket) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       if (room.phase !== "gameOver") throw new Error("只有游戏结束后才能准备再来一局");
-      if (!room.rematchReadyPlayerIds.includes(socket.id)) {
-        room.rematchReadyPlayerIds.push(socket.id);
+      if (shouldCleanupDuoRoom(room)) {
+        deleteRoomAndUnbindSockets(room.id);
+        broadcastRoomList();
+        return { ok: true, removed: true };
+      }
+      const rematchPlayerId = getRematchPlayerIdForSocket(room, socket.id, socketToClient.get(socket.id));
+      if (!room.rematchReadyPlayerIds.includes(rematchPlayerId)) {
+        room.rematchReadyPlayerIds.push(rematchPlayerId);
       }
 
-      if (room.players.every((player) => room.rematchReadyPlayerIds.includes(player.id))) {
+      const requiredPlayerIds = getRematchRequiredPlayerIds(room);
+      if (ensureRoomGameMode(room) === "duo_2v2" && requiredPlayerIds.length < DUO_MAX_CONTROLLERS) {
+        deleteRoomAndUnbindSockets(room.id);
+        broadcastRoomList();
+        return { ok: true, removed: true };
+      }
+      if (requiredPlayerIds.length > 0 && requiredPlayerIds.every((playerId) => room.rematchReadyPlayerIds.includes(playerId))) {
         resetToLobbyForRematch(room);
         io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
         return { ok: true, reset: true };
@@ -392,20 +410,22 @@ io.on("connection", (socket) => {
   socket.on("sendEmote", (payload: { emoteId?: unknown } | undefined, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
-      const player = room.players.find((item) => item.id === socket.id);
+      const clientId = socketToClient.get(socket.id);
+      const player = findRoomParticipantForSocket(room, socket.id, clientId);
       if (!player) throw new Error("玩家不在该房间中");
       const emoteId = payload?.emoteId;
       if (!isEmoteId(emoteId)) throw new Error("无效的表情");
 
       const now = Date.now();
-      const cooldownKey = `${room.id}:${socket.id}`;
+      const emotePlayerId = ensureRoomGameMode(room) === "duo_2v2" ? player.controllerId ?? socket.id : player.id;
+      const cooldownKey = `${room.id}:${emotePlayerId}`;
       const lastSentAt = emoteCooldowns.get(cooldownKey) ?? 0;
       if (now - lastSentAt < EMOTE_COOLDOWN_MS) return { ok: true, ignored: true };
 
       emoteCooldowns.set(cooldownKey, now);
       const event: PlayerEmoteEvent = {
         roomId: room.id,
-        playerId: socket.id,
+        playerId: emotePlayerId,
         emoteId,
         createdAt: now
       };
@@ -484,19 +504,43 @@ function getPublicRoomList(): RoomListItem[] {
   return Array.from(rooms.values())
     .filter((room) => room.phase !== "gameOver" && getRoomOnlineCount(room) > 0)
     .map((room) => {
-      const settings = ensureRoomSettings(room);
       const gameMode = ensureRoomGameMode(room);
-      const maxPlayers = gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : settings.maxPlayers;
-      const host = room.players.find((player) => player.id === room.hostId) ?? room.players.find((player) => player.isHost);
+      const playerCount = getRoomParticipantCount(room);
+      const maxPlayers = getRoomMaxPlayers(room);
+      const host = getRoomHost(room);
       return {
         roomId: room.id,
         hostName: host?.nickname ?? "未知房主",
-        playerCount: room.players.length,
+        playerCount,
         maxPlayers,
         phase: mapRoomPhase(room.phase),
-        canJoin: room.phase === "lobby" && room.players.length < maxPlayers
+        canJoin: room.phase === "lobby" && playerCount < maxPlayers,
+        gameMode
       };
     });
+}
+
+function getRoomParticipantCount(room: Room): number {
+  if (ensureRoomGameMode(room) !== "duo_2v2") return room.players.length;
+  return getRoomControllers(room).length;
+}
+
+function getRoomMaxPlayers(room: Room): number {
+  if (ensureRoomGameMode(room) === "duo_2v2") return DUO_MAX_CONTROLLERS;
+  return ensureRoomSettings(room).maxPlayers;
+}
+
+function getRoomControllers(room: Room): string[] {
+  if (ensureRoomGameMode(room) !== "duo_2v2") return room.players.map((player) => player.id);
+  const controllers = new Set<string>();
+  for (const player of room.players) {
+    controllers.add(player.controllerId ?? player.id);
+  }
+  return Array.from(controllers);
+}
+
+function getRoomHost(room: Room): Room["players"][number] | undefined {
+  return room.players.find((player) => player.id === room.hostId || player.controllerId === room.hostId) ?? room.players.find((player) => player.isHost);
 }
 
 function ensureRoomSettings(room: Room): RoomSettings {
@@ -733,6 +777,32 @@ function getRoom(roomId: string): Room {
   return room;
 }
 
+function findRoomParticipantForSocket(room: Room, socketId: string, clientId: string | undefined): Room["players"][number] | undefined {
+  if (ensureRoomGameMode(room) === "duo_2v2") {
+    return room.players.find((player) => player.controllerId === socketId || Boolean(clientId && player.clientId === clientId));
+  }
+  return room.players.find((player) => player.id === socketId || Boolean(clientId && player.clientId === clientId));
+}
+
+function getRematchPlayerIdForSocket(room: Room, socketId: string, clientId: string | undefined): string {
+  if (ensureRoomGameMode(room) !== "duo_2v2") {
+    const player = findRoomParticipantForSocket(room, socketId, clientId);
+    if (!player) throw new Error("玩家不在该房间中");
+    return player.id;
+  }
+
+  const participant = findRoomParticipantForSocket(room, socketId, clientId);
+  const controllerId = participant?.controllerId ?? (room.controllerTurnOrder?.includes(socketId) ? socketId : undefined);
+  if (!controllerId) throw new Error("玩家不在该房间中");
+  return controllerId;
+}
+
+function getRematchRequiredPlayerIds(room: Room): string[] {
+  if (ensureRoomGameMode(room) !== "duo_2v2") return room.players.map((player) => player.id);
+  const orderedControllers = (room.controllerTurnOrder ?? []).filter((controllerId) => getRoomControllers(room).includes(controllerId));
+  return orderedControllers.length > 0 ? orderedControllers : getRoomControllers(room);
+}
+
 function isEmoteId(value: unknown): value is EmoteId {
   return typeof value === "string" && allowedEmoteIds.has(value);
 }
@@ -778,6 +848,24 @@ function removePlayerFromRoom(socketId: string): void {
   socketToClient.delete(socketId);
 
   if (!room || !clientId) return;
+  if (shouldUseDuoControllerLeave(room)) {
+    const leaving = findRoomParticipantForSocket(room, socketId, clientId);
+    const controllerId = leaving?.controllerId ?? (room.controllerTurnOrder?.includes(socketId) ? socketId : undefined);
+    if (!controllerId) return;
+    const nickname = getDuoControllerDisplayName(room, controllerId);
+    removeDuoControllerFromRoom(room, controllerId);
+    if (shouldCleanupDuoRoom(room)) {
+      deleteRoomAndUnbindSockets(room.id);
+      broadcastRoomList();
+      return;
+    }
+    const event = addEvent(room, "system", `${nickname} 离开了房间`);
+    refreshRoomEmptySince(room);
+    broadcastRoom(room, [event]);
+    broadcastRoomList();
+    return;
+  }
+
   const leaving = room.players.find((player) => player.clientId === clientId);
   room.players = room.players.filter((player) => player.clientId !== clientId);
   if (leaving) {
@@ -816,6 +904,21 @@ function removeClientFromRooms(clientId: string): void {
 
     changed = true;
     unbindClientSocketsFromRoom(clientId, room.id);
+    if (shouldUseDuoControllerLeave(room)) {
+      const controllerId = leaving.controllerId ?? room.controllerTurnOrder?.find((id) => id === leaving.id);
+      if (!controllerId) continue;
+      const nickname = getDuoControllerDisplayName(room, controllerId);
+      removeDuoControllerFromRoom(room, controllerId);
+      if (shouldCleanupDuoRoom(room)) {
+        deleteRoomAndUnbindSockets(room.id);
+        continue;
+      }
+      const event = addEvent(room, "system", `${nickname} 离开了房间`);
+      refreshRoomEmptySince(room);
+      broadcastRoom(room, [event]);
+      continue;
+    }
+
     room.players = room.players.filter((player) => player.clientId !== clientId);
     room.rematchReadyPlayerIds = room.rematchReadyPlayerIds.filter((playerId) => playerId !== leaving.id);
     room.duoSlots = room.duoSlots?.filter((slot) => slot.controllerId !== leaving.id);
@@ -851,6 +954,67 @@ function unbindClientSocketsFromRoom(clientId: string, roomId: string): void {
     socketToRoom.delete(socketId);
     socketToClient.delete(socketId);
   }
+}
+
+function deleteRoomAndUnbindSockets(roomId: string): void {
+  for (const [socketId, mappedRoomId] of Array.from(socketToRoom.entries())) {
+    if (mappedRoomId !== roomId) continue;
+    const socket = io.sockets.sockets.get(socketId);
+    socket?.leave(roomId);
+    socketToRoom.delete(socketId);
+    socketToClient.delete(socketId);
+  }
+  rooms.delete(roomId);
+}
+
+function shouldUseDuoControllerLeave(room: Room): boolean {
+  return ensureRoomGameMode(room) === "duo_2v2" && room.phase !== "lobby";
+}
+
+function shouldCleanupDuoRoom(room: Room): boolean {
+  return shouldUseDuoControllerLeave(room) && getRoomControllers(room).length < DUO_MAX_CONTROLLERS;
+}
+
+function removeDuoControllerFromRoom(room: Room, controllerId: string): void {
+  const removedCombatantIds = new Set(room.players.filter((player) => player.controllerId === controllerId || player.id === controllerId).map((player) => player.id));
+  room.players = room.players.filter((player) => player.controllerId !== controllerId && player.id !== controllerId);
+  room.duoSlots = room.duoSlots?.filter((slot) => slot.controllerId !== controllerId);
+  room.controllerTurnOrder = room.controllerTurnOrder?.filter((id) => id !== controllerId);
+  room.rematchReadyPlayerIds = room.rematchReadyPlayerIds.filter((id) => id !== controllerId && !removedCombatantIds.has(id));
+
+  if (room.activeControllerId === controllerId) {
+    room.activeControllerId = room.controllerTurnOrder?.[0];
+  }
+  if (room.selectedActorId && removedCombatantIds.has(room.selectedActorId)) {
+    room.selectedActorId = undefined;
+  }
+  if (room.pendingRoll && (removedCombatantIds.has(room.pendingRoll.playerId) || Boolean(room.pendingRoll.targetId && removedCombatantIds.has(room.pendingRoll.targetId)))) {
+    room.pendingRoll = undefined;
+  }
+  if (room.pendingRollDecision && (removedCombatantIds.has(room.pendingRollDecision.actorId) || removedCombatantIds.has(room.pendingRollDecision.targetId))) {
+    room.pendingRollDecision = undefined;
+  }
+
+  for (const player of room.players) {
+    if (player.selectedTargetId && removedCombatantIds.has(player.selectedTargetId)) {
+      player.selectedTargetId = undefined;
+    }
+  }
+
+  if (room.hostId === controllerId || !room.players.some((player) => player.id === room.hostId || player.controllerId === room.hostId)) {
+    room.hostId = getRoomControllers(room)[0] ?? room.players[0]?.id ?? room.hostId;
+  }
+  for (const player of room.players) {
+    player.isHost = player.controllerId === room.hostId || player.id === room.hostId;
+  }
+}
+
+function getDuoControllerDisplayName(room: Room, controllerId: string): string {
+  const player = room.players.find((item) => item.controllerId === controllerId || item.id === controllerId);
+  if (!player) return "玩家";
+  if (player.slotIndex === undefined) return player.nickname;
+  const suffix = ` 角色${player.slotIndex + 1}`;
+  return player.nickname.endsWith(suffix) ? player.nickname.slice(0, -suffix.length) : player.nickname;
 }
 
 function markPlayerOffline(socketId: string): void {

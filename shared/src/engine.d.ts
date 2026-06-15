@@ -16,8 +16,8 @@ export declare function canStartGame(room: Room): {
 };
 export declare function startGame(room: Room, ctx: Pick<EngineContext, "now" | "makeId">): GameEvent[];
 export declare function resetToLobbyForRematch(room: Room): void;
-export declare function selectTarget(room: Room, playerId: string, targetId: string): void;
-export declare function rollForActivePlayer(room: Room, playerId: string, ctx: EngineContext): RollResult;
+export declare function selectTarget(room: Room, playerId: string, targetId: string, requesterId?: string): void;
+export declare function rollForActivePlayer(room: Room, playerId: string, ctx: EngineContext, requesterId?: string): RollResult;
 export declare function serializeRoom(room: Room): Room;
-export declare function confirmRollDecision(room: Room, playerId: string, decisionId: string, choice: RollDecisionChoice, ctx: EngineContext, summonerSkillId?: SummonerSkillId): RollResult;
+export declare function confirmRollDecision(room: Room, playerId: string, decisionId: string, choice: RollDecisionChoice, ctx: EngineContext, summonerSkillId?: SummonerSkillId, requesterId?: string): RollResult;
 export {};

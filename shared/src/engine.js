@@ -82,11 +82,33 @@ export function resetToLobbyForRematch(room) {
         player.selectedTargetId = undefined;
     }
 }
-export function selectTarget(room, playerId, targetId) {
+export function selectTarget(room, playerId, targetId, requesterId) {
     if (room.pendingRoll)
         throw new Error("请先完成继续投骰");
     if (room.pendingRollDecision)
         throw new Error("请先完成投后选择");
+    if (room.gameMode === "duo_2v2") {
+        const controllerId = requesterId ?? playerId;
+        if (!room.selectedActorId)
+            throw new Error("请先选择行动角色");
+        if (room.activeControllerId !== controllerId)
+            throw new Error("只有当前控制者可以选择目标");
+        const actor = getPlayerOrThrow(room, room.selectedActorId);
+        if (actor.isDead)
+            throw new Error("行动角色已死亡");
+        if (actor.controllerId !== controllerId)
+            throw new Error("只能控制自己的角色选择目标");
+        const target = getPlayerOrThrow(room, targetId);
+        if (target.isDead)
+            throw new Error("不能选择已死亡玩家");
+        if (target.id === actor.id)
+            throw new Error("不能攻击自己");
+        if (target.teamId === actor.teamId)
+            throw new Error("不能选择己方队伍");
+        actor.selectedTargetId = targetId;
+        return;
+    }
+    // classic mode
     const active = getActivePlayer(room);
     if (active.id !== playerId)
         throw new Error("只有当前行动玩家可以选择目标");
@@ -97,9 +119,44 @@ export function selectTarget(room, playerId, targetId) {
         throw new Error("不能选择已死亡玩家");
     active.selectedTargetId = targetId;
 }
-export function rollForActivePlayer(room, playerId, ctx) {
+export function rollForActivePlayer(room, playerId, ctx, requesterId) {
     if (room.phase !== "battle")
         throw new Error("游戏尚未开始");
+    room.skillHints = undefined;
+    if (room.gameMode === "duo_2v2") {
+        const controllerId = requesterId ?? playerId;
+        if (!room.selectedActorId)
+            throw new Error("请先选择行动角色");
+        if (room.activeControllerId !== controllerId)
+            throw new Error("还没有轮到你");
+        const actor = getPlayerOrThrow(room, room.selectedActorId);
+        if (actor.isDead)
+            throw new Error("死亡角色不能行动");
+        if (!actor.characterId)
+            throw new Error("行动角色没有职业");
+        if (room.pendingRollDecision)
+            throw new Error("请先完成投后选择");
+        if (room.pendingRoll) {
+            return resolvePendingRoll(room, actor.id, ctx);
+        }
+        if (!actor.selectedTargetId)
+            throw new Error("请先选择一个目标");
+        const target = getPlayerOrThrow(room, actor.selectedTargetId);
+        if (target.isDead || target.teamId === actor.teamId)
+            throw new Error("请先选择一个存活敌人");
+        saveSnapshot(room, actor.id, ctx);
+        expireEffectsAtTurnStart(room, actor.id);
+        decrementSummonerCooldown(actor);
+        const first = ctx.rollDice();
+        const actorCharacter = characters[actor.characterId];
+        const events = [
+            makeEvent(ctx.now, ctx.makeId, "roll", `${actor.nickname}（${actorCharacter.name}）投出了 ${first} 点`, actor.id, target.id, [first])
+        ];
+        room.pendingRollDecision = createPendingRollDecision(room, actor, target, first, events[0].id, ctx);
+        room.battleLog.unshift(...events);
+        return { room, events };
+    }
+    // classic mode
     const actor = getActivePlayer(room);
     if (actor.id !== playerId)
         throw new Error("还没有轮到你");
@@ -107,7 +164,6 @@ export function rollForActivePlayer(room, playerId, ctx) {
         throw new Error("死亡玩家不能行动");
     if (!actor.characterId)
         throw new Error("当前玩家没有职业");
-    room.skillHints = undefined;
     if (room.pendingRollDecision)
         throw new Error("请先完成投后选择");
     if (room.pendingRoll) {
@@ -131,18 +187,36 @@ export function rollForActivePlayer(room, playerId, ctx) {
 export function serializeRoom(room) {
     return JSON.parse(JSON.stringify(room));
 }
-export function confirmRollDecision(room, playerId, decisionId, choice, ctx, summonerSkillId) {
+export function confirmRollDecision(room, playerId, decisionId, choice, ctx, summonerSkillId, requesterId) {
     const decision = room.pendingRollDecision;
     if (!decision || decision.id !== decisionId || decision.phase !== "waiting_reaction")
         throw new Error("投后选择已失效");
-    if (decision.actorId !== playerId)
-        throw new Error("只有当前行动玩家可以选择");
     if (room.phase !== "battle")
         throw new Error("游戏尚未开始");
-    const actor = getPlayerOrThrow(room, decision.actorId);
+    let actor;
+    if (room.gameMode === "duo_2v2") {
+        const controllerId = requesterId ?? playerId;
+        if (room.activeControllerId !== controllerId)
+            throw new Error("只有当前控制者可以选择行动");
+        if (!room.selectedActorId)
+            throw new Error("请先选择行动角色");
+        if (decision.actorId !== room.selectedActorId)
+            throw new Error("行动角色不匹配");
+        actor = getPlayerOrThrow(room, room.selectedActorId);
+        if (actor.isDead)
+            throw new Error("行动角色已死亡");
+        if (actor.controllerId !== room.activeControllerId)
+            throw new Error("行动角色不属于当前控制者");
+    }
+    else {
+        // classic
+        if (decision.actorId !== playerId)
+            throw new Error("只有当前行动玩家可以选择");
+        actor = getPlayerOrThrow(room, decision.actorId);
+        if (getActivePlayer(room).id !== actor.id)
+            throw new Error("还没有轮到你");
+    }
     const target = getPlayerOrThrow(room, decision.targetId);
-    if (getActivePlayer(room).id !== actor.id)
-        throw new Error("还没有轮到你");
     if (actor.isDead)
         throw new Error("死亡玩家不能行动");
     if (!actor.characterId)
@@ -606,10 +680,18 @@ function finishAction(room, actor, target, outcome, events, ctx) {
     const winner = getWinner(room);
     if (winner) {
         room.phase = "gameOver";
-        room.winnerId = winner.id;
-        events.push(makeEvent(ctx.now, ctx.makeId, "victory", `${winner.nickname} 获胜！`, winner.id));
+        if (room.gameMode === "duo_2v2" && room.winnerTeamId) {
+            const winnerTeamName = room.winnerTeamId === "A" ? "A 队" : "B 队";
+            const firstWinner = room.players.find((p) => p.teamId === room.winnerTeamId && !p.isDead);
+            room.winnerId = firstWinner?.id ?? winner.id;
+            events.push(makeEvent(ctx.now, ctx.makeId, "victory", `${winnerTeamName} 获胜！`, room.winnerId));
+        }
+        else {
+            room.winnerId = winner.id;
+            events.push(makeEvent(ctx.now, ctx.makeId, "victory", `${winner.nickname} 获胜！`, winner.id));
+        }
         room.battleLog.unshift(...events);
-        return { room, events, gameOver: { winnerId: winner.id, winnerName: winner.nickname } };
+        return { room, events, gameOver: { winnerId: room.winnerId, winnerName: `${winner.nickname}` } };
     }
     advanceTurn(room);
     events.push(makeTurnEvent(room, ctx));
@@ -886,6 +968,26 @@ function hasInvincible(room) {
     return room.effects.some((effect) => effect.type === "invincible");
 }
 function advanceTurn(room) {
+    if (room.gameMode === "duo_2v2") {
+        // In duo mode, switch controller turn order
+        const order = room.controllerTurnOrder ?? [];
+        const current = room.activeControllerId;
+        const currentIndex = order.findIndex((id) => id === current);
+        if (currentIndex < 0 || order.length < 2)
+            return;
+        const nextIndex = (currentIndex + 1) % order.length;
+        const nextControllerId = order[nextIndex];
+        room.activeControllerId = nextControllerId;
+        room.selectedActorId = undefined;
+        // Clear selected targets on all players when turn switches
+        for (const player of room.players) {
+            if (player.controllerId !== nextControllerId) {
+                player.selectedTargetId = undefined;
+            }
+        }
+        return;
+    }
+    // classic mode
     const aliveCount = room.players.filter((player) => !player.isDead).length;
     if (aliveCount <= 1)
         return;
@@ -898,6 +1000,26 @@ function advanceTurn(room) {
     }
 }
 function getWinner(room) {
+    if (room.gameMode === "duo_2v2") {
+        const teamA = room.players.filter((player) => player.teamId === "A" && !player.isDead);
+        const teamB = room.players.filter((player) => player.teamId === "B" && !player.isDead);
+        if (teamA.length === 0) {
+            const winner = room.players.find((player) => player.teamId === "B" && !player.isDead);
+            if (winner) {
+                room.winnerTeamId = "B";
+                return { ...winner }; // return a B team player but we'll use winnerTeamId
+            }
+        }
+        if (teamB.length === 0) {
+            const winner = room.players.find((player) => player.teamId === "A" && !player.isDead);
+            if (winner) {
+                room.winnerTeamId = "A";
+                return winner;
+            }
+        }
+        return undefined;
+    }
+    // classic mode
     const alive = room.players.filter((player) => !player.isDead);
     return alive.length === 1 ? alive[0] : undefined;
 }
@@ -914,6 +1036,15 @@ function getPlayerOrThrow(room, playerId) {
     return player;
 }
 function makeTurnEvent(room, ctx) {
+    if (room.gameMode === "duo_2v2") {
+        const controllerId = room.activeControllerId;
+        if (!controllerId)
+            throw new Error("2V2 控制者未指定");
+        const controller = room.players.find((p) => p.controllerId === controllerId);
+        const name = controller?.nickname ?? "未知玩家";
+        return makeEvent(ctx.now, ctx.makeId, "turn", `轮到 ${name} 选择行动角色`, controllerId);
+    }
+    // classic mode
     const player = getActivePlayer(room);
     return makeEvent(ctx.now, ctx.makeId, "turn", `轮到 ${player.nickname} 行动`, player.id);
 }

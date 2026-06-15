@@ -9,6 +9,7 @@ type __VLS_Props = {
 declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {}, {}, import("vue").ComponentOptionsMixin, import("vue").ComponentOptionsMixin, {
     rollDice: () => any;
     selectTarget: (targetId: string) => any;
+    selectActor: (actorId: string) => any;
     confirmRollDecision: (payload: {
         roomId: string;
         pendingDecisionId: string;
@@ -21,6 +22,7 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
 }, string, import("vue").PublicProps, Readonly<__VLS_Props> & Readonly<{
     onRollDice?: (() => any) | undefined;
     onSelectTarget?: ((targetId: string) => any) | undefined;
+    onSelectActor?: ((actorId: string) => any) | undefined;
     onConfirmRollDecision?: ((payload: {
         roomId: string;
         pendingDecisionId: string;

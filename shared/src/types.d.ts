@@ -1,6 +1,8 @@
 export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin";
 export type RoomPhase = "lobby" | "battle" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
+export type GameMode = "classic" | "duo_2v2";
+export type TeamId = "A" | "B";
 export type CharacterDifficulty = "simple" | "normal" | "complex" | "expert";
 export type CharacterRole = "attack" | "defense" | "healing" | "burst" | "special";
 export declare const EMOTE_IDS: readonly ["cry", "surprise", "taunt", "angry", "like", "question"];
@@ -39,6 +41,16 @@ export interface Player {
     zhaoZilongHitCount?: number;
     isDead: boolean;
     selectedTargetId?: string;
+    controllerId?: string;
+    teamId?: TeamId;
+    slotIndex?: 0 | 1;
+}
+export interface DuoCharacterSlot {
+    controllerId: string;
+    teamId: TeamId;
+    slotIndex: 0 | 1;
+    characterId?: CharacterId;
+    summonerSkillId?: SummonerSkillId;
 }
 export interface GameEvent {
     id: string;
@@ -76,6 +88,7 @@ export interface SkillHint {
 export interface RoomSettings {
     maxPlayers: number;
     allowDuplicateCharacters: boolean;
+    gameMode?: GameMode;
 }
 export type CharacterReactionSkillId = "gunslinger_barrage" | "vampire_blood_rite" | "paladin_invincible";
 export type SummonerSkillId = "lucky_plus_one" | "first_aid" | "iron_wall" | "fate_reroll" | "last_stand";
@@ -130,6 +143,7 @@ export interface Room {
     id: string;
     hostId: string;
     phase: RoomPhase;
+    gameMode?: GameMode;
     settings: RoomSettings;
     players: Player[];
     rematchReadyPlayerIds: string[];
@@ -142,6 +156,11 @@ export interface Room {
     pendingRoll?: PendingRoll;
     pendingRollDecision?: PendingRollDecision;
     winnerId?: string;
+    activeControllerId?: string;
+    selectedActorId?: string;
+    winnerTeamId?: TeamId;
+    controllerTurnOrder?: string[];
+    duoSlots?: DuoCharacterSlot[];
     highlight?: CharacterHighlight;
     skillHints?: SkillHint[];
 }

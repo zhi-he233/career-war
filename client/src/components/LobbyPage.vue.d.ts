@@ -8,11 +8,27 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
     chooseCharacter: (characterId: CharacterId) => any;
     startGame: () => any;
     chooseSummonerSkill: (summonerSkillId: SummonerSkillId) => any;
+    chooseDuoSlotCharacter: (payload: {
+        slotIndex: 0 | 1;
+        characterId: CharacterId;
+    }) => any;
+    chooseDuoSlotSummonerSkill: (payload: {
+        slotIndex: 0 | 1;
+        summonerSkillId: SummonerSkillId;
+    }) => any;
     updateRoomSettings: (settings: Partial<RoomSettings>) => any;
 }, string, import("vue").PublicProps, Readonly<__VLS_Props> & Readonly<{
     onChooseCharacter?: ((characterId: CharacterId) => any) | undefined;
     onStartGame?: (() => any) | undefined;
     onChooseSummonerSkill?: ((summonerSkillId: SummonerSkillId) => any) | undefined;
+    onChooseDuoSlotCharacter?: ((payload: {
+        slotIndex: 0 | 1;
+        characterId: CharacterId;
+    }) => any) | undefined;
+    onChooseDuoSlotSummonerSkill?: ((payload: {
+        slotIndex: 0 | 1;
+        summonerSkillId: SummonerSkillId;
+    }) => any) | undefined;
     onUpdateRoomSettings?: ((settings: Partial<RoomSettings>) => any) | undefined;
 }>, {}, {}, {}, {}, string, import("vue").ComponentProvideOptions, false, {}, any>;
 declare const _default: typeof __VLS_export;

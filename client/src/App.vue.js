@@ -1,7 +1,8 @@
+import { createClientId } from "./utils/id";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { getClientId, resetClientId, socket } from "./socket";
-import { createClientId } from "./utils/id";
 import HomePage from "./components/HomePage.vue";
+import PvpModePage from "./components/PvpModePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
 import BattlePage from "./components/BattlePage.vue";
 const ROOM_ID_KEY = "career-war-room-id";
@@ -16,6 +17,7 @@ const lastEmote = ref(null);
 const isSocketConnected = ref(socket.connected);
 const roundTripMs = ref(null);
 const transportName = ref("");
+const frontPage = ref("home");
 const query = new URLSearchParams(window.location.search);
 const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
 const inviteJoinStarted = ref(false);
@@ -30,7 +32,7 @@ if (inviteRoomId) {
 }
 const page = computed(() => {
     if (!room.value)
-        return "home";
+        return frontPage.value;
     if (room.value.phase === "lobby")
         return "lobby";
     return "battle";
@@ -62,7 +64,7 @@ onMounted(() => {
     });
     socket.on("gameOver", (payload) => {
         lastEvent.value = {
-            id: createClientId(),
+            id: createClientId("player"),
             createdAt: Date.now(),
             type: "victory",
             message: `${payload.winnerName} 获胜！`
@@ -146,11 +148,23 @@ function requestRoomList() {
         roomList.value = response.roomList;
     });
 }
+function openPvpMode() {
+    frontPage.value = "pvpMode";
+}
+function backToHome() {
+    frontPage.value = "home";
+}
 function chooseCharacter(characterId) {
     emitWithAck("chooseCharacter", { characterId });
 }
 function chooseSummonerSkill(summonerSkillId) {
     emitWithAck("chooseSummonerSkill", { summonerSkillId });
+}
+function chooseDuoSlotCharacter(payload) {
+    emitWithAck("chooseDuoSlotCharacter", payload);
+}
+function chooseDuoSlotSummonerSkill(payload) {
+    emitWithAck("chooseDuoSlotSummonerSkill", payload);
 }
 function startGame() {
     emitWithAck("startGame", {});
@@ -160,6 +174,9 @@ function updateRoomSettings(settings) {
 }
 function selectTarget(targetId) {
     emitWithAck("selectTarget", { targetId });
+}
+function selectActor(actorId) {
+    emitWithAck("selectActor", { actorId });
 }
 function rollDice() {
     emitWithAck("rollDice", {});
@@ -171,6 +188,7 @@ function leaveRoom() {
     emitWithAck("leaveRoom", {}, () => {
         room.value = null;
         roomId.value = "";
+        frontPage.value = "pvpMode";
         sessionStorage.removeItem(ROOM_ID_KEY);
     });
 }
@@ -317,21 +335,42 @@ if (__VLS_ctx.page === 'home') {
     const __VLS_0 = HomePage;
     // @ts-ignore
     const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
+        ...{ 'onSelectPvp': {} },
+    }));
+    const __VLS_2 = __VLS_1({
+        ...{ 'onSelectPvp': {} },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_1));
+    let __VLS_5;
+    const __VLS_6 = {
+        ...{ selectPvp: {} },
+        onSelectPvp: (__VLS_ctx.openPvpMode),
+    };
+    var __VLS_3;
+    var __VLS_4;
+}
+else if (__VLS_ctx.page === 'pvpMode') {
+    const __VLS_7 = PvpModePage;
+    // @ts-ignore
+    const __VLS_8 = __VLS_asFunctionalComponent1(__VLS_7, new __VLS_7({
+        ...{ 'onBackHome': {} },
         ...{ 'onCreateRoom': {} },
         ...{ 'onJoinRoom': {} },
         ...{ 'onRefreshRoomList': {} },
         inviteRoomId: (__VLS_ctx.inviteRoomId),
         roomList: (__VLS_ctx.roomList),
     }));
-    const __VLS_2 = __VLS_1({
+    const __VLS_9 = __VLS_8({
+        ...{ 'onBackHome': {} },
         ...{ 'onCreateRoom': {} },
         ...{ 'onJoinRoom': {} },
         ...{ 'onRefreshRoomList': {} },
         inviteRoomId: (__VLS_ctx.inviteRoomId),
         roomList: (__VLS_ctx.roomList),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_1));
-    let __VLS_5;
-    const __VLS_6 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_8));
+    let __VLS_12;
+    const __VLS_13 = {
+        ...{ backHome: {} },
+        onBackHome: (__VLS_ctx.backToHome),
         ...{ createRoom: {} },
         onCreateRoom: (__VLS_ctx.createRoom),
         ...{ joinRoom: {} },
@@ -339,49 +378,58 @@ if (__VLS_ctx.page === 'home') {
         ...{ refreshRoomList: {} },
         onRefreshRoomList: (__VLS_ctx.requestRoomList),
     };
-    var __VLS_3;
-    var __VLS_4;
+    var __VLS_10;
+    var __VLS_11;
 }
 else if (__VLS_ctx.page === 'lobby' && __VLS_ctx.room) {
-    const __VLS_7 = LobbyPage;
+    const __VLS_14 = LobbyPage;
     // @ts-ignore
-    const __VLS_8 = __VLS_asFunctionalComponent1(__VLS_7, new __VLS_7({
+    const __VLS_15 = __VLS_asFunctionalComponent1(__VLS_14, new __VLS_14({
         ...{ 'onChooseCharacter': {} },
         ...{ 'onChooseSummonerSkill': {} },
+        ...{ 'onChooseDuoSlotCharacter': {} },
+        ...{ 'onChooseDuoSlotSummonerSkill': {} },
         ...{ 'onUpdateRoomSettings': {} },
         ...{ 'onStartGame': {} },
         room: (__VLS_ctx.room),
         playerId: (__VLS_ctx.playerId),
         characters: (__VLS_ctx.characters),
     }));
-    const __VLS_9 = __VLS_8({
+    const __VLS_16 = __VLS_15({
         ...{ 'onChooseCharacter': {} },
         ...{ 'onChooseSummonerSkill': {} },
+        ...{ 'onChooseDuoSlotCharacter': {} },
+        ...{ 'onChooseDuoSlotSummonerSkill': {} },
         ...{ 'onUpdateRoomSettings': {} },
         ...{ 'onStartGame': {} },
         room: (__VLS_ctx.room),
         playerId: (__VLS_ctx.playerId),
         characters: (__VLS_ctx.characters),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_8));
-    let __VLS_12;
-    const __VLS_13 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_15));
+    let __VLS_19;
+    const __VLS_20 = {
         ...{ chooseCharacter: {} },
         onChooseCharacter: (__VLS_ctx.chooseCharacter),
         ...{ chooseSummonerSkill: {} },
         onChooseSummonerSkill: (__VLS_ctx.chooseSummonerSkill),
+        ...{ chooseDuoSlotCharacter: {} },
+        onChooseDuoSlotCharacter: (__VLS_ctx.chooseDuoSlotCharacter),
+        ...{ chooseDuoSlotSummonerSkill: {} },
+        onChooseDuoSlotSummonerSkill: (__VLS_ctx.chooseDuoSlotSummonerSkill),
         ...{ updateRoomSettings: {} },
         onUpdateRoomSettings: (__VLS_ctx.updateRoomSettings),
         ...{ startGame: {} },
         onStartGame: (__VLS_ctx.startGame),
     };
-    var __VLS_10;
-    var __VLS_11;
+    var __VLS_17;
+    var __VLS_18;
 }
 else if (__VLS_ctx.room) {
-    const __VLS_14 = BattlePage;
+    const __VLS_21 = BattlePage;
     // @ts-ignore
-    const __VLS_15 = __VLS_asFunctionalComponent1(__VLS_14, new __VLS_14({
+    const __VLS_22 = __VLS_asFunctionalComponent1(__VLS_21, new __VLS_21({
         ...{ 'onSelectTarget': {} },
+        ...{ 'onSelectActor': {} },
         ...{ 'onRollDice': {} },
         ...{ 'onConfirmRollDecision': {} },
         room: (__VLS_ctx.room),
@@ -390,8 +438,9 @@ else if (__VLS_ctx.room) {
         lastEvent: (__VLS_ctx.lastEvent),
         lastEmote: (__VLS_ctx.lastEmote),
     }));
-    const __VLS_16 = __VLS_15({
+    const __VLS_23 = __VLS_22({
         ...{ 'onSelectTarget': {} },
+        ...{ 'onSelectActor': {} },
         ...{ 'onRollDice': {} },
         ...{ 'onConfirmRollDecision': {} },
         room: (__VLS_ctx.room),
@@ -399,20 +448,22 @@ else if (__VLS_ctx.room) {
         characters: (__VLS_ctx.characters),
         lastEvent: (__VLS_ctx.lastEvent),
         lastEmote: (__VLS_ctx.lastEmote),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_15));
-    let __VLS_19;
-    const __VLS_20 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_22));
+    let __VLS_26;
+    const __VLS_27 = {
         ...{ selectTarget: {} },
         onSelectTarget: (__VLS_ctx.selectTarget),
+        ...{ selectActor: {} },
+        onSelectActor: (__VLS_ctx.selectActor),
         ...{ rollDice: {} },
         onRollDice: (__VLS_ctx.rollDice),
         ...{ confirmRollDecision: {} },
         onConfirmRollDecision: (__VLS_ctx.confirmRollDecision),
     };
-    var __VLS_17;
-    var __VLS_18;
+    var __VLS_24;
+    var __VLS_25;
 }
 // @ts-ignore
-[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, connectionStatusText, latencyText, transportText, page, page, inviteRoomId, roomList, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, chooseSummonerSkill, updateRoomSettings, startGame, lastEvent, lastEmote, selectTarget, rollDice, confirmRollDecision,];
+[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, connectionStatusText, latencyText, transportText, page, page, page, openPvpMode, inviteRoomId, roomList, backToHome, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, chooseSummonerSkill, chooseDuoSlotCharacter, chooseDuoSlotSummonerSkill, updateRoomSettings, startGame, lastEvent, lastEmote, selectTarget, selectActor, rollDice, confirmRollDecision,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

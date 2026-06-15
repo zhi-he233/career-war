@@ -54,9 +54,23 @@ const emoteTimers = new Map();
 const playedHighlightKeys = new Set();
 const playedSkillHintIds = new Set();
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
-const isMyTurn = computed(() => activePlayer.value?.id === props.playerId && room.value.phase === "battle");
+const isDuoMode = computed(() => room.value.gameMode === "duo_2v2");
+const activeControllerId = computed(() => room.value.activeControllerId);
+const isMyDuoControllerTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId);
+const selectedActor = computed(() => room.value.players.find((player) => player.id === room.value.selectedActorId));
+const duoTeams = computed(() => [
+    { id: "A", label: "A 队", players: room.value.players.filter((player) => player.teamId === "A") },
+    { id: "B", label: "B 队", players: room.value.players.filter((player) => player.teamId === "B") }
+]);
+const isMyTurn = computed(() => !isDuoMode.value && activePlayer.value?.id === props.playerId && room.value.phase === "battle");
+const isMyDuoActionTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId && Boolean(selectedActor.value));
 const me = computed(() => room.value.players.find((player) => player.id === props.playerId));
-const selectedTargetId = computed(() => me.value?.selectedTargetId);
+const selectedTargetId = computed(() => {
+    if (isDuoMode.value) {
+        return selectedActor.value?.selectedTargetId;
+    }
+    return me.value?.selectedTargetId;
+});
 const selectedTarget = computed(() => room.value.players.find((player) => player.id === selectedTargetId.value));
 const battlePlayers = computed(() => {
     const others = room.value.players.filter((player) => player.id !== props.playerId);
@@ -66,8 +80,17 @@ const aliveEnemies = computed(() => room.value.players.filter((player) => !playe
 const winner = computed(() => room.value.players.find((player) => player.id === room.value.winnerId));
 const pendingRoll = computed(() => room.value.pendingRoll);
 const pendingRollDecision = computed(() => room.value.pendingRollDecision);
-const isPendingMine = computed(() => pendingRoll.value?.playerId === props.playerId);
-const isDecisionMine = computed(() => pendingRollDecision.value?.actorId === props.playerId);
+const isPendingMine = computed(() => pendingRoll.value?.playerId === (selectedActor.value?.id || props.playerId));
+const isDecisionMine = computed(() => {
+    const decision = pendingRollDecision.value;
+    if (!decision)
+        return false;
+    if (isDuoMode.value) {
+        const actor = room.value.players.find((p) => p.id === decision.actorId);
+        return actor?.controllerId === props.playerId;
+    }
+    return decision.actorId === props.playerId;
+});
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
 const isSelfDead = computed(() => Boolean(me.value?.isDead));
 const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
@@ -244,6 +267,16 @@ const canRoll = computed(() => {
         return isPendingMine.value;
     return Boolean(selectedTargetId.value) && aliveEnemies.value.length > 0;
 });
+const canRollForDuo = computed(() => {
+    if (isDuoMode.value && room.value.phase === "battle") {
+        if (rollRequestLocked.value || isRolling.value || pendingRollDecision.value)
+            return false;
+        if (pendingRoll.value)
+            return isPendingMine.value;
+        return isMyDuoActionTurn.value && Boolean(selectedActor.value?.selectedTargetId);
+    }
+    return false;
+});
 function characterName(id) {
     return props.characters.find((character) => character.id === id)?.name ?? "未知职业";
 }
@@ -314,6 +347,25 @@ function selectTargetFromSeat(player) {
     if (!canSelectTarget(player))
         return;
     emit("selectTarget", player.id);
+}
+function canSelectDuoActor(player) {
+    return isMyDuoControllerTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.controllerId === props.playerId && !player.isDead;
+}
+function canSelectDuoEnemy(player) {
+    return isDuoMode.value && Boolean(selectedActor.value) && !pendingRoll.value && !pendingRollDecision.value && player.teamId !== selectedActor.value?.teamId && player.controllerId !== props.playerId && !player.isDead;
+}
+function handleDuoSeatClick(player) {
+    if (canSelectDuoActor(player)) {
+        selectDuoActor(player);
+    }
+    else if (canSelectDuoEnemy(player)) {
+        emit("selectTarget", player.id);
+    }
+}
+function selectDuoActor(player) {
+    if (!canSelectDuoActor(player))
+        return;
+    emit("selectActor", player.id);
 }
 function openPlayerDetail(player) {
     detailPlayerId.value = player.id;
@@ -579,6 +631,9 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
+/** @type {__VLS_StyleScopedClasses['duo-team-column']} */ ;
+/** @type {__VLS_StyleScopedClasses['duo-team-column']} */ ;
+/** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
 /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
@@ -588,6 +643,7 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
+/** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
 /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
 /** @type {__VLS_StyleScopedClasses['emote-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
@@ -596,6 +652,8 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
 /** @type {__VLS_StyleScopedClasses['combat-board']} */ ;
+/** @type {__VLS_StyleScopedClasses['duo-battle-board']} */ ;
+/** @type {__VLS_StyleScopedClasses['duo-combat-board']} */ ;
 /** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
 /** @type {__VLS_StyleScopedClasses['avatar-ring']} */ ;
 /** @type {__VLS_StyleScopedClasses['avatar-emoji']} */ ;
@@ -627,402 +685,849 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 });
 /** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "battle-zone" },
-});
-/** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "zone-heading" },
-});
-/** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "combat-board" },
-    ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
-    'aria-label': "玩家头像战场",
-});
-/** @type {__VLS_StyleScopedClasses['combat-board']} */ ;
-for (const [player] of __VLS_vFor((__VLS_ctx.battlePlayers))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-        key: (player.id),
-        ...{ class: "battle-seat" },
-        ...{ class: ({
-                active: player.id === __VLS_ctx.activePlayer?.id,
-                dead: player.isDead,
-                selectable: __VLS_ctx.canSelectTarget(player),
-                selected: __VLS_ctx.selectedTargetId === player.id,
-                hit: __VLS_ctx.isRecentDamageTarget(player),
-                healed: __VLS_ctx.isRecentHealTarget(player),
-                blocked: __VLS_ctx.isNoDamageTarget(player)
-            }) },
+if (__VLS_ctx.isDuoMode) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "battle-zone duo-battle-zone" },
     });
-    /** @type {__VLS_StyleScopedClasses['battle-seat']} */ ;
-    /** @type {__VLS_StyleScopedClasses['active']} */ ;
-    /** @type {__VLS_StyleScopedClasses['dead']} */ ;
-    /** @type {__VLS_StyleScopedClasses['selectable']} */ ;
-    /** @type {__VLS_StyleScopedClasses['selected']} */ ;
-    /** @type {__VLS_StyleScopedClasses['hit']} */ ;
-    /** @type {__VLS_StyleScopedClasses['healed']} */ ;
-    /** @type {__VLS_StyleScopedClasses['blocked']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (...[$event]) => {
-                __VLS_ctx.selectTargetFromSeat(player);
-                // @ts-ignore
-                [turnGuideTone, battlePlayers, activePlayer, canSelectTarget, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, selectTargetFromSeat,];
-            } },
-        ...{ class: "seat-button" },
-        type: "button",
-        'aria-pressed': (__VLS_ctx.selectedTargetId === player.id),
-        'aria-label': (`${__VLS_ctx.playerNumber(player)}号 ${player.nickname}，${__VLS_ctx.playerStatus(player)}`),
-    });
-    /** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
-    if (__VLS_ctx.canSelectTarget(player) && __VLS_ctx.selectedTargetId !== player.id) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "attackable-mark" },
-        });
-        /** @type {__VLS_StyleScopedClasses['attackable-mark']} */ ;
-    }
-    if (__VLS_ctx.selectedTargetId === player.id) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "target-mark" },
-        });
-        /** @type {__VLS_StyleScopedClasses['target-mark']} */ ;
-    }
-    if (__VLS_ctx.hasInvincible(player)) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "invincible-mark" },
-            'aria-label': "无敌",
-        });
-        /** @type {__VLS_StyleScopedClasses['invincible-mark']} */ ;
-    }
-    if (player.id === __VLS_ctx.room.hostId) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "seat-host-mark" },
-        });
-        /** @type {__VLS_StyleScopedClasses['seat-host-mark']} */ ;
-    }
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        ...{ class: "avatar-ring" },
-    });
-    /** @type {__VLS_StyleScopedClasses['avatar-ring']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        ...{ class: "avatar-emoji" },
-    });
-    /** @type {__VLS_StyleScopedClasses['avatar-emoji']} */ ;
-    (__VLS_ctx.playerAvatar(player).emoji);
-    if (player.isDead) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "dead-label" },
-        });
-        /** @type {__VLS_StyleScopedClasses['dead-label']} */ ;
-    }
-    let __VLS_0;
-    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
-    transition;
-    // @ts-ignore
-    const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
-        name: "emote-bubble",
-    }));
-    const __VLS_2 = __VLS_1({
-        name: "emote-bubble",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_1));
-    const { default: __VLS_5 } = __VLS_3.slots;
-    if (__VLS_ctx.emoteFor(player)) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            key: (__VLS_ctx.emoteFor(player)?.key),
-            ...{ class: "emote-bubble" },
-        });
-        /** @type {__VLS_StyleScopedClasses['emote-bubble']} */ ;
-        (__VLS_ctx.emoteFor(player)?.emoji);
-    }
-    // @ts-ignore
-    [canSelectTarget, selectedTargetId, selectedTargetId, selectedTargetId, playerNumber, playerStatus, hasInvincible, room, playerAvatar, emoteFor, emoteFor, emoteFor,];
-    var __VLS_3;
-    let __VLS_6;
-    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
-    transition;
-    // @ts-ignore
-    const __VLS_7 = __VLS_asFunctionalComponent1(__VLS_6, new __VLS_6({
-        name: "float-pop",
-    }));
-    const __VLS_8 = __VLS_7({
-        name: "float-pop",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_7));
-    const { default: __VLS_11 } = __VLS_9.slots;
-    if (__VLS_ctx.floatingEffectFor(player, 'damage')) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
-            key: (__VLS_ctx.floatingEffectFor(player, 'damage')?.key),
-            ...{ class: "float-number damage-pop" },
-        });
-        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
-        /** @type {__VLS_StyleScopedClasses['damage-pop']} */ ;
-        (__VLS_ctx.floatingEffectFor(player, "damage")?.value);
-    }
-    // @ts-ignore
-    [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
-    var __VLS_9;
-    let __VLS_12;
-    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
-    transition;
-    // @ts-ignore
-    const __VLS_13 = __VLS_asFunctionalComponent1(__VLS_12, new __VLS_12({
-        name: "float-pop",
-    }));
-    const __VLS_14 = __VLS_13({
-        name: "float-pop",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_13));
-    const { default: __VLS_17 } = __VLS_15.slots;
-    if (__VLS_ctx.floatingEffectFor(player, 'heal')) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
-            key: (__VLS_ctx.floatingEffectFor(player, 'heal')?.key),
-            ...{ class: "float-number heal-pop" },
-        });
-        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
-        /** @type {__VLS_StyleScopedClasses['heal-pop']} */ ;
-        (__VLS_ctx.floatingEffectFor(player, "heal")?.value);
-    }
-    // @ts-ignore
-    [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
-    var __VLS_15;
-    let __VLS_18;
-    /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
-    transition;
-    // @ts-ignore
-    const __VLS_19 = __VLS_asFunctionalComponent1(__VLS_18, new __VLS_18({
-        name: "float-pop",
-    }));
-    const __VLS_20 = __VLS_19({
-        name: "float-pop",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_19));
-    const { default: __VLS_23 } = __VLS_21.slots;
-    if (__VLS_ctx.floatingEffectFor(player, 'noEffect')) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
-            key: (__VLS_ctx.floatingEffectFor(player, 'noEffect')?.key),
-            ...{ class: "float-number no-pop" },
-        });
-        /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
-        /** @type {__VLS_StyleScopedClasses['no-pop']} */ ;
-    }
-    // @ts-ignore
-    [floatingEffectFor, floatingEffectFor,];
-    var __VLS_21;
+    /** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
+    /** @type {__VLS_StyleScopedClasses['duo-battle-zone']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "seat-name-row" },
+        ...{ class: "zone-heading" },
     });
-    /** @type {__VLS_StyleScopedClasses['seat-name-row']} */ ;
+    /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (__VLS_ctx.playerNumber(player));
-    (player.nickname);
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (...[$event]) => {
-                __VLS_ctx.openPlayerDetail(player);
-                // @ts-ignore
-                [playerNumber, openPlayerDetail,];
-            } },
-        ...{ class: "seat-info-btn" },
-        type: "button",
-        'aria-label': "查看玩家详情",
-    });
-    /** @type {__VLS_StyleScopedClasses['seat-info-btn']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.selectedActor ? `当前行动角色：${__VLS_ctx.selectedActor.nickname}` : __VLS_ctx.isMyDuoControllerTurn ? "请选择你的一个角色行动" : "等待对方选择行动角色");
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "seat-tags" },
+        ...{ class: "duo-battle-board" },
+        'aria-label': "2V2 阵营战场",
     });
-    /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (__VLS_ctx.characterName(player.characterId));
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (__VLS_ctx.summonerSkillName(player.summonerSkillId));
-    (player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : "");
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "seat-stats" },
-    });
-    /** @type {__VLS_StyleScopedClasses['seat-stats']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (player.hp);
-    if (player.shield > 0) {
+    /** @type {__VLS_StyleScopedClasses['duo-battle-board']} */ ;
+    for (const [team] of __VLS_vFor((__VLS_ctx.duoTeams))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+            key: (team.id),
+            ...{ class: "duo-team-column" },
+            ...{ class: (`team-${team.id.toLowerCase()}`) },
+        });
+        /** @type {__VLS_StyleScopedClasses['duo-team-column']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (team.label);
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-        (player.shield);
+        (team.players[0]?.controllerId === props.playerId ? "你的队伍" : "对方队伍");
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "combat-board duo-combat-board" },
+        });
+        /** @type {__VLS_StyleScopedClasses['combat-board']} */ ;
+        /** @type {__VLS_StyleScopedClasses['duo-combat-board']} */ ;
+        for (const [player] of __VLS_vFor((team.players))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                key: (player.id),
+                ...{ class: "battle-seat duo-actor-seat" },
+                ...{ class: ({
+                        active: player.controllerId === __VLS_ctx.activeControllerId,
+                        dead: player.isDead,
+                        selectable: __VLS_ctx.canSelectDuoActor(player) || __VLS_ctx.canSelectDuoEnemy(player),
+                        selected: __VLS_ctx.selectedActor?.id === player.id || __VLS_ctx.selectedTargetId === player.id,
+                        hit: __VLS_ctx.isRecentDamageTarget(player),
+                        healed: __VLS_ctx.isRecentHealTarget(player),
+                        blocked: __VLS_ctx.isNoDamageTarget(player)
+                    }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['battle-seat']} */ ;
+            /** @type {__VLS_StyleScopedClasses['duo-actor-seat']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            /** @type {__VLS_StyleScopedClasses['dead']} */ ;
+            /** @type {__VLS_StyleScopedClasses['selectable']} */ ;
+            /** @type {__VLS_StyleScopedClasses['selected']} */ ;
+            /** @type {__VLS_StyleScopedClasses['hit']} */ ;
+            /** @type {__VLS_StyleScopedClasses['healed']} */ ;
+            /** @type {__VLS_StyleScopedClasses['blocked']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.isDuoMode))
+                            return;
+                        __VLS_ctx.handleDuoSeatClick(player);
+                        // @ts-ignore
+                        [isDuoMode, selectedActor, selectedActor, selectedActor, isMyDuoControllerTurn, duoTeams, activeControllerId, canSelectDuoActor, canSelectDuoEnemy, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, handleDuoSeatClick,];
+                    } },
+                ...{ class: "seat-button" },
+                type: "button",
+                'aria-pressed': (__VLS_ctx.selectedActor?.id === player.id || __VLS_ctx.selectedTargetId === player.id),
+                'aria-label': (`${team.label} ${player.nickname}，${__VLS_ctx.playerStatus(player)}`),
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
+            if (__VLS_ctx.canSelectDuoActor(player) && __VLS_ctx.selectedActor?.id !== player.id) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "attackable-mark" },
+                });
+                /** @type {__VLS_StyleScopedClasses['attackable-mark']} */ ;
+            }
+            if (__VLS_ctx.canSelectDuoEnemy(player) && __VLS_ctx.selectedTargetId !== player.id) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "attackable-mark" },
+                });
+                /** @type {__VLS_StyleScopedClasses['attackable-mark']} */ ;
+            }
+            if (__VLS_ctx.selectedActor?.id === player.id) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "target-mark" },
+                });
+                /** @type {__VLS_StyleScopedClasses['target-mark']} */ ;
+            }
+            if (__VLS_ctx.selectedTargetId === player.id) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "target-mark" },
+                });
+                /** @type {__VLS_StyleScopedClasses['target-mark']} */ ;
+            }
+            if (__VLS_ctx.hasInvincible(player)) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "invincible-mark" },
+                    'aria-label': "无敌",
+                });
+                /** @type {__VLS_StyleScopedClasses['invincible-mark']} */ ;
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "avatar-ring" },
+            });
+            /** @type {__VLS_StyleScopedClasses['avatar-ring']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "avatar-emoji" },
+            });
+            /** @type {__VLS_StyleScopedClasses['avatar-emoji']} */ ;
+            (__VLS_ctx.playerAvatar(player).emoji);
+            if (player.isDead) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "dead-label" },
+                });
+                /** @type {__VLS_StyleScopedClasses['dead-label']} */ ;
+            }
+            let __VLS_0;
+            /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+            transition;
+            // @ts-ignore
+            const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
+                name: "emote-bubble",
+            }));
+            const __VLS_2 = __VLS_1({
+                name: "emote-bubble",
+            }, ...__VLS_functionalComponentArgsRest(__VLS_1));
+            const { default: __VLS_5 } = __VLS_3.slots;
+            if (__VLS_ctx.emoteFor(player)) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    key: (__VLS_ctx.emoteFor(player)?.key),
+                    ...{ class: "emote-bubble" },
+                });
+                /** @type {__VLS_StyleScopedClasses['emote-bubble']} */ ;
+                (__VLS_ctx.emoteFor(player)?.emoji);
+            }
+            // @ts-ignore
+            [selectedActor, selectedActor, selectedActor, canSelectDuoActor, canSelectDuoEnemy, selectedTargetId, selectedTargetId, selectedTargetId, playerStatus, hasInvincible, playerAvatar, emoteFor, emoteFor, emoteFor,];
+            var __VLS_3;
+            let __VLS_6;
+            /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+            transition;
+            // @ts-ignore
+            const __VLS_7 = __VLS_asFunctionalComponent1(__VLS_6, new __VLS_6({
+                name: "float-pop",
+            }));
+            const __VLS_8 = __VLS_7({
+                name: "float-pop",
+            }, ...__VLS_functionalComponentArgsRest(__VLS_7));
+            const { default: __VLS_11 } = __VLS_9.slots;
+            if (__VLS_ctx.floatingEffectFor(player, 'damage')) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+                    key: (__VLS_ctx.floatingEffectFor(player, 'damage')?.key),
+                    ...{ class: "float-number damage-pop" },
+                });
+                /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+                /** @type {__VLS_StyleScopedClasses['damage-pop']} */ ;
+                (__VLS_ctx.floatingEffectFor(player, "damage")?.value);
+            }
+            // @ts-ignore
+            [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
+            var __VLS_9;
+            let __VLS_12;
+            /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+            transition;
+            // @ts-ignore
+            const __VLS_13 = __VLS_asFunctionalComponent1(__VLS_12, new __VLS_12({
+                name: "float-pop",
+            }));
+            const __VLS_14 = __VLS_13({
+                name: "float-pop",
+            }, ...__VLS_functionalComponentArgsRest(__VLS_13));
+            const { default: __VLS_17 } = __VLS_15.slots;
+            if (__VLS_ctx.floatingEffectFor(player, 'heal')) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+                    key: (__VLS_ctx.floatingEffectFor(player, 'heal')?.key),
+                    ...{ class: "float-number heal-pop" },
+                });
+                /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+                /** @type {__VLS_StyleScopedClasses['heal-pop']} */ ;
+                (__VLS_ctx.floatingEffectFor(player, "heal")?.value);
+            }
+            // @ts-ignore
+            [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
+            var __VLS_15;
+            let __VLS_18;
+            /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+            transition;
+            // @ts-ignore
+            const __VLS_19 = __VLS_asFunctionalComponent1(__VLS_18, new __VLS_18({
+                name: "float-pop",
+            }));
+            const __VLS_20 = __VLS_19({
+                name: "float-pop",
+            }, ...__VLS_functionalComponentArgsRest(__VLS_19));
+            const { default: __VLS_23 } = __VLS_21.slots;
+            if (__VLS_ctx.floatingEffectFor(player, 'noEffect')) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+                    key: (__VLS_ctx.floatingEffectFor(player, 'noEffect')?.key),
+                    ...{ class: "float-number no-pop" },
+                });
+                /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+                /** @type {__VLS_StyleScopedClasses['no-pop']} */ ;
+            }
+            // @ts-ignore
+            [floatingEffectFor, floatingEffectFor,];
+            var __VLS_21;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "seat-name-row" },
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-name-row']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (player.nickname);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.isDuoMode))
+                            return;
+                        __VLS_ctx.openPlayerDetail(player);
+                        // @ts-ignore
+                        [openPlayerDetail,];
+                    } },
+                ...{ class: "seat-info-btn" },
+                type: "button",
+                'aria-label': "查看角色详情",
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-info-btn']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "seat-tags" },
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            (__VLS_ctx.characterName(player.characterId));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            (__VLS_ctx.summonerSkillName(player.summonerSkillId));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "seat-stats" },
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-stats']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            (player.hp);
+            (player.maxHp);
+            if (player.shield > 0) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+                (player.shield);
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "seat-roll" },
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-roll']} */ ;
+            (__VLS_ctx.lastRollText(player));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "seat-status" },
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-status']} */ ;
+            (__VLS_ctx.playerStatus(player));
+            // @ts-ignore
+            [playerStatus, characterName, summonerSkillName, lastRollText,];
+        }
+        // @ts-ignore
+        [];
+    }
+}
+if (__VLS_ctx.isDuoMode) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "action-center duo-action-center" },
+    });
+    /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
+    /** @type {__VLS_StyleScopedClasses['duo-action-center']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "action-phase" },
+    });
+    /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    if (__VLS_ctx.selectedActor && !__VLS_ctx.selectedActor.selectedTargetId) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (__VLS_ctx.selectedActor.nickname);
+    }
+    else if (__VLS_ctx.selectedActor && __VLS_ctx.selectedActor.selectedTargetId) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    }
+    else if (__VLS_ctx.isMyDuoControllerTurn) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    }
+    else {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    }
+    if (__VLS_ctx.isMyDuoControllerTurn && !__VLS_ctx.selectedActor) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
+    else if (__VLS_ctx.selectedActor && !__VLS_ctx.selectedActor.selectedTargetId) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
+    else if (__VLS_ctx.selectedActor && __VLS_ctx.selectedActor.selectedTargetId) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
     }
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "seat-roll" },
+        ...{ class: "dice-panel action-arena" },
+        ...{ class: ({ ready: __VLS_ctx.isMyDuoControllerTurn, rolling: __VLS_ctx.rollPhase === 'fast', slowing: __VLS_ctx.rollPhase === 'slow', paused: __VLS_ctx.rollPhase === 'pause', reveal: __VLS_ctx.rollPhase === 'reveal', rolled: __VLS_ctx.visibleRoll }) },
     });
-    /** @type {__VLS_StyleScopedClasses['seat-roll']} */ ;
-    (__VLS_ctx.lastRollText(player));
-    if (__VLS_ctx.zhaoZilongHitText(player)) {
+    /** @type {__VLS_StyleScopedClasses['dice-panel']} */ ;
+    /** @type {__VLS_StyleScopedClasses['action-arena']} */ ;
+    /** @type {__VLS_StyleScopedClasses['ready']} */ ;
+    /** @type {__VLS_StyleScopedClasses['rolling']} */ ;
+    /** @type {__VLS_StyleScopedClasses['slowing']} */ ;
+    /** @type {__VLS_StyleScopedClasses['paused']} */ ;
+    /** @type {__VLS_StyleScopedClasses['reveal']} */ ;
+    /** @type {__VLS_StyleScopedClasses['rolled']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "dice-visual" },
+    });
+    /** @type {__VLS_StyleScopedClasses['dice-visual']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "dice-box" },
+        key: (__VLS_ctx.rollPhase === 'idle' ? __VLS_ctx.visibleRoll?.id : __VLS_ctx.rollPhase),
+    });
+    /** @type {__VLS_StyleScopedClasses['dice-box']} */ ;
+    for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPhase === 'pause' ? '...' : __VLS_ctx.rollingDice] : __VLS_ctx.visibleRoll?.dice ?? ['?']))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (`${__VLS_ctx.visibleRoll?.id ?? 'empty'}-${index}`),
+        });
+        (dice);
+        // @ts-ignore
+        [isDuoMode, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, isMyDuoControllerTurn, isMyDuoControllerTurn, isMyDuoControllerTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
+    }
+    let __VLS_24;
+    /** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
+    transitionGroup;
+    // @ts-ignore
+    const __VLS_25 = __VLS_asFunctionalComponent1(__VLS_24, new __VLS_24({
+        name: "skill-hint",
+        tag: "div",
+        ...{ class: "skill-hint-stack" },
+        'aria-live': "polite",
+    }));
+    const __VLS_26 = __VLS_25({
+        name: "skill-hint",
+        tag: "div",
+        ...{ class: "skill-hint-stack" },
+        'aria-live': "polite",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_25));
+    /** @type {__VLS_StyleScopedClasses['skill-hint-stack']} */ ;
+    const { default: __VLS_29 } = __VLS_27.slots;
+    for (const [hint] of __VLS_vFor((__VLS_ctx.activeSkillHints))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (hint.id),
+            ...{ class: "skill-hint-badge" },
+        });
+        /** @type {__VLS_StyleScopedClasses['skill-hint-badge']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (hint.text);
+        if (hint.valueText) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
+            (hint.valueText);
+        }
+        // @ts-ignore
+        [activeSkillHints,];
+    }
+    // @ts-ignore
+    [];
+    var __VLS_27;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "action-summary" },
+    });
+    /** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.latestDiceText);
+    if (__VLS_ctx.pendingRoll && !__VLS_ctx.isRolling) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.pendingRoll.message);
+    }
+    else if (__VLS_ctx.visibleRoll) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.visibleRoll.message);
+    }
+    if (__VLS_ctx.latestSkill.length) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；"));
+    }
+    if (__VLS_ctx.shouldShowActionSlots) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "dice-action-slots" },
+        });
+        /** @type {__VLS_StyleScopedClasses['dice-action-slots']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "slot-heading" },
+        });
+        /** @type {__VLS_StyleScopedClasses['slot-heading']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (__VLS_ctx.pendingRollDecision?.currentRoll);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "slot-grid" },
+        });
+        /** @type {__VLS_StyleScopedClasses['slot-grid']} */ ;
+        for (const [slot] of __VLS_vFor((__VLS_ctx.actionSlots))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.isDuoMode))
+                            return;
+                        if (!(__VLS_ctx.shouldShowActionSlots))
+                            return;
+                        __VLS_ctx.confirmActionSlot(slot);
+                        // @ts-ignore
+                        [visibleRoll, visibleRoll, isRolling, latestDiceText, pendingRoll, pendingRoll, latestSkill, latestSkill, shouldShowActionSlots, pendingRollDecision, actionSlots, confirmActionSlot,];
+                    } },
+                key: (slot.id),
+                ...{ class: "dice-action-slot" },
+                type: "button",
+                ...{ class: ({ enabled: slot.enabled, disabled: !slot.enabled, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
+                disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled),
+            });
+            /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
+            /** @type {__VLS_StyleScopedClasses['enabled']} */ ;
+            /** @type {__VLS_StyleScopedClasses['disabled']} */ ;
+            /** @type {__VLS_StyleScopedClasses['settling']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "slot-dice" },
+            });
+            /** @type {__VLS_StyleScopedClasses['slot-dice']} */ ;
+            (__VLS_ctx.pendingRollDecision?.currentRoll);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked ? "结算中……" : slot.label);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+            (slot.enabled ? slot.description : slot.reason ?? slot.description);
+            // @ts-ignore
+            [pendingRollDecision, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
+        }
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.rollWithAnimation) },
+        ...{ class: "roll-btn" },
+        type: "button",
+        disabled: (!__VLS_ctx.canRollForDuo),
+    });
+    /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
+    (__VLS_ctx.rollButtonText);
+}
+if (!__VLS_ctx.isDuoMode) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "battle-zone" },
+    });
+    /** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "zone-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "combat-board" },
+        ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
+        'aria-label': "玩家头像战场",
+    });
+    /** @type {__VLS_StyleScopedClasses['combat-board']} */ ;
+    for (const [player] of __VLS_vFor((__VLS_ctx.battlePlayers))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+            key: (player.id),
+            ...{ class: "battle-seat" },
+            ...{ class: ({
+                    active: player.id === __VLS_ctx.activePlayer?.id,
+                    dead: player.isDead,
+                    selectable: __VLS_ctx.canSelectTarget(player),
+                    selected: __VLS_ctx.selectedTargetId === player.id,
+                    hit: __VLS_ctx.isRecentDamageTarget(player),
+                    healed: __VLS_ctx.isRecentHealTarget(player),
+                    blocked: __VLS_ctx.isNoDamageTarget(player)
+                }) },
+        });
+        /** @type {__VLS_StyleScopedClasses['battle-seat']} */ ;
+        /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        /** @type {__VLS_StyleScopedClasses['dead']} */ ;
+        /** @type {__VLS_StyleScopedClasses['selectable']} */ ;
+        /** @type {__VLS_StyleScopedClasses['selected']} */ ;
+        /** @type {__VLS_StyleScopedClasses['hit']} */ ;
+        /** @type {__VLS_StyleScopedClasses['healed']} */ ;
+        /** @type {__VLS_StyleScopedClasses['blocked']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(!__VLS_ctx.isDuoMode))
+                        return;
+                    __VLS_ctx.selectTargetFromSeat(player);
+                    // @ts-ignore
+                    [isDuoMode, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, rollWithAnimation, canRollForDuo, rollButtonText, turnGuideTone, battlePlayers, activePlayer, canSelectTarget, selectTargetFromSeat,];
+                } },
+            ...{ class: "seat-button" },
+            type: "button",
+            'aria-pressed': (__VLS_ctx.selectedTargetId === player.id),
+            'aria-label': (`${__VLS_ctx.playerNumber(player)}号 ${player.nickname}，${__VLS_ctx.playerStatus(player)}`),
+        });
+        /** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
+        if (__VLS_ctx.canSelectTarget(player) && __VLS_ctx.selectedTargetId !== player.id) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "attackable-mark" },
+            });
+            /** @type {__VLS_StyleScopedClasses['attackable-mark']} */ ;
+        }
+        if (__VLS_ctx.selectedTargetId === player.id) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "target-mark" },
+            });
+            /** @type {__VLS_StyleScopedClasses['target-mark']} */ ;
+        }
+        if (__VLS_ctx.hasInvincible(player)) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "invincible-mark" },
+                'aria-label': "无敌",
+            });
+            /** @type {__VLS_StyleScopedClasses['invincible-mark']} */ ;
+        }
+        if (player.id === __VLS_ctx.room.hostId) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "seat-host-mark" },
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-host-mark']} */ ;
+        }
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "avatar-ring" },
+        });
+        /** @type {__VLS_StyleScopedClasses['avatar-ring']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "avatar-emoji" },
+        });
+        /** @type {__VLS_StyleScopedClasses['avatar-emoji']} */ ;
+        (__VLS_ctx.playerAvatar(player).emoji);
+        if (player.isDead) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "dead-label" },
+            });
+            /** @type {__VLS_StyleScopedClasses['dead-label']} */ ;
+        }
+        let __VLS_30;
+        /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+        transition;
+        // @ts-ignore
+        const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({
+            name: "emote-bubble",
+        }));
+        const __VLS_32 = __VLS_31({
+            name: "emote-bubble",
+        }, ...__VLS_functionalComponentArgsRest(__VLS_31));
+        const { default: __VLS_35 } = __VLS_33.slots;
+        if (__VLS_ctx.emoteFor(player)) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                key: (__VLS_ctx.emoteFor(player)?.key),
+                ...{ class: "emote-bubble" },
+            });
+            /** @type {__VLS_StyleScopedClasses['emote-bubble']} */ ;
+            (__VLS_ctx.emoteFor(player)?.emoji);
+        }
+        // @ts-ignore
+        [selectedTargetId, selectedTargetId, selectedTargetId, playerStatus, hasInvincible, playerAvatar, emoteFor, emoteFor, emoteFor, canSelectTarget, playerNumber, room,];
+        var __VLS_33;
+        let __VLS_36;
+        /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+        transition;
+        // @ts-ignore
+        const __VLS_37 = __VLS_asFunctionalComponent1(__VLS_36, new __VLS_36({
+            name: "float-pop",
+        }));
+        const __VLS_38 = __VLS_37({
+            name: "float-pop",
+        }, ...__VLS_functionalComponentArgsRest(__VLS_37));
+        const { default: __VLS_41 } = __VLS_39.slots;
+        if (__VLS_ctx.floatingEffectFor(player, 'damage')) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+                key: (__VLS_ctx.floatingEffectFor(player, 'damage')?.key),
+                ...{ class: "float-number damage-pop" },
+            });
+            /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+            /** @type {__VLS_StyleScopedClasses['damage-pop']} */ ;
+            (__VLS_ctx.floatingEffectFor(player, "damage")?.value);
+        }
+        // @ts-ignore
+        [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
+        var __VLS_39;
+        let __VLS_42;
+        /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+        transition;
+        // @ts-ignore
+        const __VLS_43 = __VLS_asFunctionalComponent1(__VLS_42, new __VLS_42({
+            name: "float-pop",
+        }));
+        const __VLS_44 = __VLS_43({
+            name: "float-pop",
+        }, ...__VLS_functionalComponentArgsRest(__VLS_43));
+        const { default: __VLS_47 } = __VLS_45.slots;
+        if (__VLS_ctx.floatingEffectFor(player, 'heal')) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+                key: (__VLS_ctx.floatingEffectFor(player, 'heal')?.key),
+                ...{ class: "float-number heal-pop" },
+            });
+            /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+            /** @type {__VLS_StyleScopedClasses['heal-pop']} */ ;
+            (__VLS_ctx.floatingEffectFor(player, "heal")?.value);
+        }
+        // @ts-ignore
+        [floatingEffectFor, floatingEffectFor, floatingEffectFor,];
+        var __VLS_45;
+        let __VLS_48;
+        /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
+        transition;
+        // @ts-ignore
+        const __VLS_49 = __VLS_asFunctionalComponent1(__VLS_48, new __VLS_48({
+            name: "float-pop",
+        }));
+        const __VLS_50 = __VLS_49({
+            name: "float-pop",
+        }, ...__VLS_functionalComponentArgsRest(__VLS_49));
+        const { default: __VLS_53 } = __VLS_51.slots;
+        if (__VLS_ctx.floatingEffectFor(player, 'noEffect')) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
+                key: (__VLS_ctx.floatingEffectFor(player, 'noEffect')?.key),
+                ...{ class: "float-number no-pop" },
+            });
+            /** @type {__VLS_StyleScopedClasses['float-number']} */ ;
+            /** @type {__VLS_StyleScopedClasses['no-pop']} */ ;
+        }
+        // @ts-ignore
+        [floatingEffectFor, floatingEffectFor,];
+        var __VLS_51;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "seat-name-row" },
+        });
+        /** @type {__VLS_StyleScopedClasses['seat-name-row']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (__VLS_ctx.playerNumber(player));
+        (player.nickname);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(!__VLS_ctx.isDuoMode))
+                        return;
+                    __VLS_ctx.openPlayerDetail(player);
+                    // @ts-ignore
+                    [openPlayerDetail, playerNumber,];
+                } },
+            ...{ class: "seat-info-btn" },
+            type: "button",
+            'aria-label': "查看玩家详情",
+        });
+        /** @type {__VLS_StyleScopedClasses['seat-info-btn']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "seat-tags" },
+        });
+        /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (__VLS_ctx.characterName(player.characterId));
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (__VLS_ctx.summonerSkillName(player.summonerSkillId));
+        (player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : "");
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "seat-stats" },
+        });
+        /** @type {__VLS_StyleScopedClasses['seat-stats']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (player.hp);
+        if (player.shield > 0) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            (player.shield);
+        }
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "seat-roll" },
         });
         /** @type {__VLS_StyleScopedClasses['seat-roll']} */ ;
-        (__VLS_ctx.zhaoZilongHitText(player));
-    }
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        ...{ class: "seat-status" },
-    });
-    /** @type {__VLS_StyleScopedClasses['seat-status']} */ ;
-    (__VLS_ctx.playerStatus(player));
-    // @ts-ignore
-    [playerStatus, characterName, summonerSkillName, lastRollText, zhaoZilongHitText, zhaoZilongHitText,];
-}
-__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "action-center" },
-    ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
-});
-/** @type {__VLS_StyleScopedClasses['action-center']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "action-phase" },
-});
-/** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.currentActionTitle);
-for (const [line] of __VLS_vFor((__VLS_ctx.currentActionLines))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({
-        key: (line),
-    });
-    (line);
-    // @ts-ignore
-    [turnGuideTone, currentActionTitle, currentActionLines,];
-}
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "dice-panel action-arena" },
-    ...{ class: ({ ready: __VLS_ctx.isMyTurn, rolling: __VLS_ctx.rollPhase === 'fast', slowing: __VLS_ctx.rollPhase === 'slow', paused: __VLS_ctx.rollPhase === 'pause', reveal: __VLS_ctx.rollPhase === 'reveal', rolled: __VLS_ctx.visibleRoll }) },
-});
-/** @type {__VLS_StyleScopedClasses['dice-panel']} */ ;
-/** @type {__VLS_StyleScopedClasses['action-arena']} */ ;
-/** @type {__VLS_StyleScopedClasses['ready']} */ ;
-/** @type {__VLS_StyleScopedClasses['rolling']} */ ;
-/** @type {__VLS_StyleScopedClasses['slowing']} */ ;
-/** @type {__VLS_StyleScopedClasses['paused']} */ ;
-/** @type {__VLS_StyleScopedClasses['reveal']} */ ;
-/** @type {__VLS_StyleScopedClasses['rolled']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "dice-visual" },
-});
-/** @type {__VLS_StyleScopedClasses['dice-visual']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "dice-box" },
-    key: (__VLS_ctx.rollPhase === 'idle' ? __VLS_ctx.visibleRoll?.id : __VLS_ctx.rollPhase),
-});
-/** @type {__VLS_StyleScopedClasses['dice-box']} */ ;
-for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPhase === 'pause' ? '...' : __VLS_ctx.rollingDice] : __VLS_ctx.visibleRoll?.dice ?? ['?']))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        key: (`${__VLS_ctx.visibleRoll?.id ?? 'empty'}-${index}`),
-    });
-    (dice);
-    // @ts-ignore
-    [isMyTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
-}
-let __VLS_24;
-/** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
-transitionGroup;
-// @ts-ignore
-const __VLS_25 = __VLS_asFunctionalComponent1(__VLS_24, new __VLS_24({
-    name: "skill-hint",
-    tag: "div",
-    ...{ class: "skill-hint-stack" },
-    'aria-live': "polite",
-}));
-const __VLS_26 = __VLS_25({
-    name: "skill-hint",
-    tag: "div",
-    ...{ class: "skill-hint-stack" },
-    'aria-live': "polite",
-}, ...__VLS_functionalComponentArgsRest(__VLS_25));
-/** @type {__VLS_StyleScopedClasses['skill-hint-stack']} */ ;
-const { default: __VLS_29 } = __VLS_27.slots;
-for (const [hint] of __VLS_vFor((__VLS_ctx.activeSkillHints))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        key: (hint.id),
-        ...{ class: "skill-hint-badge" },
-    });
-    /** @type {__VLS_StyleScopedClasses['skill-hint-badge']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (hint.text);
-    if (hint.valueText) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
-        (hint.valueText);
-    }
-    // @ts-ignore
-    [activeSkillHints,];
-}
-// @ts-ignore
-[];
-var __VLS_27;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "action-summary" },
-});
-/** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.latestDiceText);
-if (__VLS_ctx.pendingRoll && !__VLS_ctx.isRolling) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    (__VLS_ctx.pendingRoll.message);
-}
-else if (__VLS_ctx.visibleRoll) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    (__VLS_ctx.visibleRoll.message);
-}
-if (__VLS_ctx.latestSkill.length) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    (__VLS_ctx.latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；"));
-}
-if (__VLS_ctx.shouldShowActionSlots) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "dice-action-slots" },
-    });
-    /** @type {__VLS_StyleScopedClasses['dice-action-slots']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "slot-heading" },
-    });
-    /** @type {__VLS_StyleScopedClasses['slot-heading']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (__VLS_ctx.pendingRollDecision?.currentRoll);
-    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-        ...{ class: "slot-grid" },
-    });
-    /** @type {__VLS_StyleScopedClasses['slot-grid']} */ ;
-    for (const [slot] of __VLS_vFor((__VLS_ctx.actionSlots))) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.shouldShowActionSlots))
-                        return;
-                    __VLS_ctx.confirmActionSlot(slot);
-                    // @ts-ignore
-                    [visibleRoll, visibleRoll, isRolling, latestDiceText, pendingRoll, pendingRoll, latestSkill, latestSkill, shouldShowActionSlots, pendingRollDecision, actionSlots, confirmActionSlot,];
-                } },
-            key: (slot.id),
-            ...{ class: "dice-action-slot" },
-            type: "button",
-            ...{ class: ({ enabled: slot.enabled, disabled: !slot.enabled, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
-            disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled),
-        });
-        /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
-        /** @type {__VLS_StyleScopedClasses['enabled']} */ ;
-        /** @type {__VLS_StyleScopedClasses['disabled']} */ ;
-        /** @type {__VLS_StyleScopedClasses['settling']} */ ;
+        (__VLS_ctx.lastRollText(player));
+        if (__VLS_ctx.zhaoZilongHitText(player)) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "seat-roll" },
+            });
+            /** @type {__VLS_StyleScopedClasses['seat-roll']} */ ;
+            (__VLS_ctx.zhaoZilongHitText(player));
+        }
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "slot-dice" },
+            ...{ class: "seat-status" },
         });
-        /** @type {__VLS_StyleScopedClasses['slot-dice']} */ ;
-        (__VLS_ctx.pendingRollDecision?.currentRoll);
-        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-        (__VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked ? "结算中……" : slot.label);
-        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-        (slot.enabled ? slot.description : slot.reason ?? slot.description);
+        /** @type {__VLS_StyleScopedClasses['seat-status']} */ ;
+        (__VLS_ctx.playerStatus(player));
         // @ts-ignore
-        [pendingRollDecision, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
+        [playerStatus, characterName, summonerSkillName, lastRollText, zhaoZilongHitText, zhaoZilongHitText,];
     }
 }
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (__VLS_ctx.rollWithAnimation) },
-    ...{ class: "roll-btn" },
-    type: "button",
-    disabled: (!__VLS_ctx.canRoll),
-});
-/** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
-(__VLS_ctx.rollButtonText);
-if (__VLS_ctx.me) {
+if (!__VLS_ctx.isDuoMode) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "action-center" },
+        ...{ class: (`turn-guide-${__VLS_ctx.turnGuideTone}`) },
+    });
+    /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "action-phase" },
+    });
+    /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.currentActionTitle);
+    for (const [line] of __VLS_vFor((__VLS_ctx.currentActionLines))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({
+            key: (line),
+        });
+        (line);
+        // @ts-ignore
+        [isDuoMode, turnGuideTone, currentActionTitle, currentActionLines,];
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "dice-panel action-arena" },
+        ...{ class: ({ ready: __VLS_ctx.isMyTurn, rolling: __VLS_ctx.rollPhase === 'fast', slowing: __VLS_ctx.rollPhase === 'slow', paused: __VLS_ctx.rollPhase === 'pause', reveal: __VLS_ctx.rollPhase === 'reveal', rolled: __VLS_ctx.visibleRoll }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['dice-panel']} */ ;
+    /** @type {__VLS_StyleScopedClasses['action-arena']} */ ;
+    /** @type {__VLS_StyleScopedClasses['ready']} */ ;
+    /** @type {__VLS_StyleScopedClasses['rolling']} */ ;
+    /** @type {__VLS_StyleScopedClasses['slowing']} */ ;
+    /** @type {__VLS_StyleScopedClasses['paused']} */ ;
+    /** @type {__VLS_StyleScopedClasses['reveal']} */ ;
+    /** @type {__VLS_StyleScopedClasses['rolled']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "dice-visual" },
+    });
+    /** @type {__VLS_StyleScopedClasses['dice-visual']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "dice-box" },
+        key: (__VLS_ctx.rollPhase === 'idle' ? __VLS_ctx.visibleRoll?.id : __VLS_ctx.rollPhase),
+    });
+    /** @type {__VLS_StyleScopedClasses['dice-box']} */ ;
+    for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPhase === 'pause' ? '...' : __VLS_ctx.rollingDice] : __VLS_ctx.visibleRoll?.dice ?? ['?']))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (`${__VLS_ctx.visibleRoll?.id ?? 'empty'}-${index}`),
+        });
+        (dice);
+        // @ts-ignore
+        [rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice, isMyTurn,];
+    }
+    let __VLS_54;
+    /** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
+    transitionGroup;
+    // @ts-ignore
+    const __VLS_55 = __VLS_asFunctionalComponent1(__VLS_54, new __VLS_54({
+        name: "skill-hint",
+        tag: "div",
+        ...{ class: "skill-hint-stack" },
+        'aria-live': "polite",
+    }));
+    const __VLS_56 = __VLS_55({
+        name: "skill-hint",
+        tag: "div",
+        ...{ class: "skill-hint-stack" },
+        'aria-live': "polite",
+    }, ...__VLS_functionalComponentArgsRest(__VLS_55));
+    /** @type {__VLS_StyleScopedClasses['skill-hint-stack']} */ ;
+    const { default: __VLS_59 } = __VLS_57.slots;
+    for (const [hint] of __VLS_vFor((__VLS_ctx.activeSkillHints))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (hint.id),
+            ...{ class: "skill-hint-badge" },
+        });
+        /** @type {__VLS_StyleScopedClasses['skill-hint-badge']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        (hint.text);
+        if (hint.valueText) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
+            (hint.valueText);
+        }
+        // @ts-ignore
+        [activeSkillHints,];
+    }
+    // @ts-ignore
+    [];
+    var __VLS_57;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "action-summary" },
+    });
+    /** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.latestDiceText);
+    if (__VLS_ctx.pendingRoll && !__VLS_ctx.isRolling) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.pendingRoll.message);
+    }
+    else if (__VLS_ctx.visibleRoll) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.visibleRoll.message);
+    }
+    if (__VLS_ctx.latestSkill.length) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；"));
+    }
+    if (__VLS_ctx.shouldShowActionSlots) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "dice-action-slots" },
+        });
+        /** @type {__VLS_StyleScopedClasses['dice-action-slots']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "slot-heading" },
+        });
+        /** @type {__VLS_StyleScopedClasses['slot-heading']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (__VLS_ctx.pendingRollDecision?.currentRoll);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "slot-grid" },
+        });
+        /** @type {__VLS_StyleScopedClasses['slot-grid']} */ ;
+        for (const [slot] of __VLS_vFor((__VLS_ctx.actionSlots))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(!__VLS_ctx.isDuoMode))
+                            return;
+                        if (!(__VLS_ctx.shouldShowActionSlots))
+                            return;
+                        __VLS_ctx.confirmActionSlot(slot);
+                        // @ts-ignore
+                        [visibleRoll, visibleRoll, isRolling, latestDiceText, pendingRoll, pendingRoll, latestSkill, latestSkill, shouldShowActionSlots, pendingRollDecision, actionSlots, confirmActionSlot,];
+                    } },
+                key: (slot.id),
+                ...{ class: "dice-action-slot" },
+                type: "button",
+                ...{ class: ({ enabled: slot.enabled, disabled: !slot.enabled, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
+                disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled),
+            });
+            /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
+            /** @type {__VLS_StyleScopedClasses['enabled']} */ ;
+            /** @type {__VLS_StyleScopedClasses['disabled']} */ ;
+            /** @type {__VLS_StyleScopedClasses['settling']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "slot-dice" },
+            });
+            /** @type {__VLS_StyleScopedClasses['slot-dice']} */ ;
+            (__VLS_ctx.pendingRollDecision?.currentRoll);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked ? "结算中……" : slot.label);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+            (slot.enabled ? slot.description : slot.reason ?? slot.description);
+            // @ts-ignore
+            [pendingRollDecision, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
+        }
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.rollWithAnimation) },
+        ...{ class: "roll-btn" },
+        type: "button",
+        disabled: (!__VLS_ctx.canRoll),
+    });
+    /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
+    (__VLS_ctx.rollButtonText);
+}
+if (!__VLS_ctx.isDuoMode && __VLS_ctx.me) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "self-panel" },
         ...{ class: ({ active: __VLS_ctx.me.id === __VLS_ctx.activePlayer?.id, dead: __VLS_ctx.me.isDead }) },
@@ -1032,11 +1537,11 @@ if (__VLS_ctx.me) {
     /** @type {__VLS_StyleScopedClasses['dead']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
         ...{ onClick: (...[$event]) => {
-                if (!(__VLS_ctx.me))
+                if (!(!__VLS_ctx.isDuoMode && __VLS_ctx.me))
                     return;
                 __VLS_ctx.openPlayerDetail(__VLS_ctx.me);
                 // @ts-ignore
-                [activePlayer, openPlayerDetail, rollWithAnimation, canRoll, rollButtonText, me, me, me, me,];
+                [isDuoMode, openPlayerDetail, rollWithAnimation, rollButtonText, activePlayer, canRoll, me, me, me, me,];
             } },
         ...{ class: "self-avatar" },
         type: "button",
@@ -1045,17 +1550,17 @@ if (__VLS_ctx.me) {
     /** @type {__VLS_StyleScopedClasses['self-avatar']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     (__VLS_ctx.playerAvatar(__VLS_ctx.me).emoji);
-    let __VLS_30;
+    let __VLS_60;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
     transition;
     // @ts-ignore
-    const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({
+    const __VLS_61 = __VLS_asFunctionalComponent1(__VLS_60, new __VLS_60({
         name: "emote-bubble",
     }));
-    const __VLS_32 = __VLS_31({
+    const __VLS_62 = __VLS_61({
         name: "emote-bubble",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_31));
-    const { default: __VLS_35 } = __VLS_33.slots;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_61));
+    const { default: __VLS_65 } = __VLS_63.slots;
     if (__VLS_ctx.emoteFor(__VLS_ctx.me)) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
             key: (__VLS_ctx.emoteFor(__VLS_ctx.me)?.key),
@@ -1066,18 +1571,18 @@ if (__VLS_ctx.me) {
     }
     // @ts-ignore
     [playerAvatar, emoteFor, emoteFor, emoteFor, me, me, me, me,];
-    var __VLS_33;
-    let __VLS_36;
+    var __VLS_63;
+    let __VLS_66;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
     transition;
     // @ts-ignore
-    const __VLS_37 = __VLS_asFunctionalComponent1(__VLS_36, new __VLS_36({
+    const __VLS_67 = __VLS_asFunctionalComponent1(__VLS_66, new __VLS_66({
         name: "float-pop",
     }));
-    const __VLS_38 = __VLS_37({
+    const __VLS_68 = __VLS_67({
         name: "float-pop",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_37));
-    const { default: __VLS_41 } = __VLS_39.slots;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_67));
+    const { default: __VLS_71 } = __VLS_69.slots;
     if (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'damage')) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
             key: (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'damage')?.key),
@@ -1089,18 +1594,18 @@ if (__VLS_ctx.me) {
     }
     // @ts-ignore
     [floatingEffectFor, floatingEffectFor, floatingEffectFor, me, me, me,];
-    var __VLS_39;
-    let __VLS_42;
+    var __VLS_69;
+    let __VLS_72;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
     transition;
     // @ts-ignore
-    const __VLS_43 = __VLS_asFunctionalComponent1(__VLS_42, new __VLS_42({
+    const __VLS_73 = __VLS_asFunctionalComponent1(__VLS_72, new __VLS_72({
         name: "float-pop",
     }));
-    const __VLS_44 = __VLS_43({
+    const __VLS_74 = __VLS_73({
         name: "float-pop",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_43));
-    const { default: __VLS_47 } = __VLS_45.slots;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_73));
+    const { default: __VLS_77 } = __VLS_75.slots;
     if (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'heal')) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
             key: (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'heal')?.key),
@@ -1112,18 +1617,18 @@ if (__VLS_ctx.me) {
     }
     // @ts-ignore
     [floatingEffectFor, floatingEffectFor, floatingEffectFor, me, me, me,];
-    var __VLS_45;
-    let __VLS_48;
+    var __VLS_75;
+    let __VLS_78;
     /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */
     transition;
     // @ts-ignore
-    const __VLS_49 = __VLS_asFunctionalComponent1(__VLS_48, new __VLS_48({
+    const __VLS_79 = __VLS_asFunctionalComponent1(__VLS_78, new __VLS_78({
         name: "float-pop",
     }));
-    const __VLS_50 = __VLS_49({
+    const __VLS_80 = __VLS_79({
         name: "float-pop",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_49));
-    const { default: __VLS_53 } = __VLS_51.slots;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_79));
+    const { default: __VLS_83 } = __VLS_81.slots;
     if (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'noEffect')) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({
             key: (__VLS_ctx.floatingEffectFor(__VLS_ctx.me, 'noEffect')?.key),
@@ -1134,7 +1639,7 @@ if (__VLS_ctx.me) {
     }
     // @ts-ignore
     [floatingEffectFor, floatingEffectFor, me, me,];
-    var __VLS_51;
+    var __VLS_81;
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "self-main" },
     });
@@ -1177,7 +1682,7 @@ if (__VLS_ctx.me) {
     });
     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
         ...{ onClick: (...[$event]) => {
-                if (!(__VLS_ctx.me))
+                if (!(!__VLS_ctx.isDuoMode && __VLS_ctx.me))
                     return;
                 __VLS_ctx.openPlayerDetail(__VLS_ctx.me);
                 // @ts-ignore
@@ -1356,18 +1861,18 @@ if (__VLS_ctx.detailPlayer) {
     }
 }
 if (__VLS_ctx.showRuleGuide) {
-    const __VLS_54 = RuleGuideDialog;
+    const __VLS_84 = RuleGuideDialog;
     // @ts-ignore
-    const __VLS_55 = __VLS_asFunctionalComponent1(__VLS_54, new __VLS_54({
+    const __VLS_85 = __VLS_asFunctionalComponent1(__VLS_84, new __VLS_84({
         ...{ 'onClose': {} },
         characters: (__VLS_ctx.characters),
     }));
-    const __VLS_56 = __VLS_55({
+    const __VLS_86 = __VLS_85({
         ...{ 'onClose': {} },
         characters: (__VLS_ctx.characters),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_55));
-    let __VLS_59;
-    const __VLS_60 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_85));
+    let __VLS_89;
+    const __VLS_90 = {
         ...{ close: {} },
         onClose: (...[$event]) => {
             if (!(__VLS_ctx.showRuleGuide))
@@ -1377,8 +1882,8 @@ if (__VLS_ctx.showRuleGuide) {
             [showRuleGuide, showRuleGuide, playerStatus, playerAvatar, characterName, lastRollText, zhaoZilongHitText, zhaoZilongHitText, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, activeHighlight, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, detailPlayer, closePlayerDetail, closePlayerDetail, characterFor, characterFor, characters,];
         },
     };
-    var __VLS_57;
-    var __VLS_58;
+    var __VLS_87;
+    var __VLS_88;
 }
 // @ts-ignore
 [];

@@ -1,6 +1,5 @@
 import { createClientId } from "./utils/id";
 import { io } from "socket.io-client";
-import { createClientId } from "./utils/id";
 
 const CLIENT_ID_KEY = "career-war-client-id";
 const socketUrl = import.meta.env.DEV ? (import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001") : undefined;

@@ -4,6 +4,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { Character, GameEvent, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import { getClientId, resetClientId, socket, type Ack } from "./socket";
 import HomePage from "./components/HomePage.vue";
+import PvpModePage from "./components/PvpModePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
 import BattlePage from "./components/BattlePage.vue";
 
@@ -20,6 +21,7 @@ const lastEmote = ref<PlayerEmoteEvent | null>(null);
 const isSocketConnected = ref(socket.connected);
 const roundTripMs = ref<number | null>(null);
 const transportName = ref("");
+const frontPage = ref<"home" | "pvpMode">("home");
 const query = new URLSearchParams(window.location.search);
 const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
 const inviteJoinStarted = ref(false);
@@ -45,7 +47,7 @@ if (inviteRoomId) {
 }
 
 const page = computed(() => {
-  if (!room.value) return "home";
+  if (!room.value) return frontPage.value;
   if (room.value.phase === "lobby") return "lobby";
   return "battle";
 });
@@ -167,6 +169,14 @@ function requestRoomList(): void {
   });
 }
 
+function openPvpMode(): void {
+  frontPage.value = "pvpMode";
+}
+
+function backToHome(): void {
+  frontPage.value = "home";
+}
+
 function chooseCharacter(characterId: string): void {
   emitWithAck("chooseCharacter", { characterId });
 }
@@ -199,6 +209,7 @@ function leaveRoom(): void {
   emitWithAck("leaveRoom", {}, () => {
     room.value = null;
     roomId.value = "";
+    frontPage.value = "pvpMode";
     sessionStorage.removeItem(ROOM_ID_KEY);
   });
 }
@@ -322,8 +333,13 @@ function getTransportName(transport: unknown): string {
 
     <HomePage
       v-if="page === 'home'"
+      @select-pvp="openPvpMode"
+    />
+    <PvpModePage
+      v-else-if="page === 'pvpMode'"
       :invite-room-id="inviteRoomId"
       :room-list="roomList"
+      @back-home="backToHome"
       @create-room="createRoom"
       @join-room="joinRoom"
       @refresh-room-list="requestRoomList"

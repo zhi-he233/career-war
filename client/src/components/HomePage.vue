@@ -1,111 +1,160 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import type { RoomListItem } from "@career-war/shared";
-
-const props = defineProps<{
-  inviteRoomId?: string;
-  roomList: RoomListItem[];
-}>();
-
 const emit = defineEmits<{
-  createRoom: [nickname: string];
-  joinRoom: [payload: { nickname: string; roomId: string }];
-  refreshRoomList: [];
+  selectPvp: [];
 }>();
-
-const nickname = ref(localStorage.getItem("career-war-nickname") ?? "");
-const roomId = ref("");
-const inviteRoomId = ref("");
-const isInviteMode = computed(() => Boolean(inviteRoomId.value));
-
-onMounted(() => {
-  const query = new URLSearchParams(window.location.search);
-  const queryRoomId = props.inviteRoomId ?? query.get("room") ?? query.get("roomId") ?? "";
-  if (queryRoomId) {
-    inviteRoomId.value = queryRoomId.toUpperCase().slice(0, 4);
-    roomId.value = inviteRoomId.value;
-  }
-  emit("refreshRoomList");
-});
-
-function rememberName(): void {
-  localStorage.setItem("career-war-nickname", nickname.value.trim());
-}
-
-function createRoom(): void {
-  rememberName();
-  emit("createRoom", nickname.value);
-}
-
-function joinRoom(): void {
-  rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: roomId.value });
-}
-
-function selectRoom(room: RoomListItem): void {
-  if (!room.canJoin) return;
-  roomId.value = room.roomId;
-  rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: room.roomId });
-}
-
-function phaseLabel(phase: RoomListItem["phase"]): string {
-  if (phase === "waiting") return "等待中";
-  if (phase === "playing") return "游戏中";
-  return "已结束";
-}
 </script>
 
 <template>
-  <section class="page-panel">
-    <label class="field">
-      <span>昵称</span>
-      <input v-model="nickname" maxlength="12" placeholder="输入你的昵称" />
-    </label>
+  <section class="home-page">
+    <div class="home-hero">
+      <p class="eyebrow">H5 联机桌游 MVP</p>
+      <h2>职业互怼 / 职业战争</h2>
+      <p>选择玩法入口，后续 PVE、肉鸽、阵营大战都会从这里进入。</p>
+    </div>
 
-    <button v-if="!isInviteMode" class="primary-btn" type="button" @click="createRoom">创建房间</button>
+    <div class="mode-entry-list">
+      <button class="mode-entry-card available" type="button" @click="emit('selectPvp')">
+        <span class="mode-status ready">可进入</span>
+        <strong>玩家对战</strong>
+        <small>创建房间、加入房间、查看房间列表，进入现有 1V1 / 自由对战。</small>
+      </button>
 
-    <div v-if="!isInviteMode" class="divider">或</div>
-
-    <template v-if="isInviteMode">
-      <div class="room-code">
-        <span>加入房间</span>
-        <strong>{{ inviteRoomId }}</strong>
-      </div>
-      <button class="secondary-btn" type="button" @click="joinRoom">加入该房间</button>
-    </template>
-
-    <template v-else>
-      <section class="room-list-panel">
-        <div class="section-heading">
-          <h2>当前房间</h2>
-          <button class="ghost-btn small-btn" type="button" @click="emit('refreshRoomList')">刷新房间列表</button>
+      <article class="mode-entry-card disabled" aria-disabled="true">
+        <span class="mode-status">开发中</span>
+        <strong>PVE 冒险</strong>
+        <small>人机对战、无限肉鸽准备中，需要玩家档案系统后开放。</small>
+        <div class="sub-mode-list">
+          <span>人机对战：开发中</span>
+          <span>无限肉鸽：开发中</span>
         </div>
+      </article>
 
-        <p v-if="props.roomList.length === 0" class="empty-state">暂无可加入房间</p>
-
-        <div v-else class="room-list">
-          <article v-for="room in props.roomList" :key="room.roomId" class="public-room-card">
-            <div>
-              <strong>{{ room.roomId }}</strong>
-              <p>房主：{{ room.hostName }}</p>
-            </div>
-            <div class="room-meta">
-              <span>{{ room.playerCount }}/{{ room.maxPlayers }} 人</span>
-              <span>{{ phaseLabel(room.phase) }}</span>
-            </div>
-            <button class="secondary-btn small-btn" type="button" :disabled="!room.canJoin" @click="selectRoom(room)">
-              {{ room.canJoin ? "加入" : room.playerCount >= room.maxPlayers ? "已满" : "不可加入" }}
-            </button>
-          </article>
+      <article class="mode-entry-card disabled" aria-disabled="true">
+        <span class="mode-status">占位</span>
+        <strong>玩家档案</strong>
+        <small>游客玩家</small>
+        <div class="profile-placeholder">
+          <span>等级：开发中</span>
+          <span>金币：开发中</span>
+          <span>战绩：开发中</span>
         </div>
-      </section>
-
-      <label class="field">
-        <span>房间号</span>
-        <input v-model="roomId" maxlength="4" placeholder="例如 A8K2" @input="roomId = roomId.toUpperCase()" />
-      </label>
-      <button class="secondary-btn" type="button" @click="joinRoom">加入房间</button>
-    </template>
+      </article>
+    </div>
   </section>
 </template>
+
+<style scoped>
+.home-page {
+  display: grid;
+  gap: 14px;
+}
+
+.home-hero,
+.mode-entry-card {
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.home-hero {
+  padding: 18px 16px;
+}
+
+.home-hero h2 {
+  margin: 4px 0 8px;
+  color: #172033;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.home-hero p:last-child {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.mode-entry-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mode-entry-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-height: 124px;
+  padding: 16px;
+  text-align: left;
+}
+
+button.mode-entry-card {
+  cursor: pointer;
+}
+
+.mode-entry-card.available {
+  border-color: #2563eb;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+}
+
+.mode-entry-card.disabled {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.mode-entry-card strong {
+  color: #172033;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.mode-entry-card small,
+.sub-mode-list,
+.profile-placeholder {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.mode-status {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.mode-status.ready {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.sub-mode-list,
+.profile-placeholder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sub-mode-list span,
+.profile-placeholder span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #eef2ff;
+}
+
+@media (max-width: 480px) {
+  .home-hero h2 {
+    font-size: 25px;
+  }
+
+  .mode-entry-card {
+    min-height: 116px;
+    padding: 14px;
+  }
+}
+</style>

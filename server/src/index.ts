@@ -17,6 +17,7 @@ import {
   startGame,
   type CharacterId,
   type EmoteId,
+  type GameMode,
   type GameEvent,
   type PlayerEmoteEvent,
   type Room,
@@ -33,9 +34,11 @@ const EMOTE_COOLDOWN_MS = 1000;
 const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000;
 const ROOM_CLEANUP_INTERVAL_MS = 30 * 1000;
 const ROOM_MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8] as const;
+const DEFAULT_GAME_MODE: GameMode = "classic";
 const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
-  allowDuplicateCharacters: true
+  allowDuplicateCharacters: true,
+  gameMode: DEFAULT_GAME_MODE
 };
 const PORT = Number(process.env.PORT ?? 3001);
 const isLocalDev = process.env.NODE_ENV !== "production" && process.env.npm_lifecycle_event === "dev";
@@ -110,6 +113,7 @@ io.on("connection", (socket) => {
         id: roomId,
         hostId: socket.id,
         phase: "lobby",
+        gameMode: DEFAULT_GAME_MODE,
         settings: { ...DEFAULT_ROOM_SETTINGS },
         players: [player],
         rematchReadyPlayerIds: [],
@@ -378,6 +382,7 @@ function addEvent(room: Room, type: GameEvent["type"], message: string): GameEve
 
 function serializePublicRoom(room: Room): Room {
   ensureRoomSettings(room);
+  ensureRoomGameMode(room);
   const publicRoom = serializeRoom(room);
   publicRoom.battleLog = publicRoom.battleLog.slice(0, MAX_BATTLE_LOG);
   publicRoom.snapshots = [];
@@ -403,11 +408,19 @@ function getPublicRoomList(): RoomListItem[] {
 }
 
 function ensureRoomSettings(room: Room): RoomSettings {
+  const gameMode = ensureRoomGameMode(room);
   room.settings = {
     ...DEFAULT_ROOM_SETTINGS,
-    ...(room.settings ?? {})
+    ...(room.settings ?? {}),
+    gameMode
   };
   return room.settings;
+}
+
+function ensureRoomGameMode(room: Room): GameMode {
+  const currentMode = room.gameMode ?? room.settings?.gameMode;
+  room.gameMode = isGameMode(currentMode) ? currentMode : DEFAULT_GAME_MODE;
+  return room.gameMode;
 }
 
 function updateRoomSettings(room: Room, actorId: string, payload: Partial<RoomSettings>): void {
@@ -429,6 +442,12 @@ function updateRoomSettings(room: Room, actorId: string, payload: Partial<RoomSe
     nextSettings.allowDuplicateCharacters = payload.allowDuplicateCharacters;
   }
 
+  if (payload.gameMode !== undefined) {
+    if (!isGameMode(payload.gameMode)) throw new Error("游戏模式设置无效");
+    room.gameMode = payload.gameMode;
+    nextSettings.gameMode = payload.gameMode;
+  }
+
   room.settings = nextSettings;
 }
 
@@ -440,6 +459,10 @@ function validateCharacterChoice(room: Room, actorId: string, characterId: Chara
 }
 
 function validateStartGame(room: Room): void {
+  if (ensureRoomGameMode(room) === "duo_2v2") {
+    throw new Error("2V2 模式开发中，暂时不能开始");
+  }
+
   const settings = ensureRoomSettings(room);
   if (room.players.length > settings.maxPlayers) throw new Error("当前玩家数超过房间最大人数");
   if (settings.allowDuplicateCharacters) return;
@@ -485,6 +508,10 @@ function isSummonerSkillId(value: unknown): value is SummonerSkillId {
 
 function isRollDecisionChoice(value: unknown): value is RollDecisionChoice {
   return value === "normal_attack" || value === "settle" || value === "character_skill" || value === "summoner_skill";
+}
+
+function isGameMode(value: unknown): value is GameMode {
+  return value === "classic" || value === "duo_2v2";
 }
 
 function bindSocketToRoom(socketId: string, clientId: string, roomId: string): void {

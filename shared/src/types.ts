@@ -12,6 +12,8 @@ export type CharacterId =
 
 export type RoomPhase = "lobby" | "battle" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
+export type GameMode = "classic" | "duo_2v2";
+export type TeamId = "A" | "B";
 export type CharacterDifficulty = "simple" | "normal" | "complex" | "expert";
 export type CharacterRole = "attack" | "defense" | "healing" | "burst" | "special";
 
@@ -54,6 +56,9 @@ export interface Player {
   zhaoZilongHitCount?: number;
   isDead: boolean;
   selectedTargetId?: string;
+  controllerId?: string;
+  teamId?: TeamId;
+  slotIndex?: 0 | 1;
 }
 
 export interface GameEvent {
@@ -107,6 +112,7 @@ export interface SkillHint {
 export interface RoomSettings {
   maxPlayers: number;
   allowDuplicateCharacters: boolean;
+  gameMode?: GameMode;
 }
 
 export type CharacterReactionSkillId = "gunslinger_barrage" | "vampire_blood_rite" | "paladin_invincible";
@@ -168,6 +174,7 @@ export interface Room {
   id: string;
   hostId: string;
   phase: RoomPhase;
+  gameMode?: GameMode;
   settings: RoomSettings;
   players: Player[];
   rematchReadyPlayerIds: string[];
@@ -180,6 +187,10 @@ export interface Room {
   pendingRoll?: PendingRoll;
   pendingRollDecision?: PendingRollDecision;
   winnerId?: string;
+  activeControllerId?: string;
+  selectedActorId?: string;
+  winnerTeamId?: TeamId;
+  controllerTurnOrder?: string[];
   highlight?: CharacterHighlight;
   skillHints?: SkillHint[];
 }

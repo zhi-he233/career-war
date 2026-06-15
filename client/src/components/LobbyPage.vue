@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { Character, CharacterId, Room, RoomSettings, SummonerSkillId } from "@career-war/shared";
+import type { Character, CharacterId, GameMode, Room, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
 const props = defineProps<{
@@ -47,7 +47,8 @@ const ROLE_LABELS: Record<NonNullable<Character["role"]>, string> = {
 const MAX_PLAYER_OPTIONS = [2, 3, 4, 5, 6, 7, 8];
 const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
-  allowDuplicateCharacters: true
+  allowDuplicateCharacters: true,
+  gameMode: "classic"
 };
 const SUMMONER_SKILLS: Array<{ id: SummonerSkillId; name: string; description: string }> = [
   { id: "lucky_plus_one", name: "幸运骰", description: "投后让本次主骰 +1，最高 6。冷却：3 次自己的行动。" },
@@ -112,8 +113,10 @@ const showRuleGuide = ref(false);
 const me = computed(() => props.room.players.find((player) => player.id === props.playerId));
 const isHost = computed(() => props.room.hostId === props.playerId);
 const roomSettings = computed(() => ({ ...DEFAULT_ROOM_SETTINGS, ...(props.room.settings ?? {}) }));
+const roomMode = computed<GameMode>(() => props.room.gameMode ?? roomSettings.value.gameMode ?? "classic");
+const isDuoModeDevelopment = computed(() => roomMode.value === "duo_2v2");
 const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]!);
-const canStart = computed(() => props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
+const canStart = computed(() => !isDuoModeDevelopment.value && props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
 const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && duplicateCharacterIds.value.size > 0);
 const duplicateCharacterIds = computed(() => {
   const counts = new Map<CharacterId, number>();
@@ -124,6 +127,7 @@ const duplicateCharacterIds = computed(() => {
   return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([characterId]) => characterId));
 });
 const startHint = computed(() => {
+  if (isDuoModeDevelopment.value) return "2V2 双角色模式开发中，暂不可开始。";
   if (hasDuplicateCharacterConflict.value) return "当前已有重复职业，请玩家重新选择。";
   if (!canStart.value) return "至少 2 人，且所有玩家都选择职业后可开始。";
   return `当前选择：${characterName(me.value?.characterId)}`;
@@ -168,6 +172,15 @@ function updateMaxPlayers(event: Event): void {
 function updateDuplicateSetting(event: Event): void {
   const allowDuplicateCharacters = (event.target as HTMLInputElement).checked;
   emit("updateRoomSettings", { allowDuplicateCharacters });
+}
+
+function updateGameMode(event: Event): void {
+  const gameMode = (event.target as HTMLSelectElement).value as GameMode;
+  emit("updateRoomSettings", { gameMode });
+}
+
+function gameModeLabel(gameMode: GameMode): string {
+  return gameMode === "duo_2v2" ? "2V2 双角色（开发中）" : "经典对战";
 }
 
 function isSelectableCharacter(character: CharacterCard | null | undefined): boolean {
@@ -271,6 +284,14 @@ function fullDescription(character: CharacterCard): string[] {
 
         <div v-if="isHost" class="settings-controls">
           <label class="compact-field">
+            <span>游戏模式</span>
+            <select :value="roomMode" :disabled="room.phase !== 'lobby'" @change="updateGameMode">
+              <option value="classic">经典对战</option>
+              <option value="duo_2v2">2V2 双角色（开发中）</option>
+            </select>
+          </label>
+
+          <label class="compact-field">
             <span>最大人数</span>
             <select :value="roomSettings.maxPlayers" :disabled="room.phase !== 'lobby'" @change="updateMaxPlayers">
               <option v-for="option in selectableMaxPlayerOptions" :key="option.count" :value="option.count" :disabled="option.disabled">
@@ -286,10 +307,12 @@ function fullDescription(character: CharacterCard): string[] {
         </div>
 
         <p v-else class="settings-readonly">
+          模式：{{ gameModeLabel(roomMode) }} /
           最大 {{ roomSettings.maxPlayers }} 人 · {{ roomSettings.allowDuplicateCharacters ? "允许重复职业" : "不允许重复职业" }}
         </p>
 
         <p v-if="hasDuplicateCharacterConflict" class="settings-warning">当前已有重复职业，请玩家重新选择。</p>
+        <p v-if="isDuoModeDevelopment" class="settings-warning">2V2 双角色模式开发中，暂不可开始。</p>
       </section>
 
       <section class="summoner-select-panel">

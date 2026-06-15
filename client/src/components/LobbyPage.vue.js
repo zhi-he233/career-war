@@ -27,7 +27,8 @@ const ROLE_LABELS = {
 const MAX_PLAYER_OPTIONS = [2, 3, 4, 5, 6, 7, 8];
 const DEFAULT_ROOM_SETTINGS = {
     maxPlayers: 8,
-    allowDuplicateCharacters: true
+    allowDuplicateCharacters: true,
+    gameMode: "classic"
 };
 const SUMMONER_SKILLS = [
     { id: "lucky_plus_one", name: "幸运骰", description: "投后让本次主骰 +1，最高 6。冷却：3 次自己的行动。" },
@@ -89,9 +90,17 @@ const showRuleGuide = ref(false);
 const me = computed(() => props.room.players.find((player) => player.id === props.playerId));
 const isHost = computed(() => props.room.hostId === props.playerId);
 const roomSettings = computed(() => ({ ...DEFAULT_ROOM_SETTINGS, ...(props.room.settings ?? {}) }));
+const roomMode = computed(() => props.room.gameMode ?? roomSettings.value.gameMode ?? "classic");
+const isDuoModeDevelopment = computed(() => roomMode.value === "duo_2v2");
+const duoSlots = computed(() => props.room.duoSlots ?? []);
+const duoTeams = computed(() => [
+    { id: "A", label: "A 队", player: props.room.players[0] },
+    { id: "B", label: "B 队", player: props.room.players[1] }
+]);
 const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]);
-const canStart = computed(() => props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
-const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && duplicateCharacterIds.value.size > 0);
+const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => slot.characterId && slot.summonerSkillId) && !hasDuplicateCharacterConflict.value);
+const canStart = computed(() => isDuoModeDevelopment.value ? isDuoReadyToStart.value : props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
+const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && (isDuoModeDevelopment.value ? duoDuplicateCharacterIds.value.size > 0 : duplicateCharacterIds.value.size > 0));
 const duplicateCharacterIds = computed(() => {
     const counts = new Map();
     for (const player of props.room.players) {
@@ -101,7 +110,24 @@ const duplicateCharacterIds = computed(() => {
     }
     return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([characterId]) => characterId));
 });
+const duoDuplicateCharacterIds = computed(() => {
+    const counts = new Map();
+    for (const slot of duoSlots.value) {
+        if (!slot.characterId)
+            continue;
+        counts.set(slot.characterId, (counts.get(slot.characterId) ?? 0) + 1);
+    }
+    return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([characterId]) => characterId));
+});
 const startHint = computed(() => {
+    if (isDuoModeDevelopment.value && hasDuplicateCharacterConflict.value)
+        return "当前设置不允许重复职业，请重新选择 2V2 槽位。";
+    if (isDuoModeDevelopment.value && props.room.players.length !== 2)
+        return "2V2 需要 2 名玩家后才能开始。";
+    if (isDuoModeDevelopment.value && !isDuoReadyToStart.value)
+        return "请完成 4 个角色槽位和召唤师技能选择。";
+    if (isDuoModeDevelopment.value)
+        return "将进入 2V2 双角色测试版：每名玩家控制两个角色进行战斗。";
     if (hasDuplicateCharacterConflict.value)
         return "当前已有重复职业，请玩家重新选择。";
     if (!canStart.value)
@@ -112,7 +138,8 @@ const inviteLink = computed(() => `${window.location.origin}${window.location.pa
 const visibleCharacters = computed(() => [...props.characters, ...LOCKED_CHARACTERS].filter((character) => !character.isHidden));
 const filteredCharacters = computed(() => visibleCharacters.value.filter((character) => matchesFilter(character) && matchesSearch(character)));
 const randomCandidates = computed(() => filteredCharacters.value.filter(isSelectableCharacter));
-const selectableMaxPlayerOptions = computed(() => MAX_PLAYER_OPTIONS.map((count) => ({ count, disabled: count < props.room.players.length })));
+const visibleMaxPlayers = computed(() => (isDuoModeDevelopment.value ? 2 : roomSettings.value.maxPlayers));
+const selectableMaxPlayerOptions = computed(() => (isDuoModeDevelopment.value ? [2] : MAX_PLAYER_OPTIONS).map((count) => ({ count, disabled: count < props.room.players.length })));
 async function copyInviteLink() {
     await navigator.clipboard.writeText(inviteLink.value);
 }
@@ -144,6 +171,39 @@ function updateMaxPlayers(event) {
 function updateDuplicateSetting(event) {
     const allowDuplicateCharacters = event.target.checked;
     emit("updateRoomSettings", { allowDuplicateCharacters });
+}
+function updateGameMode(event) {
+    const gameMode = event.target.value;
+    emit("updateRoomSettings", { gameMode });
+}
+function gameModeLabel(gameMode) {
+    return gameMode === "duo_2v2" ? "2V2 双角色（测试版）" : "经典对战";
+}
+function duoSlotsForTeam(teamId) {
+    return duoSlots.value.filter((slot) => slot.teamId === teamId).sort((a, b) => a.slotIndex - b.slotIndex);
+}
+function canEditDuoSlot(slot) {
+    return slot.controllerId === props.playerId;
+}
+function updateDuoSlotCharacter(slot, event) {
+    if (!canEditDuoSlot(slot))
+        return;
+    const characterId = event.target.value;
+    if (!characterId)
+        return;
+    emit("chooseDuoSlotCharacter", { slotIndex: slot.slotIndex, characterId });
+}
+function updateDuoSlotSummonerSkill(slot, event) {
+    if (!canEditDuoSlot(slot))
+        return;
+    const summonerSkillId = event.target.value;
+    emit("chooseDuoSlotSummonerSkill", { slotIndex: slot.slotIndex, summonerSkillId });
+}
+function isDuoCharacterTakenByOtherSlot(slot, characterId) {
+    return !roomSettings.value.allowDuplicateCharacters && duoSlots.value.some((item) => !(item.controllerId === slot.controllerId && item.slotIndex === slot.slotIndex) && item.characterId === characterId);
+}
+function summonerSkillDescription(id) {
+    return SUMMONER_SKILLS.find((skill) => skill.id === (id ?? "lucky_plus_one"))?.name ?? "幸运骰";
 }
 function isSelectableCharacter(character) {
     if (!character)
@@ -218,6 +278,8 @@ const __VLS_ctx = {
 let __VLS_components;
 let __VLS_intrinsics;
 let __VLS_directives;
+/** @type {__VLS_StyleScopedClasses['duo-slot-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['duo-team-grid']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "page-panel lobby-page" },
 });
@@ -257,7 +319,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
 (__VLS_ctx.room.players.length);
-(__VLS_ctx.roomSettings.maxPlayers);
+(__VLS_ctx.visibleMaxPlayers);
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "player-list lobby-player-list" },
 });
@@ -291,7 +353,7 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
     (__VLS_ctx.characterName(player.characterId));
     // @ts-ignore
-    [room, room, room, roomSettings, characterName,];
+    [room, room, room, visibleMaxPlayers, characterName,];
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "room-settings-panel" },
@@ -319,8 +381,24 @@ if (__VLS_ctx.isHost) {
     /** @type {__VLS_StyleScopedClasses['compact-field']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+        ...{ onChange: (__VLS_ctx.updateGameMode) },
+        value: (__VLS_ctx.roomMode),
+        disabled: (__VLS_ctx.room.phase !== 'lobby'),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: "classic",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: "duo_2v2",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+        ...{ class: "compact-field" },
+    });
+    /** @type {__VLS_StyleScopedClasses['compact-field']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
         ...{ onChange: (__VLS_ctx.updateMaxPlayers) },
-        value: (__VLS_ctx.roomSettings.maxPlayers),
+        value: (__VLS_ctx.visibleMaxPlayers),
         disabled: (__VLS_ctx.room.phase !== 'lobby'),
     });
     for (const [option] of __VLS_vFor((__VLS_ctx.selectableMaxPlayerOptions))) {
@@ -331,7 +409,7 @@ if (__VLS_ctx.isHost) {
         });
         (option.count);
         // @ts-ignore
-        [room, roomSettings, isHost, isHost, updateMaxPlayers, selectableMaxPlayerOptions,];
+        [room, room, visibleMaxPlayers, isHost, isHost, updateGameMode, roomMode, updateMaxPlayers, selectableMaxPlayerOptions,];
     }
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
         ...{ class: "toggle-field" },
@@ -350,7 +428,8 @@ else {
         ...{ class: "settings-readonly" },
     });
     /** @type {__VLS_StyleScopedClasses['settings-readonly']} */ ;
-    (__VLS_ctx.roomSettings.maxPlayers);
+    (__VLS_ctx.gameModeLabel(__VLS_ctx.roomMode));
+    (__VLS_ctx.visibleMaxPlayers);
     (__VLS_ctx.roomSettings.allowDuplicateCharacters ? "允许重复职业" : "不允许重复职业");
 }
 if (__VLS_ctx.hasDuplicateCharacterConflict) {
@@ -359,49 +438,59 @@ if (__VLS_ctx.hasDuplicateCharacterConflict) {
     });
     /** @type {__VLS_StyleScopedClasses['settings-warning']} */ ;
 }
-__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "summoner-select-panel" },
-});
-/** @type {__VLS_StyleScopedClasses['summoner-select-panel']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "settings-title" },
-});
-/** @type {__VLS_StyleScopedClasses['settings-title']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-    ...{ class: "hint" },
-});
-/** @type {__VLS_StyleScopedClasses['hint']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "summoner-options" },
-});
-/** @type {__VLS_StyleScopedClasses['summoner-options']} */ ;
-for (const [skill] of __VLS_vFor((__VLS_ctx.SUMMONER_SKILLS))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (...[$event]) => {
-                __VLS_ctx.emit('chooseSummonerSkill', skill.id);
-                // @ts-ignore
-                [room, roomSettings, roomSettings, roomSettings, updateDuplicateSetting, hasDuplicateCharacterConflict, SUMMONER_SKILLS, emit,];
-            } },
-        key: (skill.id),
-        ...{ class: "summoner-option" },
-        ...{ class: ({ selected: (__VLS_ctx.me?.summonerSkillId ?? 'lucky_plus_one') === skill.id }) },
-        type: "button",
+if (__VLS_ctx.isDuoModeDevelopment) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "settings-warning" },
     });
-    /** @type {__VLS_StyleScopedClasses['summoner-option']} */ ;
-    /** @type {__VLS_StyleScopedClasses['selected']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (skill.name);
-    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-    (skill.description);
-    // @ts-ignore
-    [me,];
+    /** @type {__VLS_StyleScopedClasses['settings-warning']} */ ;
 }
-__VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
-    ...{ class: "hint" },
-});
-/** @type {__VLS_StyleScopedClasses['hint']} */ ;
-(__VLS_ctx.selectedSummonerSkill.name);
+if (!__VLS_ctx.isDuoModeDevelopment) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "summoner-select-panel" },
+    });
+    /** @type {__VLS_StyleScopedClasses['summoner-select-panel']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "settings-title" },
+    });
+    /** @type {__VLS_StyleScopedClasses['settings-title']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "hint" },
+    });
+    /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "summoner-options" },
+    });
+    /** @type {__VLS_StyleScopedClasses['summoner-options']} */ ;
+    for (const [skill] of __VLS_vFor((__VLS_ctx.SUMMONER_SKILLS))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(!__VLS_ctx.isDuoModeDevelopment))
+                        return;
+                    __VLS_ctx.emit('chooseSummonerSkill', skill.id);
+                    // @ts-ignore
+                    [room, visibleMaxPlayers, roomMode, updateDuplicateSetting, roomSettings, roomSettings, gameModeLabel, hasDuplicateCharacterConflict, isDuoModeDevelopment, isDuoModeDevelopment, SUMMONER_SKILLS, emit,];
+                } },
+            key: (skill.id),
+            ...{ class: "summoner-option" },
+            ...{ class: ({ selected: (__VLS_ctx.me?.summonerSkillId ?? 'lucky_plus_one') === skill.id }) },
+            type: "button",
+        });
+        /** @type {__VLS_StyleScopedClasses['summoner-option']} */ ;
+        /** @type {__VLS_StyleScopedClasses['selected']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (skill.name);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+        (skill.description);
+        // @ts-ignore
+        [me,];
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "hint" },
+    });
+    /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+    (__VLS_ctx.selectedSummonerSkill.name);
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "lobby-start-bar" },
 });
@@ -413,140 +502,286 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
     ...{ class: "hint" },
 });
 /** @type {__VLS_StyleScopedClasses['hint']} */ ;
-(__VLS_ctx.isHost ? __VLS_ctx.startHint : `当前选择：${__VLS_ctx.characterName(__VLS_ctx.me?.characterId)}`);
+(__VLS_ctx.isHost || __VLS_ctx.isDuoModeDevelopment ? __VLS_ctx.startHint : `当前选择：${__VLS_ctx.characterName(__VLS_ctx.me?.characterId)}`);
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             __VLS_ctx.emit('startGame');
             // @ts-ignore
-            [characterName, isHost, isHost, emit, me, selectedSummonerSkill, startHint,];
+            [characterName, isHost, isHost, isDuoModeDevelopment, emit, me, selectedSummonerSkill, startHint,];
         } },
     ...{ class: "primary-btn" },
     type: "button",
     disabled: (!__VLS_ctx.isHost || !__VLS_ctx.canStart),
 });
 /** @type {__VLS_StyleScopedClasses['primary-btn']} */ ;
-(__VLS_ctx.isHost ? "开始游戏" : "等待房主开始");
-__VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-    ...{ class: "character-picker" },
-});
-/** @type {__VLS_StyleScopedClasses['character-picker']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "picker-heading" },
-});
-/** @type {__VLS_StyleScopedClasses['picker-heading']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
-    ...{ class: "hint" },
-});
-/** @type {__VLS_StyleScopedClasses['hint']} */ ;
-(__VLS_ctx.characterName(__VLS_ctx.me?.characterId));
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (__VLS_ctx.chooseRandomCharacter) },
-    ...{ class: "secondary-btn random-character-btn" },
-    type: "button",
-    disabled: (__VLS_ctx.randomCandidates.length === 0),
-});
-/** @type {__VLS_StyleScopedClasses['secondary-btn']} */ ;
-/** @type {__VLS_StyleScopedClasses['random-character-btn']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "character-toolbar" },
-});
-/** @type {__VLS_StyleScopedClasses['character-toolbar']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    ...{ class: "character-search" },
-    type: "search",
-    placeholder: "搜索职业名或标签",
-});
-(__VLS_ctx.searchKeyword);
-/** @type {__VLS_StyleScopedClasses['character-search']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "character-filters" },
-    'aria-label': "职业分类筛选",
-});
-/** @type {__VLS_StyleScopedClasses['character-filters']} */ ;
-for (const [filter] of __VLS_vFor((__VLS_ctx.FILTERS))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (...[$event]) => {
-                __VLS_ctx.activeFilter = filter.id;
-                // @ts-ignore
-                [characterName, isHost, isHost, me, canStart, chooseRandomCharacter, randomCandidates, searchKeyword, FILTERS, activeFilter,];
-            } },
-        key: (filter.id),
-        ...{ class: "filter-chip" },
-        ...{ class: ({ active: __VLS_ctx.activeFilter === filter.id }) },
-        type: "button",
+(__VLS_ctx.isDuoModeDevelopment ? __VLS_ctx.isHost ? __VLS_ctx.canStart ? "开始 2V2" : "2V2 选择未完成" : "等待房主开始" : __VLS_ctx.isHost ? "开始游戏" : "等待房主开始");
+if (__VLS_ctx.isDuoModeDevelopment) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "character-picker duo-slot-picker" },
     });
-    /** @type {__VLS_StyleScopedClasses['filter-chip']} */ ;
-    /** @type {__VLS_StyleScopedClasses['active']} */ ;
-    (filter.label);
-    // @ts-ignore
-    [activeFilter,];
-}
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "character-grid" },
-});
-/** @type {__VLS_StyleScopedClasses['character-grid']} */ ;
-for (const [character] of __VLS_vFor((__VLS_ctx.filteredCharacters))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (...[$event]) => {
-                __VLS_ctx.openCharacterDetails(character);
-                // @ts-ignore
-                [filteredCharacters, openCharacterDetails,];
-            } },
-        key: (character.id),
-        ...{ class: "character-choice" },
-        ...{ class: ({ selected: __VLS_ctx.me?.characterId === character.id, locked: !__VLS_ctx.isSelectableCharacter(character), taken: __VLS_ctx.isTakenByOther(character.id) }) },
-        type: "button",
-        disabled: (!__VLS_ctx.isSelectableCharacter(character)),
+    /** @type {__VLS_StyleScopedClasses['character-picker']} */ ;
+    /** @type {__VLS_StyleScopedClasses['duo-slot-picker']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "picker-heading" },
     });
-    /** @type {__VLS_StyleScopedClasses['character-choice']} */ ;
-    /** @type {__VLS_StyleScopedClasses['selected']} */ ;
-    /** @type {__VLS_StyleScopedClasses['locked']} */ ;
-    /** @type {__VLS_StyleScopedClasses['taken']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        ...{ class: "character-status" },
-    });
-    /** @type {__VLS_StyleScopedClasses['character-status']} */ ;
-    (__VLS_ctx.characterStatusLabel(character));
-    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (character.name);
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        ...{ class: "character-hp" },
-    });
-    /** @type {__VLS_StyleScopedClasses['character-hp']} */ ;
-    (character.maxHp);
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-        ...{ class: "character-tags" },
-    });
-    /** @type {__VLS_StyleScopedClasses['character-tags']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
-    (__VLS_ctx.difficultyLabel(character.difficulty));
-    __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
-    (__VLS_ctx.roleLabel(character.role));
-    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-    (character.shortDescription ?? character.description[0]);
-    if (__VLS_ctx.me?.characterId === character.id) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "chosen-note" },
-        });
-        /** @type {__VLS_StyleScopedClasses['chosen-note']} */ ;
-    }
-    else if (__VLS_ctx.selectedNames(character.id).length) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "chosen-note" },
-        });
-        /** @type {__VLS_StyleScopedClasses['chosen-note']} */ ;
-        (__VLS_ctx.selectedNames(character.id).join("、"));
-    }
-    // @ts-ignore
-    [me, me, isSelectableCharacter, isSelectableCharacter, isTakenByOther, characterStatusLabel, difficultyLabel, roleLabel, selectedNames, selectedNames,];
-}
-if (__VLS_ctx.filteredCharacters.length === 0) {
+    /** @type {__VLS_StyleScopedClasses['picker-heading']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
         ...{ class: "hint" },
     });
     /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "duo-team-grid" },
+    });
+    /** @type {__VLS_StyleScopedClasses['duo-team-grid']} */ ;
+    for (const [team] of __VLS_vFor((__VLS_ctx.duoTeams))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+            key: (team.id),
+            ...{ class: "duo-team-panel" },
+        });
+        /** @type {__VLS_StyleScopedClasses['duo-team-panel']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "settings-title" },
+        });
+        /** @type {__VLS_StyleScopedClasses['settings-title']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+        (team.label);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "hint" },
+        });
+        /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+        (team.player ? team.player.nickname : "等待玩家加入");
+        if (team.player) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "duo-slot-list" },
+            });
+            /** @type {__VLS_StyleScopedClasses['duo-slot-list']} */ ;
+            for (const [slot] of __VLS_vFor((__VLS_ctx.duoSlotsForTeam(team.id)))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                    key: (`${slot.controllerId}-${slot.slotIndex}`),
+                    ...{ class: "duo-slot-card" },
+                });
+                /** @type {__VLS_StyleScopedClasses['duo-slot-card']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "settings-title" },
+                });
+                /** @type {__VLS_StyleScopedClasses['settings-title']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+                (slot.slotIndex + 1);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "badge" },
+                    ...{ class: ({ 'host-badge': __VLS_ctx.canEditDuoSlot(slot) }) },
+                });
+                /** @type {__VLS_StyleScopedClasses['badge']} */ ;
+                /** @type {__VLS_StyleScopedClasses['host-badge']} */ ;
+                (__VLS_ctx.canEditDuoSlot(slot) ? "你的槽位" : "对方槽位");
+                __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                    ...{ class: "compact-field" },
+                });
+                /** @type {__VLS_StyleScopedClasses['compact-field']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+                    ...{ onChange: (...[$event]) => {
+                            if (!(__VLS_ctx.isDuoModeDevelopment))
+                                return;
+                            if (!(team.player))
+                                return;
+                            __VLS_ctx.updateDuoSlotCharacter(slot, $event);
+                            // @ts-ignore
+                            [isHost, isHost, isHost, isDuoModeDevelopment, isDuoModeDevelopment, canStart, canStart, duoTeams, duoSlotsForTeam, canEditDuoSlot, canEditDuoSlot, updateDuoSlotCharacter,];
+                        } },
+                    value: (slot.characterId ?? ''),
+                    disabled: (!__VLS_ctx.canEditDuoSlot(slot)),
+                });
+                __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                    value: "",
+                });
+                for (const [character] of __VLS_vFor((props.characters))) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                        key: (character.id),
+                        value: (character.id),
+                        disabled: (__VLS_ctx.isDuoCharacterTakenByOtherSlot(slot, character.id)),
+                    });
+                    (character.name);
+                    (__VLS_ctx.isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "");
+                    // @ts-ignore
+                    [canEditDuoSlot, isDuoCharacterTakenByOtherSlot, isDuoCharacterTakenByOtherSlot,];
+                }
+                __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                    ...{ class: "compact-field" },
+                });
+                /** @type {__VLS_StyleScopedClasses['compact-field']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+                    ...{ onChange: (...[$event]) => {
+                            if (!(__VLS_ctx.isDuoModeDevelopment))
+                                return;
+                            if (!(team.player))
+                                return;
+                            __VLS_ctx.updateDuoSlotSummonerSkill(slot, $event);
+                            // @ts-ignore
+                            [updateDuoSlotSummonerSkill,];
+                        } },
+                    value: (slot.summonerSkillId ?? 'lucky_plus_one'),
+                    disabled: (!__VLS_ctx.canEditDuoSlot(slot)),
+                });
+                for (const [skill] of __VLS_vFor((__VLS_ctx.SUMMONER_SKILLS))) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                        key: (skill.id),
+                        value: (skill.id),
+                    });
+                    (skill.name);
+                    // @ts-ignore
+                    [SUMMONER_SKILLS, canEditDuoSlot,];
+                }
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "hint" },
+                });
+                /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+                (__VLS_ctx.characterName(slot.characterId));
+                (__VLS_ctx.summonerSkillDescription(slot.summonerSkillId));
+                // @ts-ignore
+                [characterName, summonerSkillDescription,];
+            }
+        }
+        else {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                ...{ class: "empty-state" },
+            });
+            /** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
+        }
+        // @ts-ignore
+        [];
+    }
+}
+else {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "character-picker" },
+    });
+    /** @type {__VLS_StyleScopedClasses['character-picker']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "picker-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['picker-heading']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "hint" },
+    });
+    /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+    (__VLS_ctx.characterName(__VLS_ctx.me?.characterId));
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.chooseRandomCharacter) },
+        ...{ class: "secondary-btn random-character-btn" },
+        type: "button",
+        disabled: (__VLS_ctx.randomCandidates.length === 0),
+    });
+    /** @type {__VLS_StyleScopedClasses['secondary-btn']} */ ;
+    /** @type {__VLS_StyleScopedClasses['random-character-btn']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "character-toolbar" },
+    });
+    /** @type {__VLS_StyleScopedClasses['character-toolbar']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        ...{ class: "character-search" },
+        type: "search",
+        placeholder: "搜索职业名或标签",
+    });
+    (__VLS_ctx.searchKeyword);
+    /** @type {__VLS_StyleScopedClasses['character-search']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "character-filters" },
+        'aria-label': "职业分类筛选",
+    });
+    /** @type {__VLS_StyleScopedClasses['character-filters']} */ ;
+    for (const [filter] of __VLS_vFor((__VLS_ctx.FILTERS))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!!(__VLS_ctx.isDuoModeDevelopment))
+                        return;
+                    __VLS_ctx.activeFilter = filter.id;
+                    // @ts-ignore
+                    [characterName, me, chooseRandomCharacter, randomCandidates, searchKeyword, FILTERS, activeFilter,];
+                } },
+            key: (filter.id),
+            ...{ class: "filter-chip" },
+            ...{ class: ({ active: __VLS_ctx.activeFilter === filter.id }) },
+            type: "button",
+        });
+        /** @type {__VLS_StyleScopedClasses['filter-chip']} */ ;
+        /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        (filter.label);
+        // @ts-ignore
+        [activeFilter,];
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "character-grid" },
+    });
+    /** @type {__VLS_StyleScopedClasses['character-grid']} */ ;
+    for (const [character] of __VLS_vFor((__VLS_ctx.filteredCharacters))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!!(__VLS_ctx.isDuoModeDevelopment))
+                        return;
+                    __VLS_ctx.openCharacterDetails(character);
+                    // @ts-ignore
+                    [filteredCharacters, openCharacterDetails,];
+                } },
+            key: (character.id),
+            ...{ class: "character-choice" },
+            ...{ class: ({ selected: __VLS_ctx.me?.characterId === character.id, locked: !__VLS_ctx.isSelectableCharacter(character), taken: __VLS_ctx.isTakenByOther(character.id) }) },
+            type: "button",
+            disabled: (!__VLS_ctx.isSelectableCharacter(character)),
+        });
+        /** @type {__VLS_StyleScopedClasses['character-choice']} */ ;
+        /** @type {__VLS_StyleScopedClasses['selected']} */ ;
+        /** @type {__VLS_StyleScopedClasses['locked']} */ ;
+        /** @type {__VLS_StyleScopedClasses['taken']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "character-status" },
+        });
+        /** @type {__VLS_StyleScopedClasses['character-status']} */ ;
+        (__VLS_ctx.characterStatusLabel(character));
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (character.name);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "character-hp" },
+        });
+        /** @type {__VLS_StyleScopedClasses['character-hp']} */ ;
+        (character.maxHp);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            ...{ class: "character-tags" },
+        });
+        /** @type {__VLS_StyleScopedClasses['character-tags']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
+        (__VLS_ctx.difficultyLabel(character.difficulty));
+        __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
+        (__VLS_ctx.roleLabel(character.role));
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+        (character.shortDescription ?? character.description[0]);
+        if (__VLS_ctx.me?.characterId === character.id) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "chosen-note" },
+            });
+            /** @type {__VLS_StyleScopedClasses['chosen-note']} */ ;
+        }
+        else if (__VLS_ctx.selectedNames(character.id).length) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "chosen-note" },
+            });
+            /** @type {__VLS_StyleScopedClasses['chosen-note']} */ ;
+            (__VLS_ctx.selectedNames(character.id).join("、"));
+        }
+        // @ts-ignore
+        [me, me, isSelectableCharacter, isSelectableCharacter, isTakenByOther, characterStatusLabel, difficultyLabel, roleLabel, selectedNames, selectedNames,];
+    }
+    if (__VLS_ctx.filteredCharacters.length === 0) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+            ...{ class: "hint" },
+        });
+        /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+    }
 }
 if (__VLS_ctx.selectedCharacter) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({

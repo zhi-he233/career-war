@@ -16,7 +16,7 @@ const emit = defineEmits<{
       <button class="mode-entry-card available" type="button" @click="emit('selectPvp')">
         <span class="mode-status ready">可进入</span>
         <strong>玩家对战</strong>
-        <small>创建房间、加入房间、查看房间列表，进入现有 1V1 / 自由对战。</small>
+        <small>创建房间、加入房间、查看房间列表，进入 1V1 / 自由对战或 2V2 双角色。</small>
       </button>
 
       <article class="mode-entry-card disabled" aria-disabled="true">

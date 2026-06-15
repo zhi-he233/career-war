@@ -146,7 +146,7 @@ const startHint = computed(() => {
   if (isDuoModeDevelopment.value && hasDuplicateCharacterConflict.value) return "当前设置不允许重复职业，请重新选择 2V2 槽位。";
   if (isDuoModeDevelopment.value && props.room.players.length !== 2) return "2V2 需要 2 名玩家后才能开始。";
   if (isDuoModeDevelopment.value && !isDuoReadyToStart.value) return "请完成 4 个角色槽位和召唤师技能选择。";
-  if (isDuoModeDevelopment.value) return "将进入 2V2 V0：选择行动角色阶段，暂不开放投骰结算。";
+  if (isDuoModeDevelopment.value) return "将进入 2V2 双角色测试版：每名玩家控制两个角色进行战斗。";
   if (hasDuplicateCharacterConflict.value) return "当前已有重复职业，请玩家重新选择。";
   if (!canStart.value) return "至少 2 人，且所有玩家都选择职业后可开始。";
   return `当前选择：${characterName(me.value?.characterId)}`;
@@ -200,7 +200,7 @@ function updateGameMode(event: Event): void {
 }
 
 function gameModeLabel(gameMode: GameMode): string {
-  return gameMode === "duo_2v2" ? "2V2 双角色（开发中）" : "经典对战";
+  return gameMode === "duo_2v2" ? "2V2 双角色（测试版）" : "经典对战";
 }
 
 function duoSlotsForTeam(teamId: TeamId): DuoCharacterSlot[] {
@@ -336,7 +336,7 @@ function fullDescription(character: CharacterCard): string[] {
             <span>游戏模式</span>
             <select :value="roomMode" :disabled="room.phase !== 'lobby'" @change="updateGameMode">
               <option value="classic">经典对战</option>
-              <option value="duo_2v2">2V2 双角色（开发中）</option>
+              <option value="duo_2v2">2V2 双角色（测试版）</option>
             </select>
           </label>
 
@@ -361,7 +361,7 @@ function fullDescription(character: CharacterCard): string[] {
         </p>
 
         <p v-if="hasDuplicateCharacterConflict" class="settings-warning">当前已有重复职业，请玩家重新选择。</p>
-        <p v-if="isDuoModeDevelopment" class="settings-warning">2V2 V0 仅开放开战入场和行动角色选择，投骰结算仍在开发中。</p>
+        <p v-if="isDuoModeDevelopment" class="settings-warning">2V2 双角色测试版：请完成 4 个角色槽位和召唤师技能选择后开始。</p>
       </section>
 
       <section v-if="!isDuoModeDevelopment" class="summoner-select-panel">
@@ -391,7 +391,7 @@ function fullDescription(character: CharacterCard): string[] {
           <p class="hint">{{ isHost || isDuoModeDevelopment ? startHint : `当前选择：${characterName(me?.characterId)}` }}</p>
         </div>
         <button class="primary-btn" type="button" :disabled="!isHost || !canStart" @click="emit('startGame')">
-          {{ isDuoModeDevelopment ? isHost ? canStart ? "开始 2V2（V0）" : "2V2 选择未完成" : "等待房主开始" : isHost ? "开始游戏" : "等待房主开始" }}
+          {{ isDuoModeDevelopment ? isHost ? canStart ? "开始 2V2" : "2V2 选择未完成" : "等待房主开始" : isHost ? "开始游戏" : "等待房主开始" }}
         </button>
       </section>
     </section>
@@ -399,8 +399,8 @@ function fullDescription(character: CharacterCard): string[] {
     <section v-if="isDuoModeDevelopment" class="character-picker duo-slot-picker">
       <div class="picker-heading">
         <div>
-          <h2>2V2 双角色选角草稿</h2>
-          <p class="hint">每名真实玩家选择 2 个角色槽位。当前可进入 V0 战斗页选择行动角色，投骰和结算后续开放。</p>
+          <h2>2V2 双角色选角</h2>
+          <p class="hint">每名真实玩家选择 2 个角色槽位，进入战斗后轮流选择行动角色和敌方目标。</p>
         </div>
       </div>
 

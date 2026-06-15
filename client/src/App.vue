@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { createClientId } from "./utils/id";
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import type { Character, CharacterId, GameEvent, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
+import type { Character, CharacterId, GameEvent, GameMode, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import { getClientId, resetClientId, socket, type Ack } from "./socket";
 import HomePage from "./components/HomePage.vue";
 import PvpModePage from "./components/PvpModePage.vue";
@@ -145,12 +145,15 @@ function tryResumeRoom(): void {
   });
 }
 
-function createRoom(nickname: string): void {
-  emitWithAck<{ roomId: string; playerId: string; room: Room }>("createRoom", { nickname, clientId }, (response) => {
+function createRoom(payload: { nickname: string; gameMode?: GameMode }): void {
+  emitWithAck<{ roomId: string; playerId: string; room: Room }>("createRoom", { nickname: payload.nickname, clientId }, (response) => {
     playerId.value = response.playerId;
     roomId.value = response.roomId;
     room.value = response.room;
     sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+    if (payload.gameMode && payload.gameMode !== "classic") {
+      updateRoomSettings({ gameMode: payload.gameMode });
+    }
   });
 }
 

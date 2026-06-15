@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type { RoomListItem } from "@career-war/shared";
+import type { GameMode, RoomListItem } from "@career-war/shared";
 
 const props = defineProps<{
   inviteRoomId?: string;
@@ -9,7 +9,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   backHome: [];
-  createRoom: [nickname: string];
+  createRoom: [payload: { nickname: string; gameMode: GameMode }];
   joinRoom: [payload: { nickname: string; roomId: string }];
   refreshRoomList: [];
 }>();
@@ -18,7 +18,9 @@ const nickname = ref(localStorage.getItem("career-war-nickname") ?? "");
 const roomId = ref("");
 const inviteRoomId = ref("");
 const showRoomFlow = ref(false);
+const selectedGameMode = ref<GameMode>("classic");
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
+const selectedModeTitle = computed(() => selectedGameMode.value === "duo_2v2" ? "2V2 双角色（测试版）大厅" : "1V1 / 自由对战大厅");
 
 onMounted(() => {
   const query = new URLSearchParams(window.location.search);
@@ -31,6 +33,13 @@ onMounted(() => {
 });
 
 function openClassicMode(): void {
+  selectedGameMode.value = "classic";
+  showRoomFlow.value = true;
+  emit("refreshRoomList");
+}
+
+function openDuoMode(): void {
+  selectedGameMode.value = "duo_2v2";
   showRoomFlow.value = true;
   emit("refreshRoomList");
 }
@@ -41,7 +50,7 @@ function rememberName(): void {
 
 function createRoom(): void {
   rememberName();
-  emit("createRoom", nickname.value);
+  emit("createRoom", { nickname: nickname.value, gameMode: selectedGameMode.value });
 }
 
 function joinRoom(): void {
@@ -80,11 +89,11 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <small>复用当前房间系统，支持创建房间、加入房间、房间列表、职业选择和战斗。</small>
       </button>
 
-      <article class="pvp-mode-card disabled" aria-disabled="true">
-        <span class="mode-status">开发中</span>
-        <strong>2V2 双角色模式</strong>
-        <small>两名真实玩家，每人控制两个同阵营角色。第一版暂不开放。</small>
-      </article>
+      <button class="pvp-mode-card available" type="button" @click="openDuoMode">
+        <span class="mode-status ready">可进入</span>
+        <strong>2V2 双角色（测试版）</strong>
+        <small>两名真实玩家，每人控制两个同阵营角色，支持选角、投骰和行动结算。</small>
+      </button>
 
       <article class="pvp-mode-card disabled" aria-disabled="true">
         <span class="mode-status">开发中</span>
@@ -95,7 +104,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 
     <section v-if="showRoomFlow" class="page-panel pvp-room-flow">
       <div class="section-heading">
-        <h2>1V1 / 自由对战大厅</h2>
+        <h2>{{ selectedModeTitle }}</h2>
         <button class="ghost-btn small-btn" type="button" @click="showRoomFlow = false">返回模式选择</button>
       </div>
 

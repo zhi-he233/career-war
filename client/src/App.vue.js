@@ -128,14 +128,11 @@ function tryResumeRoom() {
     });
 }
 function createRoom(payload) {
-    emitWithAck("createRoom", { nickname: payload.nickname, clientId }, (response) => {
+    emitWithAck("createRoom", { nickname: payload.nickname, clientId, gameMode: payload.gameMode ?? "classic" }, (response) => {
         playerId.value = response.playerId;
         roomId.value = response.roomId;
         room.value = response.room;
         sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
-        if (payload.gameMode && payload.gameMode !== "classic") {
-            updateRoomSettings({ gameMode: payload.gameMode });
-        }
     });
 }
 function joinRoom(payload) {

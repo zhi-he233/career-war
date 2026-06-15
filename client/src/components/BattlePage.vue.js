@@ -78,16 +78,30 @@ const battlePlayers = computed(() => {
 });
 const aliveEnemies = computed(() => room.value.players.filter((player) => !player.isDead && player.id !== props.playerId));
 const winner = computed(() => room.value.players.find((player) => player.id === room.value.winnerId));
+const winnerText = computed(() => {
+    if (isDuoMode.value && room.value.winnerTeamId)
+        return `${room.value.winnerTeamId} 队获胜`;
+    return `胜者：${winner.value?.nickname ?? "--"}`;
+});
 const pendingRoll = computed(() => room.value.pendingRoll);
 const pendingRollDecision = computed(() => room.value.pendingRollDecision);
-const isPendingMine = computed(() => pendingRoll.value?.playerId === (selectedActor.value?.id || props.playerId));
+const isPendingMine = computed(() => {
+    const pending = pendingRoll.value;
+    if (!pending)
+        return false;
+    if (isDuoMode.value) {
+        const actor = room.value.players.find((player) => player.id === pending.playerId);
+        return activeControllerId.value === props.playerId && pending.playerId === room.value.selectedActorId && actor?.controllerId === props.playerId;
+    }
+    return pending.playerId === props.playerId;
+});
 const isDecisionMine = computed(() => {
     const decision = pendingRollDecision.value;
     if (!decision)
         return false;
     if (isDuoMode.value) {
         const actor = room.value.players.find((p) => p.id === decision.actorId);
-        return actor?.controllerId === props.playerId;
+        return activeControllerId.value === props.playerId && decision.actorId === room.value.selectedActorId && actor?.controllerId === props.playerId;
     }
     return decision.actorId === props.playerId;
 });
@@ -97,6 +111,41 @@ const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && is
 const shouldShowActionSlots = computed(() => Boolean(canUseActionSlots.value && !isSelfDead.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
+const rematchParticipants = computed(() => {
+    if (!isDuoMode.value) {
+        return room.value.players.map((player) => ({
+            id: player.id,
+            nickname: player.nickname,
+            isHost: player.id === room.value.hostId || player.isHost
+        }));
+    }
+    return rematchControllerIds.value.map((controllerId) => {
+        const units = room.value.players.filter((player) => player.controllerId === controllerId || player.id === controllerId);
+        const source = units[0];
+        return {
+            id: controllerId,
+            nickname: source ? controllerNickname(source) : controllerId,
+            isHost: room.value.hostId === controllerId || units.some((player) => player.isHost)
+        };
+    });
+});
+const rematchControllerIds = computed(() => {
+    if (!isDuoMode.value)
+        return room.value.players.map((player) => player.id);
+    const ids = [];
+    for (const controllerId of room.value.controllerTurnOrder ?? []) {
+        if (!ids.includes(controllerId))
+            ids.push(controllerId);
+    }
+    for (const player of room.value.players) {
+        const controllerId = player.controllerId ?? player.id;
+        if (!ids.includes(controllerId))
+            ids.push(controllerId);
+    }
+    return ids;
+});
+const rematchReadyCount = computed(() => rematchParticipants.value.filter((participant) => rematchReadyIds.value.includes(participant.id)).length);
+const isAllRematchReady = computed(() => rematchParticipants.value.length > 0 && rematchReadyCount.value >= rematchParticipants.value.length);
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
 const actionStageText = computed(() => {
@@ -177,6 +226,13 @@ const visibleRoll = computed(() => {
     if (rollPhase.value !== "idle" && rollPhase.value !== "reveal")
         return undefined;
     return room.value.battleLog.find((event) => event.id === visibleRollId.value && event.type === "roll");
+});
+const displayedDiceValues = computed(() => {
+    if (isRolling.value)
+        return [rollPhase.value === "pause" ? "..." : rollingDice.value];
+    if (pendingRollDecision.value)
+        return [pendingRollDecision.value.currentRoll];
+    return visibleRoll.value?.dice ?? ["?"];
 });
 const latestActionEvents = computed(() => {
     const rollId = visibleRoll.value?.id;
@@ -386,7 +442,7 @@ function floatingEffectFor(player, type) {
     return activeFloatingEffects.value.find((effect) => effect.playerId === player.id && effect.type === type);
 }
 function rollWithAnimation() {
-    if (!canRoll.value)
+    if (isDuoMode.value ? !canRollForDuo.value : !canRoll.value)
         return;
     rollRequestLocked.value = true;
     startRollAnimation(true);
@@ -429,7 +485,13 @@ function sendEmote(emoteId) {
     }, EMOTE_DISPLAY_MS);
 }
 function emoteFor(player) {
-    return activeEmotes.value[player.id];
+    return activeEmotes.value[player.id] ?? (player.controllerId ? activeEmotes.value[player.controllerId] : undefined);
+}
+function controllerNickname(player) {
+    if (player.slotIndex === undefined)
+        return player.nickname;
+    const suffix = ` 角色${player.slotIndex + 1}`;
+    return player.nickname.endsWith(suffix) ? player.nickname.slice(0, -suffix.length) : player.nickname;
 }
 function readyForRematch() {
     if (room.value.phase !== "gameOver" || isRematchReady.value)
@@ -1002,13 +1064,13 @@ if (__VLS_ctx.isDuoMode) {
         key: (__VLS_ctx.rollPhase === 'idle' ? __VLS_ctx.visibleRoll?.id : __VLS_ctx.rollPhase),
     });
     /** @type {__VLS_StyleScopedClasses['dice-box']} */ ;
-    for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPhase === 'pause' ? '...' : __VLS_ctx.rollingDice] : __VLS_ctx.visibleRoll?.dice ?? ['?']))) {
+    for (const [dice, index] of __VLS_vFor((__VLS_ctx.displayedDiceValues))) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            key: (`${__VLS_ctx.visibleRoll?.id ?? 'empty'}-${index}`),
+            key: (`${__VLS_ctx.visibleRoll?.id ?? __VLS_ctx.pendingRollDecision?.id ?? 'empty'}-${index}`),
         });
         (dice);
         // @ts-ignore
-        [isDuoMode, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, isMyDuoControllerTurn, isMyDuoControllerTurn, isMyDuoControllerTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice,];
+        [isDuoMode, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, isMyDuoControllerTurn, isMyDuoControllerTurn, isMyDuoControllerTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, displayedDiceValues, pendingRollDecision,];
     }
     let __VLS_24;
     /** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
@@ -1088,7 +1150,7 @@ if (__VLS_ctx.isDuoMode) {
                             return;
                         __VLS_ctx.confirmActionSlot(slot);
                         // @ts-ignore
-                        [visibleRoll, visibleRoll, isRolling, latestDiceText, pendingRoll, pendingRoll, latestSkill, latestSkill, shouldShowActionSlots, pendingRollDecision, actionSlots, confirmActionSlot,];
+                        [visibleRoll, visibleRoll, pendingRollDecision, latestDiceText, pendingRoll, pendingRoll, isRolling, latestSkill, latestSkill, shouldShowActionSlots, actionSlots, confirmActionSlot,];
                     } },
                 key: (slot.id),
                 ...{ class: "dice-action-slot" },
@@ -1407,13 +1469,13 @@ if (!__VLS_ctx.isDuoMode) {
         key: (__VLS_ctx.rollPhase === 'idle' ? __VLS_ctx.visibleRoll?.id : __VLS_ctx.rollPhase),
     });
     /** @type {__VLS_StyleScopedClasses['dice-box']} */ ;
-    for (const [dice, index] of __VLS_vFor((__VLS_ctx.isRolling ? [__VLS_ctx.rollPhase === 'pause' ? '...' : __VLS_ctx.rollingDice] : __VLS_ctx.visibleRoll?.dice ?? ['?']))) {
+    for (const [dice, index] of __VLS_vFor((__VLS_ctx.displayedDiceValues))) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            key: (`${__VLS_ctx.visibleRoll?.id ?? 'empty'}-${index}`),
+            key: (`${__VLS_ctx.visibleRoll?.id ?? __VLS_ctx.pendingRollDecision?.id ?? 'empty'}-${index}`),
         });
         (dice);
         // @ts-ignore
-        [rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, visibleRoll, isRolling, rollingDice, isMyTurn,];
+        [rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, displayedDiceValues, pendingRollDecision, isMyTurn,];
     }
     let __VLS_54;
     /** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
@@ -1493,7 +1555,7 @@ if (!__VLS_ctx.isDuoMode) {
                             return;
                         __VLS_ctx.confirmActionSlot(slot);
                         // @ts-ignore
-                        [visibleRoll, visibleRoll, isRolling, latestDiceText, pendingRoll, pendingRoll, latestSkill, latestSkill, shouldShowActionSlots, pendingRollDecision, actionSlots, confirmActionSlot,];
+                        [visibleRoll, visibleRoll, pendingRollDecision, latestDiceText, pendingRoll, pendingRoll, isRolling, latestSkill, latestSkill, shouldShowActionSlots, actionSlots, confirmActionSlot,];
                     } },
                 key: (slot.id),
                 ...{ class: "dice-action-slot" },
@@ -1731,7 +1793,7 @@ if (__VLS_ctx.room.phase === 'gameOver') {
         ...{ class: "winner" },
     });
     /** @type {__VLS_StyleScopedClasses['winner']} */ ;
-    (__VLS_ctx.winner?.nickname);
+    (__VLS_ctx.winnerText);
     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
         ...{ onClick: (__VLS_ctx.readyForRematch) },
         ...{ class: "primary-btn" },
@@ -1744,29 +1806,29 @@ if (__VLS_ctx.room.phase === 'gameOver') {
         ...{ class: "hint" },
     });
     /** @type {__VLS_StyleScopedClasses['hint']} */ ;
-    (__VLS_ctx.rematchReadyIds.length === __VLS_ctx.room.players.length ? "即将返回选职业阶段" : "等待其他玩家准备");
+    (__VLS_ctx.isAllRematchReady ? "即将返回选职业阶段" : `等待其他玩家准备（${__VLS_ctx.rematchReadyCount}/${__VLS_ctx.rematchParticipants.length}）`);
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "player-list" },
     });
     /** @type {__VLS_StyleScopedClasses['player-list']} */ ;
-    for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
+    for (const [participant, index] of __VLS_vFor((__VLS_ctx.rematchParticipants))) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-            key: (`rematch-${player.id}`),
+            key: (`rematch-${participant.id}`),
             ...{ class: "player-card" },
         });
         /** @type {__VLS_StyleScopedClasses['player-card']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
         (index + 1);
-        (player.nickname);
+        (participant.nickname);
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
             ...{ class: "badge" },
-            ...{ class: ({ 'host-badge': player.id === __VLS_ctx.room.hostId }) },
+            ...{ class: ({ 'host-badge': participant.isHost }) },
         });
         /** @type {__VLS_StyleScopedClasses['badge']} */ ;
         /** @type {__VLS_StyleScopedClasses['host-badge']} */ ;
-        (__VLS_ctx.rematchReadyIds.includes(player.id) ? "已准备" : "未准备");
+        (__VLS_ctx.rematchReadyIds.includes(participant.id) ? "已准备" : "未准备");
         // @ts-ignore
-        [room, room, room, room, winner, readyForRematch, isRematchReady, isRematchReady, rematchReadyIds, rematchReadyIds,];
+        [room, winnerText, readyForRematch, isRematchReady, isRematchReady, isAllRematchReady, rematchReadyCount, rematchParticipants, rematchParticipants, rematchReadyIds,];
     }
 }
 if (__VLS_ctx.activeHighlight) {

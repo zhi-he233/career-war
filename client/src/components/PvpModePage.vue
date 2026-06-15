@@ -10,7 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   backHome: [];
   createRoom: [payload: { nickname: string; gameMode: GameMode }];
-  joinRoom: [payload: { nickname: string; roomId: string }];
+  joinRoom: [payload: { nickname: string; roomId: string; gameMode?: GameMode }];
   refreshRoomList: [];
 }>();
 
@@ -20,6 +20,7 @@ const inviteRoomId = ref("");
 const showRoomFlow = ref(false);
 const selectedGameMode = ref<GameMode>("classic");
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
+const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
 const selectedModeTitle = computed(() => selectedGameMode.value === "duo_2v2" ? "2V2 双角色（测试版）大厅" : "1V1 / 自由对战大厅");
 
 onMounted(() => {
@@ -55,14 +56,19 @@ function createRoom(): void {
 
 function joinRoom(): void {
   rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: roomId.value });
+  emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedGameMode.value });
 }
 
 function selectRoom(room: RoomListItem): void {
   if (!room.canJoin) return;
   roomId.value = room.roomId;
   rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: room.roomId });
+  emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedGameMode.value });
+}
+
+function isRoomVisibleForSelectedMode(room: RoomListItem): boolean {
+  if (selectedGameMode.value === "classic") return room.gameMode === undefined || room.gameMode === "classic";
+  return room.gameMode === selectedGameMode.value;
 }
 
 function phaseLabel(phase: RoomListItem["phase"]): string {
@@ -132,10 +138,10 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
             <button class="ghost-btn small-btn" type="button" @click="emit('refreshRoomList')">刷新房间列表</button>
           </div>
 
-          <p v-if="props.roomList.length === 0" class="empty-state">暂无可加入房间</p>
+          <p v-if="visibleRoomList.length === 0" class="empty-state">暂无可加入房间</p>
 
           <div v-else class="room-list">
-            <article v-for="room in props.roomList" :key="room.roomId" class="public-room-card">
+            <article v-for="room in visibleRoomList" :key="room.roomId" class="public-room-card">
               <div>
                 <strong>{{ room.roomId }}</strong>
                 <p>房主：{{ room.hostName }}</p>

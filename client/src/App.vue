@@ -146,18 +146,15 @@ function tryResumeRoom(): void {
 }
 
 function createRoom(payload: { nickname: string; gameMode?: GameMode }): void {
-  emitWithAck<{ roomId: string; playerId: string; room: Room }>("createRoom", { nickname: payload.nickname, clientId }, (response) => {
+  emitWithAck<{ roomId: string; playerId: string; room: Room }>("createRoom", { nickname: payload.nickname, clientId, gameMode: payload.gameMode ?? "classic" }, (response) => {
     playerId.value = response.playerId;
     roomId.value = response.roomId;
     room.value = response.room;
     sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
-    if (payload.gameMode && payload.gameMode !== "classic") {
-      updateRoomSettings({ gameMode: payload.gameMode });
-    }
   });
 }
 
-function joinRoom(payload: { nickname: string; roomId: string }): void {
+function joinRoom(payload: { nickname: string; roomId: string; gameMode?: GameMode }): void {
   emitWithAck<{ roomId: string; playerId: string; room: Room }>("joinRoom", { ...payload, clientId }, (response) => {
     playerId.value = response.playerId;
     roomId.value = response.roomId;

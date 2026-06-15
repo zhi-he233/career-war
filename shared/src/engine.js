@@ -57,6 +57,10 @@ export function startGame(room, ctx) {
     return events;
 }
 export function resetToLobbyForRematch(room) {
+    if (room.gameMode === "duo_2v2") {
+        resetDuoToLobbyForRematch(room);
+        return;
+    }
     room.phase = "lobby";
     room.activePlayerIndex = 0;
     room.effects = [];
@@ -81,6 +85,70 @@ export function resetToLobbyForRematch(room) {
         player.summonerSkillCooldown = 0;
         player.selectedTargetId = undefined;
     }
+}
+function resetDuoToLobbyForRematch(room) {
+    const controllers = getDuoControllerPlayers(room);
+    room.phase = "lobby";
+    room.activePlayerIndex = 0;
+    room.effects = [];
+    room.battleLog = [];
+    room.snapshots = [];
+    room.previousFinalDamage = 0;
+    room.pendingRoll = undefined;
+    room.pendingRollDecision = undefined;
+    room.rematchReadyPlayerIds = [];
+    room.winnerId = undefined;
+    room.winnerTeamId = undefined;
+    room.activeControllerId = undefined;
+    room.selectedActorId = undefined;
+    room.controllerTurnOrder = undefined;
+    room.highlight = undefined;
+    room.skillHints = undefined;
+    room.players = controllers;
+    if (!room.players.some((player) => player.id === room.hostId)) {
+        room.hostId = room.players[0]?.id ?? room.hostId;
+    }
+    for (const player of room.players) {
+        player.isHost = player.id === room.hostId;
+    }
+}
+function getDuoControllerPlayers(room) {
+    const controllerIds = [];
+    for (const controllerId of room.controllerTurnOrder ?? []) {
+        if (!controllerIds.includes(controllerId))
+            controllerIds.push(controllerId);
+    }
+    for (const player of room.players) {
+        const controllerId = player.controllerId;
+        if (controllerId && !controllerIds.includes(controllerId))
+            controllerIds.push(controllerId);
+    }
+    return controllerIds.map((controllerId) => {
+        const units = room.players.filter((player) => player.controllerId === controllerId || player.id === controllerId);
+        const source = units[0];
+        const nickname = source ? getDuoControllerNickname(source) : controllerId;
+        return {
+            id: controllerId,
+            clientId: source?.clientId ?? "",
+            nickname,
+            isHost: room.hostId === controllerId || units.some((player) => player.isHost),
+            isOnline: units.some((player) => player.isOnline),
+            summonerSkillId: source?.summonerSkillId ?? "lucky_plus_one",
+            summonerSkillCooldown: 0,
+            hp: 0,
+            maxHp: 0,
+            shield: 0,
+            zhaoZilongHitCount: 0,
+            isDead: false,
+            selectedTargetId: undefined
+        };
+    });
+}
+function getDuoControllerNickname(player) {
+    if (player.slotIndex === undefined)
+        return player.nickname;
+    const suffix = ` 角色${player.slotIndex + 1}`;
+    return player.nickname.endsWith(suffix) ? player.nickname.slice(0, -suffix.length) : player.nickname;
 }
 export function selectTarget(room, playerId, targetId, requesterId) {
     if (room.pendingRoll)

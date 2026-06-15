@@ -6,6 +6,7 @@ type __VLS_Props = {
 };
 declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {}, {}, import("vue").ComponentOptionsMixin, import("vue").ComponentOptionsMixin, {
     chooseCharacter: (characterId: CharacterId) => any;
+    startGame: () => any;
     chooseSummonerSkill: (summonerSkillId: SummonerSkillId) => any;
     chooseDuoSlotCharacter: (payload: {
         slotIndex: 0 | 1;
@@ -15,10 +16,10 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
         slotIndex: 0 | 1;
         summonerSkillId: SummonerSkillId;
     }) => any;
-    startGame: () => any;
     updateRoomSettings: (settings: Partial<RoomSettings>) => any;
 }, string, import("vue").PublicProps, Readonly<__VLS_Props> & Readonly<{
     onChooseCharacter?: ((characterId: CharacterId) => any) | undefined;
+    onStartGame?: (() => any) | undefined;
     onChooseSummonerSkill?: ((summonerSkillId: SummonerSkillId) => any) | undefined;
     onChooseDuoSlotCharacter?: ((payload: {
         slotIndex: 0 | 1;
@@ -28,7 +29,6 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
         slotIndex: 0 | 1;
         summonerSkillId: SummonerSkillId;
     }) => any) | undefined;
-    onStartGame?: (() => any) | undefined;
     onUpdateRoomSettings?: ((settings: Partial<RoomSettings>) => any) | undefined;
 }>, {}, {}, {}, {}, string, import("vue").ComponentProvideOptions, false, {}, any>;
 declare const _default: typeof __VLS_export;

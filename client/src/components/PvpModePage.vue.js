@@ -7,6 +7,7 @@ const inviteRoomId = ref("");
 const showRoomFlow = ref(false);
 const selectedGameMode = ref("classic");
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
+const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
 const selectedModeTitle = computed(() => selectedGameMode.value === "duo_2v2" ? "2V2 双角色（测试版）大厅" : "1V1 / 自由对战大厅");
 onMounted(() => {
     const query = new URLSearchParams(window.location.search);
@@ -36,14 +37,19 @@ function createRoom() {
 }
 function joinRoom() {
     rememberName();
-    emit("joinRoom", { nickname: nickname.value, roomId: roomId.value });
+    emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedGameMode.value });
 }
 function selectRoom(room) {
     if (!room.canJoin)
         return;
     roomId.value = room.roomId;
     rememberName();
-    emit("joinRoom", { nickname: nickname.value, roomId: room.roomId });
+    emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedGameMode.value });
+}
+function isRoomVisibleForSelectedMode(room) {
+    if (selectedGameMode.value === "classic")
+        return room.gameMode === undefined || room.gameMode === "classic";
+    return room.gameMode === selectedGameMode.value;
 }
 function phaseLabel(phase) {
     if (phase === "waiting")
@@ -229,7 +235,7 @@ if (__VLS_ctx.showRoomFlow) {
         });
         /** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
         /** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
-        if (props.roomList.length === 0) {
+        if (__VLS_ctx.visibleRoomList.length === 0) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
                 ...{ class: "empty-state" },
             });
@@ -240,7 +246,7 @@ if (__VLS_ctx.showRoomFlow) {
                 ...{ class: "room-list" },
             });
             /** @type {__VLS_StyleScopedClasses['room-list']} */ ;
-            for (const [room] of __VLS_vFor((props.roomList))) {
+            for (const [room] of __VLS_vFor((__VLS_ctx.visibleRoomList))) {
                 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
                     key: (room.roomId),
                     ...{ class: "public-room-card" },
@@ -266,11 +272,11 @@ if (__VLS_ctx.showRoomFlow) {
                                 return;
                             if (!!(__VLS_ctx.isInviteMode))
                                 return;
-                            if (!!(props.roomList.length === 0))
+                            if (!!(__VLS_ctx.visibleRoomList.length === 0))
                                 return;
                             __VLS_ctx.selectRoom(room);
                             // @ts-ignore
-                            [phaseLabel, selectRoom,];
+                            [visibleRoomList, visibleRoomList, phaseLabel, selectRoom,];
                         } },
                     ...{ class: "secondary-btn small-btn" },
                     type: "button",

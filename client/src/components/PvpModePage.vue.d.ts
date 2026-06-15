@@ -12,6 +12,7 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
     joinRoom: (payload: {
         nickname: string;
         roomId: string;
+        gameMode?: GameMode;
     }) => any;
     refreshRoomList: () => any;
 }, string, import("vue").PublicProps, Readonly<__VLS_Props> & Readonly<{
@@ -23,6 +24,7 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
     onJoinRoom?: ((payload: {
         nickname: string;
         roomId: string;
+        gameMode?: GameMode;
     }) => any) | undefined;
     onRefreshRoomList?: (() => any) | undefined;
 }>, {}, {}, {}, {}, string, import("vue").ComponentProvideOptions, false, {}, any>;

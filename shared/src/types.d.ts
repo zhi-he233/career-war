@@ -45,13 +45,6 @@ export interface Player {
     teamId?: TeamId;
     slotIndex?: 0 | 1;
 }
-export interface DuoCharacterSlot {
-    controllerId: string;
-    teamId: TeamId;
-    slotIndex: 0 | 1;
-    characterId?: CharacterId;
-    summonerSkillId?: SummonerSkillId;
-}
 export interface GameEvent {
     id: string;
     createdAt: number;
@@ -84,6 +77,13 @@ export interface SkillHint {
     text: string;
     valueText?: string;
     rollId?: string;
+}
+export interface DuoCharacterSlot {
+    controllerId: string;
+    teamId: TeamId;
+    slotIndex: 0 | 1;
+    characterId?: CharacterId;
+    summonerSkillId?: SummonerSkillId;
 }
 export interface RoomSettings {
     maxPlayers: number;
@@ -174,6 +174,7 @@ export interface RoomListItem {
     maxPlayers: number;
     phase: RoomListStatus;
     canJoin: boolean;
+    gameMode?: GameMode;
 }
 export interface RollResult {
     room: Room;

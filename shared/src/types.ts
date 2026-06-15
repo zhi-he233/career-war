@@ -215,6 +215,7 @@ export interface RoomListItem {
   maxPlayers: number;
   phase: RoomListStatus;
   canJoin: boolean;
+  gameMode?: GameMode;
 }
 
 export interface RollResult {

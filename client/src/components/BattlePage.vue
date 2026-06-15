@@ -20,6 +20,11 @@ const emit = defineEmits<{
 }>();
 
 type RollPhase = "idle" | "fast" | "slow" | "pause" | "reveal";
+type RematchParticipant = {
+  id: string;
+  nickname: string;
+  isHost: boolean;
+};
 type FloatingEffect = {
   rollId: string;
   type: "damage" | "heal" | "noEffect";
@@ -118,15 +123,27 @@ const battlePlayers = computed(() => {
 });
 const aliveEnemies = computed(() => room.value.players.filter((player) => !player.isDead && player.id !== props.playerId));
 const winner = computed(() => room.value.players.find((player) => player.id === room.value.winnerId));
+const winnerText = computed(() => {
+  if (isDuoMode.value && room.value.winnerTeamId) return `${room.value.winnerTeamId} 队获胜`;
+  return `胜者：${winner.value?.nickname ?? "--"}`;
+});
 const pendingRoll = computed(() => room.value.pendingRoll);
 const pendingRollDecision = computed(() => room.value.pendingRollDecision);
-const isPendingMine = computed(() => pendingRoll.value?.playerId === (selectedActor.value?.id || props.playerId));
+const isPendingMine = computed(() => {
+  const pending = pendingRoll.value;
+  if (!pending) return false;
+  if (isDuoMode.value) {
+    const actor = room.value.players.find((player) => player.id === pending.playerId);
+    return activeControllerId.value === props.playerId && pending.playerId === room.value.selectedActorId && actor?.controllerId === props.playerId;
+  }
+  return pending.playerId === props.playerId;
+});
 const isDecisionMine = computed(() => {
   const decision = pendingRollDecision.value;
   if (!decision) return false;
   if (isDuoMode.value) {
     const actor = room.value.players.find((p) => p.id === decision.actorId);
-    return actor?.controllerId === props.playerId;
+    return activeControllerId.value === props.playerId && decision.actorId === room.value.selectedActorId && actor?.controllerId === props.playerId;
   }
   return decision.actorId === props.playerId;
 });
@@ -136,6 +153,39 @@ const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && is
 const shouldShowActionSlots = computed(() => Boolean(canUseActionSlots.value && !isSelfDead.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
+const rematchParticipants = computed<RematchParticipant[]>(() => {
+  if (!isDuoMode.value) {
+    return room.value.players.map((player) => ({
+      id: player.id,
+      nickname: player.nickname,
+      isHost: player.id === room.value.hostId || player.isHost
+    }));
+  }
+
+  return rematchControllerIds.value.map((controllerId) => {
+    const units = room.value.players.filter((player) => player.controllerId === controllerId || player.id === controllerId);
+    const source = units[0];
+    return {
+      id: controllerId,
+      nickname: source ? controllerNickname(source) : controllerId,
+      isHost: room.value.hostId === controllerId || units.some((player) => player.isHost)
+    };
+  });
+});
+const rematchControllerIds = computed(() => {
+  if (!isDuoMode.value) return room.value.players.map((player) => player.id);
+  const ids: string[] = [];
+  for (const controllerId of room.value.controllerTurnOrder ?? []) {
+    if (!ids.includes(controllerId)) ids.push(controllerId);
+  }
+  for (const player of room.value.players) {
+    const controllerId = player.controllerId ?? player.id;
+    if (!ids.includes(controllerId)) ids.push(controllerId);
+  }
+  return ids;
+});
+const rematchReadyCount = computed(() => rematchParticipants.value.filter((participant) => rematchReadyIds.value.includes(participant.id)).length);
+const isAllRematchReady = computed(() => rematchParticipants.value.length > 0 && rematchReadyCount.value >= rematchParticipants.value.length);
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
 const actionStageText = computed(() => {
@@ -213,6 +263,11 @@ onUnmounted(() => {
 const visibleRoll = computed(() => {
   if (rollPhase.value !== "idle" && rollPhase.value !== "reveal") return undefined;
   return room.value.battleLog.find((event) => event.id === visibleRollId.value && event.type === "roll");
+});
+const displayedDiceValues = computed(() => {
+  if (isRolling.value) return [rollPhase.value === "pause" ? "..." : rollingDice.value];
+  if (pendingRollDecision.value) return [pendingRollDecision.value.currentRoll];
+  return visibleRoll.value?.dice ?? ["?"];
 });
 
 const latestActionEvents = computed(() => {
@@ -412,7 +467,7 @@ function floatingEffectFor(player: Player, type: FloatingEffect["type"]): Floati
 }
 
 function rollWithAnimation(): void {
-  if (!canRoll.value) return;
+  if (isDuoMode.value ? !canRollForDuo.value : !canRoll.value) return;
   rollRequestLocked.value = true;
   startRollAnimation(true);
   emit("rollDice");
@@ -456,7 +511,13 @@ function sendEmote(emoteId: EmoteId): void {
 }
 
 function emoteFor(player: Player): VisibleEmote | undefined {
-  return activeEmotes.value[player.id];
+  return activeEmotes.value[player.id] ?? (player.controllerId ? activeEmotes.value[player.controllerId] : undefined);
+}
+
+function controllerNickname(player: Player): string {
+  if (player.slotIndex === undefined) return player.nickname;
+  const suffix = ` 角色${player.slotIndex + 1}`;
+  return player.nickname.endsWith(suffix) ? player.nickname.slice(0, -suffix.length) : player.nickname;
 }
 
 function readyForRematch(): void {
@@ -756,7 +817,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       <div class="dice-panel action-arena" :class="{ ready: isMyDuoControllerTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
         <div class="dice-visual">
           <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
-            <span v-for="(dice, index) in isRolling ? [rollPhase === 'pause' ? '...' : rollingDice] : visibleRoll?.dice ?? ['?']" :key="`${visibleRoll?.id ?? 'empty'}-${index}`">{{ dice }}</span>
+            <span v-for="(dice, index) in displayedDiceValues" :key="`${visibleRoll?.id ?? pendingRollDecision?.id ?? 'empty'}-${index}`">{{ dice }}</span>
           </div>
           <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
             <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
@@ -880,7 +941,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       <div class="dice-panel action-arena" :class="{ ready: isMyTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
         <div class="dice-visual">
           <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
-            <span v-for="(dice, index) in isRolling ? [rollPhase === 'pause' ? '...' : rollingDice] : visibleRoll?.dice ?? ['?']" :key="`${visibleRoll?.id ?? 'empty'}-${index}`">{{ dice }}</span>
+            <span v-for="(dice, index) in displayedDiceValues" :key="`${visibleRoll?.id ?? pendingRollDecision?.id ?? 'empty'}-${index}`">{{ dice }}</span>
           </div>
           <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
             <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
@@ -964,16 +1025,16 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
     </section>
 
     <section v-if="room.phase === 'gameOver'" class="log-panel rematch-panel">
-      <p class="winner">胜者：{{ winner?.nickname }}</p>
+      <p class="winner">{{ winnerText }}</p>
       <button class="primary-btn" type="button" :disabled="isRematchReady" @click="readyForRematch">
         {{ isRematchReady ? "已准备" : "准备再来一局" }}
       </button>
-      <p class="hint">{{ rematchReadyIds.length === room.players.length ? "即将返回选职业阶段" : "等待其他玩家准备" }}</p>
+      <p class="hint">{{ isAllRematchReady ? "即将返回选职业阶段" : `等待其他玩家准备（${rematchReadyCount}/${rematchParticipants.length}）` }}</p>
       <div class="player-list">
-        <article v-for="(player, index) in room.players" :key="`rematch-${player.id}`" class="player-card">
-          <strong>{{ index + 1 }}号 {{ player.nickname }}</strong>
-          <span class="badge" :class="{ 'host-badge': player.id === room.hostId }">
-            {{ rematchReadyIds.includes(player.id) ? "已准备" : "未准备" }}
+        <article v-for="(participant, index) in rematchParticipants" :key="`rematch-${participant.id}`" class="player-card">
+          <strong>{{ index + 1 }}号 {{ participant.nickname }}</strong>
+          <span class="badge" :class="{ 'host-badge': participant.isHost }">
+            {{ rematchReadyIds.includes(participant.id) ? "已准备" : "未准备" }}
           </span>
         </article>
       </div>

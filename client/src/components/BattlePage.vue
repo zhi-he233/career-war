@@ -169,7 +169,7 @@ const isDecisionMine = computed(() => {
   if (!decision) return false;
   if (isDuoMode.value) {
     const actor = room.value.players.find((p) => p.id === decision.actorId);
-    return activeControllerId.value === props.playerId && decision.actorId === room.value.selectedActorId && actor?.controllerId === props.playerId;
+    return actor?.controllerId === props.playerId;
   }
   return decision.actorId === props.playerId;
 });

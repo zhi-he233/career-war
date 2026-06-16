@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
   EMOTE_IDS,
-  beginGuardCheckIfNeeded,
+  beginControllerGuardCheckIfNeeded,
   characterList,
   chooseCharacter,
   confirmRollDecision,
@@ -316,6 +316,10 @@ io.on("connection", (socket) => {
       if (ensureRoomGameMode(room) !== "duo_2v2") throw new Error("当前房间不是 2V2 模式");
       if (room.phase !== "battle") throw new Error("2V2 尚未进入战斗阶段");
       if (room.activeControllerId !== socket.id) throw new Error("轮到你时才能选择行动角色");
+      if (beginControllerGuardCheckIfNeeded(room, socket.id)) {
+        emitRoomToParticipants(room);
+        throw new Error("请先完成架盾判定");
+      }
       if (!payload.actorId) throw new Error("请选择行动角色");
       if (room.pendingRoll || room.pendingRollDecision || room.pendingGuardCheck) throw new Error("请先完成当前投骰流程");
 
@@ -325,7 +329,6 @@ io.on("connection", (socket) => {
       if (actor.isDead) throw new Error("死亡角色不能行动");
 
       room.selectedActorId = actor.id;
-      beginGuardCheckIfNeeded(room, actor.id, socket.id);
       emitRoomToParticipants(room);
       return { ok: true };
     });

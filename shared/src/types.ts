@@ -147,6 +147,7 @@ export type CharacterReactionSkillId =
   | "crescent_moon_strike"
   | "fire_lord_spark"
   | "fire_lord_burst"
+  | "stone_titan_crush"
   | "mountain_shield_guard";
 export type SummonerSkillId = "lucky_plus_one" | "first_aid" | "iron_wall" | "fate_reroll" | "last_stand";
 export type RollActionType = "normal_attack" | "character_skill" | "summoner_skill";

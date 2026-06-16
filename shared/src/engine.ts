@@ -261,8 +261,10 @@ export function rollForActivePlayer(room: Room, playerId: string, ctx: EngineCon
 
   if (room.gameMode === "duo_2v2") {
     const controllerId = requesterId ?? playerId;
-    if (!room.selectedActorId) throw new Error("请先选择行动角色");
     if (room.activeControllerId !== controllerId) throw new Error("还没有轮到你");
+    const controllerGuardCheckStarted = beginControllerGuardCheckIfNeeded(room, controllerId);
+    if (controllerGuardCheckStarted) return { room, events: [] };
+    if (!room.selectedActorId) throw new Error("请先选择行动角色");
     const actor = getPlayerOrThrow(room, room.selectedActorId);
     if (actor.isDead) throw new Error("死亡角色不能行动");
     if (!actor.characterId) throw new Error("行动角色没有职业");
@@ -270,8 +272,6 @@ export function rollForActivePlayer(room: Room, playerId: string, ctx: EngineCon
     if (room.pendingRoll) {
       return resolvePendingRoll(room, actor.id, ctx);
     }
-    const guardCheckStarted = beginGuardCheckIfNeeded(room, actor.id, controllerId);
-    if (guardCheckStarted) return { room, events: [] };
     if (!actor.selectedTargetId) throw new Error("请先选择一个目标");
     const target = getPlayerOrThrow(room, actor.selectedTargetId);
     if (target.isDead || target.teamId === actor.teamId) throw new Error("请先选择一个存活敌人");
@@ -346,12 +346,9 @@ export function confirmRollDecision(
 
   if (room.gameMode === "duo_2v2") {
     const controllerId = requesterId ?? playerId;
-    if (room.activeControllerId !== controllerId) throw new Error("只有当前控制者可以选择行动");
-    if (!room.selectedActorId) throw new Error("请先选择行动角色");
-    if (decision.actorId !== room.selectedActorId) throw new Error("行动角色不匹配");
-    actor = getPlayerOrThrow(room, room.selectedActorId);
+    actor = getPlayerOrThrow(room, decision.actorId);
     if (actor.isDead) throw new Error("行动角色已死亡");
-    if (actor.controllerId !== room.activeControllerId) throw new Error("行动角色不属于当前控制者");
+    if (actor.controllerId !== controllerId) throw new Error("行动角色不属于当前控制者");
   } else {
     // classic
     if (decision.actorId !== playerId) throw new Error("只有当前行动玩家可以选择");
@@ -464,7 +461,6 @@ function confirmSummonerSkill(
 
   if (skillId === "last_stand") {
     const outcome = resolveSkill(actor.characterId as CharacterId, decision.currentRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
-    if (!canUseLastStand(room, outcome)) throw new Error("当前行动不能发动破釜");
     actor.summonerSkillCooldown = 3;
     room.pendingRollDecision = undefined;
     outcome.damage += 2;
@@ -618,6 +614,7 @@ function createAvailableActions(
 }
 
 function activeCharacterSkillReason(characterId: CharacterId | undefined, roll: number): string {
+  if (characterId === "stone_titan") return roll === 6 ? "发动碾压造成 9 点伤害" : "当前骰点不能发动";
   if (characterId === "gunslinger") return roll === 6 ? "继续投骰造成额外伤害" : "当前骰点不能发动";
   if (characterId === "vampire") return roll === 6 ? "继续投骰并根据结果回复生命" : "当前骰点不能发动";
   if (characterId === "paladin") return roll === 4 ? "全员无敌，自己获得护盾" : "当前骰点不能发动";
@@ -626,6 +623,7 @@ function activeCharacterSkillReason(characterId: CharacterId | undefined, roll: 
 }
 
 function characterSkillDescription(skillId: CharacterReactionSkillId, roll: number): string {
+  if (skillId === "stone_titan_crush") return `消耗 🎲 ${roll}，发动碾压造成 9 点伤害`;
   if (skillId === "gunslinger_copy_damage") return `消耗 🎲 ${roll}，复制上一名玩家刚刚造成的最终伤害`;
   if (skillId === "gunslinger_barrage") return `消耗 🎲 ${roll}，继续投骰造成额外伤害`;
   if (skillId === "vampire_life_steal") return `消耗 🎲 ${roll}，造成 1 点伤害并回复 2 点血`;
@@ -653,15 +651,11 @@ function summonerSkillUnavailableReason(room: Room, actor: Player, target: Playe
   if (usedSummonerSkillThisAction) return "本次行动已使用";
   if (actor.isDead) return "死亡玩家不可用";
   if ((actor.summonerSkillCooldown ?? 0) > 0) return `冷却中：${actor.summonerSkillCooldown} 次行动`;
-  if (actor.summonerSkillId === "last_stand") {
-    if (!actor.characterId) return "当前不可用";
-    const outcome = resolveSkill(actor.characterId, roll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
-    if (!canUseLastStand(room, outcome)) return "当前行动不能发动";
-  }
   return "当前不可用";
 }
 
 function getAvailableCharacterReactionSkill(characterId: CharacterId | undefined, roll: number): { id: CharacterReactionSkillId; name: string } | undefined {
+  if (characterId === "stone_titan" && roll === 6) return { id: "stone_titan_crush", name: "碾压" };
   if (characterId === "gunslinger" && roll === 1) return { id: "gunslinger_copy_damage", name: "复制伤害" };
   if (characterId === "gunslinger" && roll === 6) return { id: "gunslinger_barrage", name: "连射" };
   if (characterId === "vampire" && roll === 1) return { id: "vampire_life_steal", name: "吸血" };
@@ -681,11 +675,6 @@ function getAvailableSummonerSkill(room: Room, actor: Player, target: Player, ro
   ensureSummonerSkill(actor);
   if (actor.isDead || (actor.summonerSkillCooldown ?? 0) > 0) return undefined;
   const skillId = actor.summonerSkillId as SummonerSkillId;
-  if (skillId === "last_stand") {
-    if (!actor.characterId) return undefined;
-    const outcome = resolveSkill(actor.characterId, roll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
-    if (!canUseLastStand(room, outcome)) return undefined;
-  }
   return { id: skillId, name: summonerSkillName(skillId) };
 }
 
@@ -705,10 +694,6 @@ function summonerSkillName(skillId: SummonerSkillId): string {
   if (skillId === "fate_reroll") return "命运重掷";
   if (skillId === "last_stand") return "破釜";
   return "幸运骰";
-}
-
-function canUseLastStand(room: Room, outcome: SkillOutcome): boolean {
-  return outcome.damage > 0 && !outcome.executesTarget && !outcome.grantsInvincible && !hasInvincible(room);
 }
 
 function findRollEvent(room: Room, rollEventId: string): GameEvent | undefined {
@@ -877,11 +862,9 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
   }
 
   if (outcome.healing > 0) {
-    const { hpGain, shieldGain } = actor.characterId === "war_knight"
-      ? { hpGain: applyHpHealing(actor, outcome.healing), shieldGain: 0 }
-      : applyHealing(actor, outcome.healing);
+    const { hpGain, shieldGain } = applyHealing(actor, outcome.healing, { overflowToShield: actor.characterId === "vampire" });
     const shieldText = shieldGain > 0 ? `，溢出 ${shieldGain} 点转为护盾` : "";
-    events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 回复 ${hpGain} 点血${shieldText}`, actor.id, undefined, outcome.dice, undefined, outcome.healing));
+    events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 回复 ${hpGain} 点血${shieldText}`, actor.id, undefined, outcome.dice, undefined, hpGain));
     if (actor.characterId === "vampire" && shieldGain > 0) {
       skillHintDrafts.push({ key: "vampire-overflow-shield", text: "溢出转护盾！" });
     }
@@ -922,7 +905,10 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
 
   room.guardCheckCompletedForActorId = undefined;
   advanceTurn(room);
-  if (room.gameMode !== "duo_2v2") {
+  if (room.gameMode === "duo_2v2") {
+    const controllerId = room.activeControllerId;
+    if (controllerId) beginControllerGuardCheckIfNeeded(room, controllerId);
+  } else {
     beginGuardCheckIfNeeded(room, getActivePlayer(room).id);
   }
   events.push(makeTurnEvent(room, ctx));
@@ -1048,6 +1034,21 @@ export function beginGuardCheckIfNeeded(room: Room, actorId: string, controllerI
   return true;
 }
 
+export function beginControllerGuardCheckIfNeeded(room: Room, controllerId: string): boolean {
+  if (room.gameMode !== "duo_2v2") return false;
+  if (room.pendingGuardCheck) return room.pendingGuardCheck.controllerId === controllerId;
+  const actor = room.players.find((player) =>
+    player.controllerId === controllerId &&
+    player.characterId === "mountain_shield" &&
+    player.guarding &&
+    !player.isDead &&
+    room.guardCheckCompletedForActorId !== player.id
+  );
+  if (!actor) return false;
+  room.pendingGuardCheck = { actorId: actor.id, controllerId };
+  return true;
+}
+
 export function resolveGuardCheck(room: Room, actorId: string, ctx: EngineContext): RollResult {
   const pending = room.pendingGuardCheck;
   if (!pending || pending.actorId !== actorId) throw new Error("当前没有需要结算的架盾判定");
@@ -1168,7 +1169,7 @@ function resolveSkill(
     if (first <= 4) {
       outcome.damage = 0;
       outcome.skillMessages.push("巨石泰坦低点数未造成伤害");
-    } else if (first === 6) {
+    } else if (first === 6 && options.useOptionalCharacterSkill) {
       outcome.damage = 9;
       outcome.skillMessages.push("巨石泰坦 6 点造成 9 点伤害");
       outcome.skillHints.push({ key: "stone-titan-6", text: "巨岩碾压！" });
@@ -1333,12 +1334,13 @@ function executeTarget(target: Player): number {
   return hpDamage;
 }
 
-function applyHealing(player: Player, amount: number): { hpGain: number; shieldGain: number } {
+function applyHealing(player: Player, amount: number, options: { overflowToShield?: boolean } = {}): { hpGain: number; shieldGain: number } {
   const missingHp = Math.max(0, player.maxHp - player.hp);
   const hpGain = Math.min(missingHp, amount);
-  const shieldGain = amount - hpGain;
+  const overflow = Math.max(0, amount - hpGain);
+  const shieldGain = options.overflowToShield === true ? overflow : 0;
   player.hp += hpGain;
-  player.shield += shieldGain;
+  if (shieldGain > 0) player.shield += shieldGain;
   return { hpGain, shieldGain };
 }
 

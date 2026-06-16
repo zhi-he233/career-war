@@ -11,6 +11,7 @@ import {
   chooseCharacter,
   confirmRollDecision,
   createPlayer,
+  getSummonerSkillInitialCooldown,
   resetToLobbyForRematch,
   resolveGuardCheck,
   rollForActivePlayer,
@@ -27,6 +28,7 @@ import {
   type RoomListItem,
   type RoomListStatus,
   type RoomSettings,
+  type RogueliteReward,
   type RollActionType,
   type RollDecisionChoice,
   type SummonerSkillId,
@@ -40,6 +42,36 @@ const ROOM_CLEANUP_INTERVAL_MS = 30 * 1000;
 const ROOM_MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8] as const;
 const DEFAULT_GAME_MODE: GameMode = "classic";
 const DUO_MAX_CONTROLLERS = 2;
+const PVE_BOT_ID = "bot";
+const PVE_BOT_CLIENT_ID = "bot";
+const PVE_BOT_NICKNAME = "AI";
+const ROGUELITE_MAX_STAGE = 3;
+const ROGUELITE_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
+  {
+    type: "max_hp_plus_3",
+    name: "生命上限 +3",
+    description: "最大生命增加 3，并恢复 3 点生命。",
+    value: 3
+  },
+  {
+    type: "shield_plus_2",
+    name: "获得 2 护盾",
+    description: "立刻获得 2 点护盾。",
+    value: 2
+  },
+  {
+    type: "heal_5",
+    name: "恢复 5 生命",
+    description: "恢复 5 点生命，不会溢出为护盾。",
+    value: 5
+  },
+  {
+    type: "summoner_cooldown_minus_1",
+    name: "召唤师技能冷却 -1",
+    description: "召唤师技能进入冷却时，最终冷却减少 1，最低为 1。",
+    value: 1
+  }
+];
 const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
   allowDuplicateCharacters: true,
@@ -86,6 +118,7 @@ const socketToRoom = new Map<string, string>();
 const socketToClient = new Map<string, string>();
 const emoteCooldowns = new Map<string, number>();
 const allowedEmoteIds = new Set<string>(EMOTE_IDS);
+const botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 io.on("connection", (socket) => {
   socket.emit("characters", characterList);
@@ -123,7 +156,7 @@ io.on("connection", (socket) => {
         settings: {
           ...DEFAULT_ROOM_SETTINGS,
           gameMode,
-          maxPlayers: gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : DEFAULT_ROOM_SETTINGS.maxPlayers
+          maxPlayers: gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : isSinglePlayerPveGameMode(gameMode) ? 1 : DEFAULT_ROOM_SETTINGS.maxPlayers
         },
         players: [player],
         rematchReadyPlayerIds: [],
@@ -178,6 +211,7 @@ io.on("connection", (socket) => {
       }
 
       if (room.phase !== "lobby") throw new Error("游戏已经开始，不能加入");
+      if (isSinglePlayerPveGameMode(gameMode)) throw new Error("单人 PVE 房间不支持加入");
       if (getRoomParticipantCount(room) >= maxPlayers) throw new Error("房间已满");
 
       const nickname = sanitizeNickname(payload.nickname);
@@ -303,6 +337,19 @@ io.on("connection", (socket) => {
         broadcastRoomList();
         return { ok: true };
       }
+      if (isSinglePlayerPveMode(room)) {
+        validatePveStartGame(room, socket.id);
+        if (ensureRoomGameMode(room) === "pve_roguelite") {
+          room.roguelite = { stage: 1, maxStage: ROGUELITE_MAX_STAGE, appliedRewards: [] };
+        }
+        ensurePveBot(room);
+        validateStartGame(room);
+        const events = startGame(room, serverContext);
+        broadcastRoom(room, events);
+        broadcastRoomList();
+        scheduleBotTurnIfNeeded(room);
+        return { ok: true };
+      }
       validateStartGame(room);
       const events = startGame(room, serverContext);
       broadcastRoom(room, events);
@@ -355,9 +402,8 @@ io.on("connection", (socket) => {
         ? rollForActivePlayer(room, socket.id, serverContext, socket.id)
         : rollForActivePlayer(room, socket.id, serverContext);
       broadcastRoom(room, result.events);
-      if (result.gameOver) {
-        io.to(room.id).emit("gameOver", result.gameOver);
-      }
+      emitGameOverIfNeeded(room, result);
+      scheduleBotTurnIfNeeded(room);
       return { ok: true };
     });
   });
@@ -384,6 +430,8 @@ io.on("connection", (socket) => {
 
       const result = resolveGuardCheck(room, actor.id, serverContext);
       broadcastRoom(room, result.events);
+      emitGameOverIfNeeded(room, result);
+      scheduleBotTurnIfNeeded(room);
       return { ok: true };
     });
   });
@@ -401,9 +449,8 @@ io.on("connection", (socket) => {
         ? confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId, payload.selfDamageAmount, socket.id)
         : confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId, payload.selfDamageAmount);
       broadcastRoom(room, result.events);
-      if (result.gameOver) {
-        io.to(room.id).emit("gameOver", result.gameOver);
-      }
+      emitGameOverIfNeeded(room, result);
+      scheduleBotTurnIfNeeded(room);
       return { ok: true };
     });
   });
@@ -430,11 +477,36 @@ io.on("connection", (socket) => {
       }
       if (requiredPlayerIds.length > 0 && requiredPlayerIds.every((playerId) => room.rematchReadyPlayerIds.includes(playerId))) {
         resetToLobbyForRematch(room);
+        removePveBotsForLobby(room);
         emitRoomToParticipants(room);
         return { ok: true, reset: true };
       }
 
         emitRoomToParticipants(room);
+      return { ok: true };
+    });
+  });
+
+  socket.on("chooseRogueliteReward", (payload: { rewardId?: string }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (ensureRoomGameMode(room) !== "pve_roguelite") throw new Error("当前房间不是肉鸽挑战");
+      if (room.phase !== "reward") throw new Error("当前不能选择奖励");
+      const player = room.players.find((item) => item.id === socket.id && !item.isBot);
+      if (!player) throw new Error("玩家不存在");
+      const choices = room.roguelite?.rewardChoices ?? [];
+      const reward = choices.find((item) => item.id === payload.rewardId);
+      if (!reward) throw new Error("奖励不存在");
+
+      applyRogueliteReward(player, reward);
+      room.roguelite ??= { stage: 1, maxStage: ROGUELITE_MAX_STAGE, appliedRewards: [] };
+      room.roguelite.appliedRewards = [...(room.roguelite.appliedRewards ?? []), reward];
+      room.roguelite.stage += 1;
+      room.roguelite.rewardChoices = undefined;
+      prepareNextRogueliteStage(room, player);
+      const event = addEvent(room, "system", `${player.nickname} 选择奖励：${reward.name}，进入第 ${room.roguelite.stage} 关`);
+      broadcastRoom(room, [event]);
+      scheduleBotTurnIfNeeded(room);
       return { ok: true };
     });
   });
@@ -516,6 +588,142 @@ function emitRoomToParticipants(room: Room): void {
 
 function broadcastRoomList(): void {
   io.emit("roomListUpdated", getPublicRoomList());
+}
+
+function scheduleBotTurnIfNeeded(room: Room): void {
+  if (!isSinglePlayerPveMode(room) || room.phase !== "battle") return;
+  const activePlayer = room.players[room.activePlayerIndex];
+  if (!activePlayer?.isBot) return;
+  if (botTurnTimers.has(room.id)) return;
+
+  const delayMs = 800 + Math.floor(Math.random() * 401);
+  const timer = setTimeout(() => {
+    botTurnTimers.delete(room.id);
+    const currentRoom = rooms.get(room.id);
+    if (!currentRoom) return;
+    try {
+      runBotTurn(currentRoom);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "AI 行动失败";
+      addEvent(currentRoom, "system", `AI 行动失败：${message}`);
+      emitRoomToParticipants(currentRoom);
+    }
+  }, delayMs);
+  botTurnTimers.set(room.id, timer);
+}
+
+function runBotTurn(room: Room): void {
+  if (!isSinglePlayerPveMode(room) || room.phase !== "battle") return;
+  const bot = room.players[room.activePlayerIndex];
+  if (!bot?.isBot || bot.isDead) return;
+  const target = room.players.find((player) => !player.isBot && !player.isDead);
+  if (!target) return;
+
+  bot.selectedTargetId = target.id;
+  const rollResult = rollForActivePlayer(room, bot.id, serverContext);
+  broadcastRoom(room, rollResult.events);
+  if (emitGameOverIfNeeded(room, rollResult)) return;
+
+  const decision = room.pendingRollDecision;
+  if (!decision || decision.actorId !== bot.id) {
+    scheduleBotTurnIfNeeded(room);
+    return;
+  }
+
+  const characterSkillAction = decision.availableActions?.find((action) => action.id === "character_skill" && action.enabled && !action.requiresSelfDamageAmount);
+  const choice: RollDecisionChoice = characterSkillAction ? "character_skill" : "normal_attack";
+  const confirmResult = confirmRollDecision(room, bot.id, decision.id, choice, serverContext);
+  broadcastRoom(room, confirmResult.events);
+  if (emitGameOverIfNeeded(room, confirmResult)) return;
+  scheduleBotTurnIfNeeded(room);
+}
+
+function emitGameOverIfNeeded(room: Room, result: { gameOver?: { winnerId: string; winnerName: string } }): boolean {
+  if (!result.gameOver) return false;
+  if (handleRogueliteBattleEnd(room, result.gameOver)) return true;
+  io.to(room.id).emit("gameOver", result.gameOver);
+  return true;
+}
+
+function handleRogueliteBattleEnd(room: Room, gameOver: { winnerId: string; winnerName: string }): boolean {
+  if (ensureRoomGameMode(room) !== "pve_roguelite") return false;
+  const winner = room.players.find((player) => player.id === gameOver.winnerId);
+  if (!winner || winner.isBot) return false;
+
+  const roguelite = ensureRogueliteState(room);
+  if (roguelite.stage >= roguelite.maxStage) return false;
+
+  room.phase = "reward";
+  room.winnerId = undefined;
+  room.rematchReadyPlayerIds = [];
+  room.roguelite = {
+    ...roguelite,
+    rewardChoices: createRogueliteRewardChoices()
+  };
+  addEvent(room, "system", `第 ${roguelite.stage} 关胜利，选择 1 个奖励后进入下一关`);
+  emitRoomToParticipants(room);
+  return true;
+}
+
+function ensureRogueliteState(room: Room): NonNullable<Room["roguelite"]> {
+  room.roguelite ??= { stage: 1, maxStage: ROGUELITE_MAX_STAGE, appliedRewards: [] };
+  room.roguelite.maxStage = room.roguelite.maxStage || ROGUELITE_MAX_STAGE;
+  room.roguelite.appliedRewards ??= [];
+  return room.roguelite;
+}
+
+function createRogueliteRewardChoices(): RogueliteReward[] {
+  const pool = [...ROGUELITE_REWARD_POOL];
+  const choices: RogueliteReward[] = [];
+  while (choices.length < 3 && pool.length > 0) {
+    const index = Math.floor(Math.random() * pool.length);
+    const [draft] = pool.splice(index, 1);
+    if (!draft) continue;
+    choices.push({ ...draft, id: crypto.randomUUID() });
+  }
+  return choices;
+}
+
+function applyRogueliteReward(player: Room["players"][number], reward: RogueliteReward): void {
+  if (reward.type === "max_hp_plus_3") {
+    player.maxHp += reward.value;
+    player.hp += reward.value;
+    return;
+  }
+  if (reward.type === "shield_plus_2") {
+    player.shield += reward.value;
+    return;
+  }
+  if (reward.type === "heal_5") {
+    player.hp = Math.min(player.maxHp, player.hp + reward.value);
+    return;
+  }
+  if (reward.type === "summoner_cooldown_minus_1") {
+    player.rogueliteSummonerCooldownReduction = (player.rogueliteSummonerCooldownReduction ?? 0) + reward.value;
+  }
+}
+
+function prepareNextRogueliteStage(room: Room, player: Room["players"][number]): void {
+  room.phase = "battle";
+  room.effects = [];
+  room.snapshots = [];
+  room.previousFinalDamage = 0;
+  room.pendingRoll = undefined;
+  room.pendingRollDecision = undefined;
+  room.pendingGuardCheck = undefined;
+  room.guardCheckCompletedForActorId = undefined;
+  room.winnerId = undefined;
+  room.winnerTeamId = undefined;
+  room.highlight = undefined;
+  room.skillHints = undefined;
+  player.isDead = false;
+  player.isOnline = true;
+  player.selectedTargetId = undefined;
+  ensurePveBot(room);
+  const playerIndex = room.players.findIndex((item) => item.id === player.id);
+  room.activePlayerIndex = Math.max(0, playerIndex);
+  addEvent(room, "turn", `第 ${room.roguelite?.stage ?? 1} 关开始，轮到 ${player.nickname} 行动`);
+  trimBattleLog(room);
 }
 
 function addEvent(room: Room, type: GameEvent["type"], message: string): GameEvent {
@@ -615,12 +823,14 @@ function getPublicRoomList(): RoomListItem[] {
 }
 
 function getRoomParticipantCount(room: Room): number {
+  if (isSinglePlayerPveMode(room)) return room.players.filter((player) => !player.isBot).length;
   if (ensureRoomGameMode(room) !== "duo_2v2") return room.players.length;
   return getRoomControllers(room).length;
 }
 
 function getRoomMaxPlayers(room: Room): number {
   if (ensureRoomGameMode(room) === "duo_2v2") return DUO_MAX_CONTROLLERS;
+  if (isSinglePlayerPveMode(room)) return 1;
   return ensureRoomSettings(room).maxPlayers;
 }
 
@@ -642,7 +852,8 @@ function ensureRoomSettings(room: Room): RoomSettings {
   room.settings = {
     ...DEFAULT_ROOM_SETTINGS,
     ...(room.settings ?? {}),
-    gameMode
+    gameMode,
+    maxPlayers: gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : isSinglePlayerPveGameMode(gameMode) ? 1 : room.settings?.maxPlayers ?? DEFAULT_ROOM_SETTINGS.maxPlayers
   };
   return room.settings;
 }
@@ -651,6 +862,14 @@ function ensureRoomGameMode(room: Room): GameMode {
   const currentMode = room.gameMode ?? room.settings?.gameMode;
   room.gameMode = isGameMode(currentMode) ? currentMode : DEFAULT_GAME_MODE;
   return room.gameMode;
+}
+
+function isSinglePlayerPveMode(room: Room): boolean {
+  return isSinglePlayerPveGameMode(ensureRoomGameMode(room));
+}
+
+function isSinglePlayerPveGameMode(gameMode: GameMode): boolean {
+  return gameMode === "pve_1v1" || gameMode === "pve_roguelite";
 }
 
 function ensureDuoSlots(room: Room): void {
@@ -734,13 +953,18 @@ function updateRoomSettings(room: Room, actorId: string, payload: Partial<RoomSe
   if (payload.gameMode !== undefined) {
     if (!isGameMode(payload.gameMode)) throw new Error("游戏模式设置无效");
     if (payload.gameMode === "duo_2v2" && room.players.length > DUO_MAX_CONTROLLERS) throw new Error("2V2 模式最多支持 2 名玩家");
+    if (isSinglePlayerPveGameMode(payload.gameMode) && room.players.filter((player) => !player.isBot).length > 1) throw new Error("单人 PVE 只支持 1 名真实玩家");
     room.gameMode = payload.gameMode;
     nextSettings.gameMode = payload.gameMode;
     if (payload.gameMode === "duo_2v2") nextSettings.maxPlayers = DUO_MAX_CONTROLLERS;
+    if (isSinglePlayerPveGameMode(payload.gameMode)) nextSettings.maxPlayers = 1;
   }
 
   if (ensureRoomGameMode(room) === "duo_2v2") {
     nextSettings.maxPlayers = DUO_MAX_CONTROLLERS;
+  }
+  if (isSinglePlayerPveMode(room)) {
+    nextSettings.maxPlayers = 1;
   }
 
   room.settings = nextSettings;
@@ -756,13 +980,65 @@ function validateCharacterChoice(room: Room, actorId: string, characterId: Chara
 
 function validateStartGame(room: Room): void {
   const settings = ensureRoomSettings(room);
-  if (room.players.length > settings.maxPlayers) throw new Error("当前玩家数超过房间最大人数");
+  const participantCount = isSinglePlayerPveMode(room) ? room.players.filter((player) => !player.isBot).length : room.players.length;
+  if (participantCount > settings.maxPlayers) throw new Error("当前玩家数超过房间最大人数");
   if (settings.allowDuplicateCharacters) return;
 
-  const selectedCharacters = room.players.map((player) => player.characterId).filter((characterId): characterId is CharacterId => Boolean(characterId));
+  const selectedCharacters = room.players
+    .filter((player) => !isSinglePlayerPveMode(room) || !player.isBot)
+    .map((player) => player.characterId)
+    .filter((characterId): characterId is CharacterId => Boolean(characterId));
   const uniqueCharacters = new Set(selectedCharacters);
   if (uniqueCharacters.size !== selectedCharacters.length) {
     throw new Error("当前已有重复职业，请玩家重新选择");
+  }
+}
+
+function validatePveStartGame(room: Room, actorId: string): void {
+  if (!isSinglePlayerPveMode(room)) throw new Error("当前房间不是单人 PVE 模式");
+  const player = room.players.find((item) => item.id === actorId && !item.isBot);
+  if (!player) throw new Error("玩家不存在");
+  if (!player.characterId) throw new Error("请先选择职业");
+  if (!player.summonerSkillId) throw new Error("请先选择召唤师技能");
+  const humanPlayers = room.players.filter((item) => !item.isBot);
+  if (humanPlayers.length !== 1) throw new Error("单人 PVE 只支持 1 名真实玩家");
+}
+
+function ensurePveBot(room: Room): void {
+  if (!isSinglePlayerPveMode(room)) return;
+  room.players = room.players.filter((player) => !player.isBot);
+
+  const character = characterList.find((item) => item.id === "boxer");
+  if (!character) throw new Error("AI 职业配置不存在");
+  const stage = ensureRoomGameMode(room) === "pve_roguelite" ? ensureRogueliteState(room).stage : 1;
+  const bonusHp = stage === 3 ? 10 : stage === 2 ? 5 : 0;
+  const bonusShield = stage === 3 ? 2 : 0;
+  const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, PVE_BOT_NICKNAME, false);
+  bot.isBot = true;
+  bot.isOnline = true;
+  bot.controllerId = PVE_BOT_ID;
+  bot.characterId = "boxer";
+  bot.summonerSkillId = "first_aid";
+  bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
+  bot.maxHp = character.maxHp + bonusHp;
+  bot.hp = character.maxHp + bonusHp;
+  bot.shield = bonusShield;
+  room.players.push(bot);
+}
+
+function removePveBotsForLobby(room: Room): void {
+  if (!isSinglePlayerPveMode(room)) return;
+  room.players = room.players.filter((player) => !player.isBot);
+  if (ensureRoomGameMode(room) === "pve_roguelite") {
+    room.roguelite = undefined;
+    for (const player of room.players) {
+      player.rogueliteSummonerCooldownReduction = undefined;
+    }
+  }
+  const host = room.players[0];
+  if (host) {
+    room.hostId = host.id;
+    host.isHost = true;
   }
 }
 
@@ -835,7 +1111,7 @@ function startDuoGameV0(room: Room): GameEvent[] {
       isOnline: controller.isOnline,
       characterId: slot.characterId,
       summonerSkillId: slot.summonerSkillId,
-      summonerSkillCooldown: 0,
+      summonerSkillCooldown: getSummonerSkillInitialCooldown(slot.summonerSkillId),
       hp: slot.characterId === "crescent_moon" ? 3 : character.maxHp,
       maxHp: character.maxHp,
       shield: 0,
@@ -860,7 +1136,7 @@ function startDuoGameV0(room: Room): GameEvent[] {
 
 function mapRoomPhase(phase: Room["phase"]): RoomListStatus {
   if (phase === "lobby") return "waiting";
-  if (phase === "battle") return "playing";
+  if (phase === "battle" || phase === "reward") return "playing";
   return "ended";
 }
 
@@ -903,6 +1179,7 @@ function getRematchPlayerIdForSocket(room: Room, socketId: string, clientId: str
 }
 
 function getRematchRequiredPlayerIds(room: Room): string[] {
+  if (isSinglePlayerPveMode(room)) return room.players.filter((player) => !player.isBot).map((player) => player.id);
   if (ensureRoomGameMode(room) !== "duo_2v2") return room.players.map((player) => player.id);
   const orderedControllers = (room.controllerTurnOrder ?? []).filter((controllerId) => getRoomControllers(room).includes(controllerId));
   return orderedControllers.length > 0 ? orderedControllers : getRoomControllers(room);
@@ -925,7 +1202,7 @@ function isRollDecisionChoice(value: unknown): value is RollDecisionChoice {
 }
 
 function isGameMode(value: unknown): value is GameMode {
-  return value === "classic" || value === "duo_2v2";
+  return value === "classic" || value === "duo_2v2" || value === "pve_1v1" || value === "pve_roguelite";
 }
 
 function bindSocketToRoom(socketId: string, clientId: string, roomId: string): void {
@@ -953,6 +1230,11 @@ function removePlayerFromRoom(socketId: string): void {
   socketToClient.delete(socketId);
 
   if (!room || !clientId) return;
+  if (isSinglePlayerPveMode(room)) {
+    deleteRoomAndUnbindSockets(room.id);
+    broadcastRoomList();
+    return;
+  }
   if (shouldUseDuoControllerLeave(room)) {
     const leaving = findRoomParticipantForSocket(room, socketId, clientId);
     const controllerId = leaving?.controllerId ?? (room.controllerTurnOrder?.includes(socketId) ? socketId : undefined);
@@ -1062,6 +1344,11 @@ function unbindClientSocketsFromRoom(clientId: string, roomId: string): void {
 }
 
 function deleteRoomAndUnbindSockets(roomId: string): void {
+  const botTimer = botTurnTimers.get(roomId);
+  if (botTimer) {
+    clearTimeout(botTimer);
+    botTurnTimers.delete(roomId);
+  }
   for (const [socketId, mappedRoomId] of Array.from(socketToRoom.entries())) {
     if (mappedRoomId !== roomId) continue;
     const socket = io.sockets.sockets.get(socketId);

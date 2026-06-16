@@ -15,9 +15,9 @@ export type CharacterId =
   | "fire_lord"
   | "mountain_shield";
 
-export type RoomPhase = "lobby" | "battle" | "gameOver";
+export type RoomPhase = "lobby" | "battle" | "reward" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
-export type GameMode = "classic" | "duo_2v2";
+export type GameMode = "classic" | "duo_2v2" | "pve_1v1" | "pve_roguelite";
 export type TeamId = "A" | "B";
 export type CharacterDifficulty = "simple" | "normal" | "complex" | "expert";
 export type CharacterRole = "attack" | "defense" | "healing" | "burst" | "special";
@@ -52,6 +52,7 @@ export interface Player {
   nickname: string;
   isHost: boolean;
   isOnline: boolean;
+  isBot?: boolean;
   characterId?: CharacterId;
   summonerSkillId?: SummonerSkillId;
   characterSelected?: boolean;
@@ -60,6 +61,7 @@ export interface Player {
   hp: number;
   maxHp: number;
   shield: number;
+  rogueliteSummonerCooldownReduction?: number;
   zhaoZilongHitCount?: number;
   flameMarks?: number;
   guarding?: boolean;
@@ -133,6 +135,27 @@ export interface RoomSettings {
   maxPlayers: number;
   allowDuplicateCharacters: boolean;
   gameMode?: GameMode;
+}
+
+export type RogueliteRewardType =
+  | "max_hp_plus_3"
+  | "shield_plus_2"
+  | "heal_5"
+  | "summoner_cooldown_minus_1";
+
+export interface RogueliteReward {
+  id: string;
+  name: string;
+  description: string;
+  type: RogueliteRewardType;
+  value: number;
+}
+
+export interface RogueliteRunState {
+  stage: number;
+  maxStage: number;
+  rewardChoices?: RogueliteReward[];
+  appliedRewards?: RogueliteReward[];
 }
 
 export type CharacterReactionSkillId =
@@ -233,6 +256,7 @@ export interface Room {
   winnerTeamId?: TeamId;
   controllerTurnOrder?: string[];
   duoSlots?: DuoCharacterSlot[];
+  roguelite?: RogueliteRunState;
   highlight?: CharacterHighlight;
   skillHints?: SkillHint[];
 }

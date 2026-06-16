@@ -1,22 +1,11 @@
-import type { RoomListItem } from "@career-war/shared";
-type __VLS_Props = {
-    inviteRoomId?: string;
-    roomList: RoomListItem[];
-};
-declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {}, {}, import("vue").ComponentOptionsMixin, import("vue").ComponentOptionsMixin, {
-    createRoom: (nickname: string) => any;
-    joinRoom: (payload: {
-        nickname: string;
-        roomId: string;
-    }) => any;
-    refreshRoomList: () => any;
-}, string, import("vue").PublicProps, Readonly<__VLS_Props> & Readonly<{
-    onCreateRoom?: ((nickname: string) => any) | undefined;
-    onJoinRoom?: ((payload: {
-        nickname: string;
-        roomId: string;
-    }) => any) | undefined;
-    onRefreshRoomList?: (() => any) | undefined;
-}>, {}, {}, {}, {}, string, import("vue").ComponentProvideOptions, false, {}, any>;
+declare const __VLS_export: import("vue").DefineComponent<{}, {}, {}, {}, {}, import("vue").ComponentOptionsMixin, import("vue").ComponentOptionsMixin, {
+    selectPvp: () => any;
+    selectPve: () => any;
+    selectRoguelite: () => any;
+}, string, import("vue").PublicProps, Readonly<{}> & Readonly<{
+    onSelectPvp?: (() => any) | undefined;
+    onSelectPve?: (() => any) | undefined;
+    onSelectRoguelite?: (() => any) | undefined;
+}>, {}, {}, {}, {}, string, import("vue").ComponentProvideOptions, true, {}, any>;
 declare const _default: typeof __VLS_export;
 export default _default;

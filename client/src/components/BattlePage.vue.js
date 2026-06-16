@@ -58,6 +58,13 @@ const playedHighlightKeys = new Set();
 const playedSkillHintIds = new Set();
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
 const isDuoMode = computed(() => room.value.gameMode === "duo_2v2");
+const isPveMode = computed(() => room.value.gameMode === "pve_1v1");
+const isRogueliteMode = computed(() => room.value.gameMode === "pve_roguelite");
+const isSinglePlayerPveMode = computed(() => isPveMode.value || isRogueliteMode.value);
+const isBotTurn = computed(() => isSinglePlayerPveMode.value && Boolean(activePlayer.value?.isBot) && room.value.phase === "battle");
+const rogueliteState = computed(() => room.value.roguelite);
+const rogueliteRewardChoices = computed(() => rogueliteState.value?.rewardChoices ?? []);
+const rogueliteAppliedRewards = computed(() => rogueliteState.value?.appliedRewards ?? []);
 const activeControllerId = computed(() => room.value.activeControllerId);
 const isMyDuoControllerTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId);
 const selectedActor = computed(() => room.value.players.find((player) => player.id === room.value.selectedActorId));
@@ -84,6 +91,10 @@ const winner = computed(() => room.value.players.find((player) => player.id === 
 const winnerText = computed(() => {
     if (isDuoMode.value && room.value.winnerTeamId)
         return `${room.value.winnerTeamId} 队获胜`;
+    if (isRogueliteMode.value)
+        return winner.value?.id === props.playerId ? "挑战成功" : "挑战失败";
+    if (isPveMode.value)
+        return winner.value?.id === props.playerId ? "胜利" : "失败";
     return `胜者：${winner.value?.nickname ?? "--"}`;
 });
 const pendingRoll = computed(() => room.value.pendingRoll);
@@ -128,7 +139,7 @@ const isDecisionMine = computed(() => {
         return false;
     if (isDuoMode.value) {
         const actor = room.value.players.find((p) => p.id === decision.actorId);
-        return activeControllerId.value === props.playerId && decision.actorId === room.value.selectedActorId && actor?.controllerId === props.playerId;
+        return actor?.controllerId === props.playerId;
     }
     return decision.actorId === props.playerId;
 });
@@ -140,7 +151,7 @@ const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
 const rematchParticipants = computed(() => {
     if (!isDuoMode.value) {
-        return room.value.players.map((player) => ({
+        return room.value.players.filter((player) => !player.isBot).map((player) => ({
             id: player.id,
             nickname: player.nickname,
             isHost: player.id === room.value.hostId || player.isHost
@@ -158,7 +169,7 @@ const rematchParticipants = computed(() => {
 });
 const rematchControllerIds = computed(() => {
     if (!isDuoMode.value)
-        return room.value.players.map((player) => player.id);
+        return room.value.players.filter((player) => !player.isBot).map((player) => player.id);
     const ids = [];
     for (const controllerId of room.value.controllerTurnOrder ?? []) {
         if (!ids.includes(controllerId))
@@ -176,6 +187,8 @@ const isAllRematchReady = computed(() => rematchParticipants.value.length > 0 &&
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
 const actionStageText = computed(() => {
+    if (room.value.phase === "reward")
+        return "请选择一个奖励";
     if (room.value.phase === "gameOver")
         return "游戏结束";
     if (me.value?.isDead)
@@ -188,6 +201,8 @@ const actionStageText = computed(() => {
         return "架盾判定：点击投骰";
     if (pendingGuardCheck.value)
         return `等待 ${guardCheckActor.value?.nickname ?? "山盾"} 进行架盾判定`;
+    if (isBotTurn.value)
+        return "AI 思考中...";
     if (pendingRollDecision.value && isDecisionMine.value)
         return "请选择本回合行动";
     if (pendingRollDecision.value)
@@ -394,6 +409,8 @@ const rollButtonText = computed(() => {
     return "投骰";
 });
 const turnGuideText = computed(() => {
+    if (room.value.phase === "reward")
+        return "选择一个奖励后进入下一关";
     if (room.value.phase === "gameOver")
         return "游戏结束";
     if (me.value?.isDead)
@@ -406,6 +423,8 @@ const turnGuideText = computed(() => {
         return "架盾判定：点击投骰";
     if (pendingGuardCheck.value)
         return `等待【${guardCheckActor.value?.nickname ?? "山盾"}】进行架盾判定`;
+    if (isBotTurn.value)
+        return "AI 思考中...";
     if (pendingRollDecision.value && isDecisionMine.value)
         return "骰点已揭示：选择一个骰子行动卡槽";
     if (pendingRollDecision.value)
@@ -419,6 +438,8 @@ const turnGuideText = computed(() => {
     return `已选择【${selectedTarget.value?.nickname ?? "目标"}】，点击投骰`;
 });
 const turnGuideTone = computed(() => {
+    if (room.value.phase === "reward")
+        return "mine";
     if (room.value.phase === "gameOver")
         return "ended";
     if (me.value?.isDead)
@@ -429,6 +450,8 @@ const turnGuideTone = computed(() => {
         return "mine";
     if (pendingRoll.value && isPendingMine.value)
         return "continue";
+    if (isBotTurn.value)
+        return "busy";
     if (isMyTurn.value)
         return "mine";
     return "waiting";
@@ -659,6 +682,11 @@ function readyForRematch() {
         return;
     socket.emit("readyForRematch", {});
 }
+function chooseRogueliteReward(reward) {
+    if (!isRogueliteMode.value || room.value.phase !== "reward")
+        return;
+    socket.emit("chooseRogueliteReward", { rewardId: reward.id });
+}
 function startRollAnimation(mode, shouldEmit) {
     if (isRolling.value)
         return;
@@ -877,6 +905,13 @@ const __VLS_ctx = {
 let __VLS_components;
 let __VLS_intrinsics;
 let __VLS_directives;
+/** @type {__VLS_StyleScopedClasses['roguelite-status']} */ ;
+/** @type {__VLS_StyleScopedClasses['roguelite-status']} */ ;
+/** @type {__VLS_StyleScopedClasses['roguelite-status']} */ ;
+/** @type {__VLS_StyleScopedClasses['reward-chip-list']} */ ;
+/** @type {__VLS_StyleScopedClasses['reward-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['reward-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['reward-card']} */ ;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
 /** @type {__VLS_StyleScopedClasses['zone-heading']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-zone']} */ ;
@@ -947,6 +982,73 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 });
 /** @type {__VLS_StyleScopedClasses['ghost-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['small-btn']} */ ;
+if (__VLS_ctx.isRogueliteMode) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "roguelite-status" },
+    });
+    /** @type {__VLS_StyleScopedClasses['roguelite-status']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.rogueliteState?.stage ?? 1);
+    (__VLS_ctx.rogueliteState?.maxStage ?? 3);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.room.phase === "reward" ? "选择奖励" : __VLS_ctx.room.phase === "gameOver" ? __VLS_ctx.winnerText : "挑战中");
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "reward-chip-list" },
+    });
+    /** @type {__VLS_StyleScopedClasses['reward-chip-list']} */ ;
+    if (__VLS_ctx.rogueliteAppliedRewards.length === 0) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    }
+    for (const [reward] of __VLS_vFor((__VLS_ctx.rogueliteAppliedRewards))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (reward.id),
+        });
+        (reward.name);
+        // @ts-ignore
+        [isRogueliteMode, rogueliteState, rogueliteState, room, room, winnerText, rogueliteAppliedRewards, rogueliteAppliedRewards,];
+    }
+}
+if (__VLS_ctx.isRogueliteMode && __VLS_ctx.room.phase === 'reward') {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "roguelite-reward-panel" },
+    });
+    /** @type {__VLS_StyleScopedClasses['roguelite-reward-panel']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "section-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-heading']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "hint" },
+    });
+    /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "reward-card-grid" },
+    });
+    /** @type {__VLS_StyleScopedClasses['reward-card-grid']} */ ;
+    for (const [reward] of __VLS_vFor((__VLS_ctx.rogueliteRewardChoices))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.isRogueliteMode && __VLS_ctx.room.phase === 'reward'))
+                        return;
+                    __VLS_ctx.chooseRogueliteReward(reward);
+                    // @ts-ignore
+                    [isRogueliteMode, room, rogueliteRewardChoices, chooseRogueliteReward,];
+                } },
+            key: (reward.id),
+            ...{ class: "reward-card" },
+            type: "button",
+        });
+        /** @type {__VLS_StyleScopedClasses['reward-card']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (reward.name);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+        (reward.description);
+        // @ts-ignore
+        [];
+    }
+}
 if (__VLS_ctx.isDuoMode) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "battle-zone duo-battle-zone" },
@@ -1561,7 +1663,7 @@ if (!__VLS_ctx.isDuoMode) {
             (__VLS_ctx.emoteFor(player)?.emoji);
         }
         // @ts-ignore
-        [selectedTargetId, selectedTargetId, selectedTargetId, playerStatus, hasInvincible, playerAvatar, emoteFor, emoteFor, emoteFor, canSelectTarget, playerNumber, room,];
+        [room, selectedTargetId, selectedTargetId, selectedTargetId, playerStatus, hasInvincible, playerAvatar, emoteFor, emoteFor, emoteFor, canSelectTarget, playerNumber,];
         var __VLS_33;
         let __VLS_36;
         /** @ts-ignore @type { | typeof __VLS_components.transition | typeof __VLS_components.Transition | typeof __VLS_components.transition | typeof __VLS_components.Transition} */

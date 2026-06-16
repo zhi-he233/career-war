@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 const props = defineProps();
 const emit = defineEmits();
 const nickname = ref(localStorage.getItem("career-war-nickname") ?? "");
@@ -7,7 +7,14 @@ const inviteRoomId = ref("");
 const selectedMode = ref(null);
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
 const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
-const selectedModeTitle = computed(() => selectedMode.value === "duo_2v2" ? "2V2 双角色房间" : "经典对战房间");
+const isPveMode = computed(() => selectedMode.value === "pve_1v1");
+const selectedModeTitle = computed(() => {
+    if (selectedMode.value === "duo_2v2")
+        return "2V2 双角色房间";
+    if (selectedMode.value === "pve_1v1")
+        return "人机练习";
+    return "经典对战房间";
+});
 onMounted(() => {
     const query = new URLSearchParams(window.location.search);
     const queryRoomId = props.inviteRoomId ?? query.get("room") ?? query.get("roomId") ?? "";
@@ -15,7 +22,14 @@ onMounted(() => {
         inviteRoomId.value = queryRoomId.toUpperCase().slice(0, 4);
         roomId.value = inviteRoomId.value;
         selectedMode.value = "classic";
+        return;
     }
+    if (props.initialMode)
+        selectedMode.value = props.initialMode;
+});
+watch(() => props.initialMode, (mode) => {
+    if (mode)
+        selectedMode.value = mode;
 });
 function openClassicMode() {
     selectedMode.value = "classic";
@@ -24,6 +38,9 @@ function openClassicMode() {
 function openDuoMode() {
     selectedMode.value = "duo_2v2";
     emit("refreshRoomList");
+}
+function openPveMode() {
+    selectedMode.value = "pve_1v1";
 }
 function backToModeSelect() {
     selectedMode.value = null;
@@ -53,6 +70,8 @@ function selectRoom(room) {
 function isRoomVisibleForSelectedMode(room) {
     if (selectedMode.value === "classic")
         return room.gameMode === undefined || room.gameMode === "classic";
+    if (selectedMode.value === "pve_1v1")
+        return false;
     return room.gameMode === selectedMode.value;
 }
 function phaseLabel(phase) {
@@ -139,6 +158,20 @@ if (__VLS_ctx.selectedMode === null) {
     /** @type {__VLS_StyleScopedClasses['ready']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.openPveMode) },
+        ...{ class: "pvp-mode-card available" },
+        type: "button",
+    });
+    /** @type {__VLS_StyleScopedClasses['pvp-mode-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['available']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "mode-status ready" },
+    });
+    /** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
+    /** @type {__VLS_StyleScopedClasses['ready']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 }
 else {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
@@ -176,8 +209,9 @@ else {
             type: "button",
         });
         /** @type {__VLS_StyleScopedClasses['primary-btn']} */ ;
+        (__VLS_ctx.isPveMode ? "创建人机练习" : "创建房间");
     }
-    if (!__VLS_ctx.isInviteMode) {
+    if (!__VLS_ctx.isInviteMode && !__VLS_ctx.isPveMode) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "divider" },
         });
@@ -198,7 +232,7 @@ else {
         });
         /** @type {__VLS_StyleScopedClasses['secondary-btn']} */ ;
     }
-    else {
+    else if (!__VLS_ctx.isPveMode) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
             ...{ class: "room-list-panel" },
         });
@@ -214,9 +248,11 @@ else {
                         return;
                     if (!!(__VLS_ctx.isInviteMode))
                         return;
+                    if (!(!__VLS_ctx.isPveMode))
+                        return;
                     __VLS_ctx.emit('refreshRoomList');
                     // @ts-ignore
-                    [emit, selectedMode, openClassicMode, openDuoMode, selectedModeTitle, backToModeSelect, nickname, isInviteMode, isInviteMode, isInviteMode, createRoom, inviteRoomId, joinRoom,];
+                    [emit, selectedMode, openClassicMode, openDuoMode, openPveMode, selectedModeTitle, backToModeSelect, nickname, isInviteMode, isInviteMode, isInviteMode, createRoom, isPveMode, isPveMode, isPveMode, inviteRoomId, joinRoom,];
                 } },
             ...{ class: "ghost-btn small-btn" },
             type: "button",
@@ -260,6 +296,8 @@ else {
                                 return;
                             if (!!(__VLS_ctx.isInviteMode))
                                 return;
+                            if (!(!__VLS_ctx.isPveMode))
+                                return;
                             if (!!(__VLS_ctx.visibleRoomList.length === 0))
                                 return;
                             __VLS_ctx.selectRoom(room);
@@ -287,6 +325,8 @@ else {
                     if (!!(__VLS_ctx.selectedMode === null))
                         return;
                     if (!!(__VLS_ctx.isInviteMode))
+                        return;
+                    if (!(!__VLS_ctx.isPveMode))
                         return;
                     __VLS_ctx.roomId = __VLS_ctx.roomId.toUpperCase();
                     // @ts-ignore

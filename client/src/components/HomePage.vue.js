@@ -61,16 +61,46 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
 /** @type {__VLS_StyleScopedClasses['ready']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-    ...{ class: "mode-entry-card disabled" },
-    'aria-disabled': "true",
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
+            __VLS_ctx.emit('selectPve');
+            // @ts-ignore
+            [emit,];
+        } },
+    ...{ class: "mode-entry-card available" },
+    type: "button",
 });
 /** @type {__VLS_StyleScopedClasses['mode-entry-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['disabled']} */ ;
+/** @type {__VLS_StyleScopedClasses['available']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-    ...{ class: "mode-status" },
+    ...{ class: "mode-status ready" },
 });
 /** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
+/** @type {__VLS_StyleScopedClasses['ready']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "sub-mode-list" },
+});
+/** @type {__VLS_StyleScopedClasses['sub-mode-list']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
+            __VLS_ctx.emit('selectRoguelite');
+            // @ts-ignore
+            [emit,];
+        } },
+    ...{ class: "mode-entry-card available" },
+    type: "button",
+});
+/** @type {__VLS_StyleScopedClasses['mode-entry-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['available']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+    ...{ class: "mode-status ready" },
+});
+/** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
+/** @type {__VLS_StyleScopedClasses['ready']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({

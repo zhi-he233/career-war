@@ -31,7 +31,7 @@ const DEFAULT_ROOM_SETTINGS = {
     gameMode: "classic"
 };
 const SUMMONER_SKILLS = [
-    { id: "lucky_plus_one", name: "幸运骰", description: "投后让本次主骰 +1，最高 6。冷却：3 次自己的行动。" },
+    { id: "lucky_plus_one", name: "幸运骰", description: "投后让本次主骰 +1，最高 6。开局预冷却：2 次自己的行动。使用后冷却：3 次自己的行动。" },
     { id: "first_aid", name: "急救术", description: "本次不攻击，改为回复自己等于骰点的血量。冷却：3 次自己的行动。" },
     { id: "iron_wall", name: "铁壁", description: "本次不攻击，改为获得等于骰点的护盾。冷却：3 次自己的行动。" },
     { id: "fate_reroll", name: "命运重掷", description: "服务器重新投一次主骰，必须接受新骰点。冷却：3 次自己的行动。" },
@@ -92,6 +92,9 @@ const isHost = computed(() => props.room.hostId === props.playerId);
 const roomSettings = computed(() => ({ ...DEFAULT_ROOM_SETTINGS, ...(props.room.settings ?? {}) }));
 const roomMode = computed(() => props.room.gameMode ?? roomSettings.value.gameMode ?? "classic");
 const isDuoModeDevelopment = computed(() => roomMode.value === "duo_2v2");
+const isPveMode = computed(() => roomMode.value === "pve_1v1");
+const isRogueliteMode = computed(() => roomMode.value === "pve_roguelite");
+const isSinglePlayerPveMode = computed(() => isPveMode.value || isRogueliteMode.value);
 const duoSlots = computed(() => props.room.duoSlots ?? []);
 const duoTeams = computed(() => [
     { id: "A", label: "A 队", player: props.room.players[0] },
@@ -99,7 +102,13 @@ const duoTeams = computed(() => [
 ]);
 const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]);
 const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => isDuoSlotCharacterReady(slot) && isDuoSlotSummonerSkillReady(slot)) && !hasDuplicateCharacterConflict.value);
-const canStart = computed(() => isDuoModeDevelopment.value ? isDuoReadyToStart.value : props.room.players.length >= 2 && props.room.players.every(isClassicPlayerReady) && !hasDuplicateCharacterConflict.value);
+const canStart = computed(() => {
+    if (isDuoModeDevelopment.value)
+        return isDuoReadyToStart.value;
+    if (isSinglePlayerPveMode.value)
+        return Boolean(me.value?.characterId && me.value?.summonerSkillId);
+    return props.room.players.length >= 2 && props.room.players.every(isClassicPlayerReady) && !hasDuplicateCharacterConflict.value;
+});
 const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && (isDuoModeDevelopment.value ? duoDuplicateCharacterIds.value.size > 0 : duplicateCharacterIds.value.size > 0));
 const duplicateCharacterIds = computed(() => {
     const counts = new Map();
@@ -128,6 +137,14 @@ const startHint = computed(() => {
         return "请完成 4 个角色槽位和召唤师技能选择。";
     if (isDuoModeDevelopment.value)
         return "将进入 2V2 双角色测试版：每名玩家控制两个角色进行战斗。";
+    if (isSinglePlayerPveMode.value && !me.value?.characterId)
+        return "请选择 1 个职业。";
+    if (isSinglePlayerPveMode.value && !me.value?.summonerSkillId)
+        return "请选择 1 个召唤师技能。";
+    if (isRogueliteMode.value)
+        return `准备开始肉鸽挑战：连续 3 关，${characterName(me.value?.characterId)} vs AI`;
+    if (isPveMode.value)
+        return `准备开始人机练习：${characterName(me.value?.characterId)} vs AI`;
     if (hasDuplicateCharacterConflict.value)
         return "当前已有重复职业，请玩家重新选择。";
     if (!canStart.value)
@@ -138,8 +155,8 @@ const inviteLink = computed(() => `${window.location.origin}${window.location.pa
 const visibleCharacters = computed(() => [...props.characters, ...LOCKED_CHARACTERS].filter((character) => !character.isHidden));
 const filteredCharacters = computed(() => visibleCharacters.value.filter((character) => matchesFilter(character) && matchesSearch(character)));
 const randomCandidates = computed(() => filteredCharacters.value.filter(isSelectableCharacter));
-const visibleMaxPlayers = computed(() => (isDuoModeDevelopment.value ? 2 : roomSettings.value.maxPlayers));
-const selectableMaxPlayerOptions = computed(() => (isDuoModeDevelopment.value ? [2] : MAX_PLAYER_OPTIONS).map((count) => ({ count, disabled: count < props.room.players.length })));
+const visibleMaxPlayers = computed(() => (isDuoModeDevelopment.value ? 2 : isSinglePlayerPveMode.value ? 1 : roomSettings.value.maxPlayers));
+const selectableMaxPlayerOptions = computed(() => (isDuoModeDevelopment.value ? [2] : isSinglePlayerPveMode.value ? [1] : MAX_PLAYER_OPTIONS).map((count) => ({ count, disabled: count < props.room.players.length })));
 async function copyInviteLink() {
     await navigator.clipboard.writeText(inviteLink.value);
 }
@@ -177,6 +194,10 @@ function updateGameMode(event) {
     emit("updateRoomSettings", { gameMode });
 }
 function gameModeLabel(gameMode) {
+    if (gameMode === "pve_roguelite")
+        return "肉鸽挑战";
+    if (gameMode === "pve_1v1")
+        return "人机练习";
     return gameMode === "duo_2v2" ? "2V2 双角色（测试版）" : "经典对战";
 }
 function duoSlotsForTeam(teamId) {
@@ -415,6 +436,12 @@ if (__VLS_ctx.isHost) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
         value: "duo_2v2",
     });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: "pve_1v1",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: "pve_roguelite",
+    });
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
         ...{ class: "compact-field" },
     });
@@ -423,7 +450,7 @@ if (__VLS_ctx.isHost) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
         ...{ onChange: (__VLS_ctx.updateMaxPlayers) },
         value: (__VLS_ctx.visibleMaxPlayers),
-        disabled: (__VLS_ctx.room.phase !== 'lobby'),
+        disabled: (__VLS_ctx.room.phase !== 'lobby' || __VLS_ctx.isSinglePlayerPveMode),
     });
     for (const [option] of __VLS_vFor((__VLS_ctx.selectableMaxPlayerOptions))) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
@@ -433,7 +460,7 @@ if (__VLS_ctx.isHost) {
         });
         (option.count);
         // @ts-ignore
-        [room, room, visibleMaxPlayers, isHost, isHost, updateGameMode, roomMode, updateMaxPlayers, selectableMaxPlayerOptions,];
+        [room, room, visibleMaxPlayers, isHost, isHost, updateGameMode, roomMode, updateMaxPlayers, isSinglePlayerPveMode, selectableMaxPlayerOptions,];
     }
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
         ...{ class: "toggle-field" },
@@ -526,19 +553,19 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
     ...{ class: "hint" },
 });
 /** @type {__VLS_StyleScopedClasses['hint']} */ ;
-(__VLS_ctx.isHost || __VLS_ctx.isDuoModeDevelopment ? __VLS_ctx.startHint : `当前选择：${__VLS_ctx.characterName(__VLS_ctx.me?.characterId)}`);
+(__VLS_ctx.isHost || __VLS_ctx.isDuoModeDevelopment || __VLS_ctx.isSinglePlayerPveMode ? __VLS_ctx.startHint : `当前选择：${__VLS_ctx.characterName(__VLS_ctx.me?.characterId)}`);
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             __VLS_ctx.emit('startGame');
             // @ts-ignore
-            [isHost, isHost, isDuoModeDevelopment, emit, me, selectedSummonerSkill, startHint, characterName,];
+            [isHost, isHost, isSinglePlayerPveMode, isDuoModeDevelopment, emit, me, selectedSummonerSkill, startHint, characterName,];
         } },
     ...{ class: "primary-btn" },
     type: "button",
     disabled: (!__VLS_ctx.isHost || !__VLS_ctx.canStart),
 });
 /** @type {__VLS_StyleScopedClasses['primary-btn']} */ ;
-(__VLS_ctx.isDuoModeDevelopment ? __VLS_ctx.isHost ? __VLS_ctx.canStart ? "开始 2V2" : "2V2 选择未完成" : "等待房主开始" : __VLS_ctx.isHost ? "开始游戏" : "等待房主开始");
+(__VLS_ctx.isDuoModeDevelopment ? __VLS_ctx.isHost ? __VLS_ctx.canStart ? "开始 2V2" : "2V2 选择未完成" : "等待房主开始" : __VLS_ctx.isRogueliteMode ? __VLS_ctx.canStart ? "开始肉鸽挑战" : "请选择职业和技能" : __VLS_ctx.isPveMode ? __VLS_ctx.canStart ? "开始人机练习" : "请选择职业和技能" : __VLS_ctx.isHost ? "开始游戏" : "等待房主开始");
 if (__VLS_ctx.isDuoModeDevelopment) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "character-picker duo-slot-picker" },
@@ -616,7 +643,7 @@ if (__VLS_ctx.isDuoModeDevelopment) {
                                     return;
                                 __VLS_ctx.updateDuoSlotCharacter(slot, $event);
                                 // @ts-ignore
-                                [isHost, isHost, isHost, isDuoModeDevelopment, isDuoModeDevelopment, canStart, canStart, duoTeams, duoSlotsForTeam, canEditDuoSlot, canEditDuoSlot, canEditDuoSlot, updateDuoSlotCharacter,];
+                                [isHost, isHost, isHost, isDuoModeDevelopment, isDuoModeDevelopment, canStart, canStart, canStart, canStart, isRogueliteMode, isPveMode, duoTeams, duoSlotsForTeam, canEditDuoSlot, canEditDuoSlot, canEditDuoSlot, updateDuoSlotCharacter,];
                             } },
                         value: (slot.characterId ?? ''),
                     });

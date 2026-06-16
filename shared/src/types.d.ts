@@ -1,7 +1,7 @@
 export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin" | "self_destructor" | "war_knight" | "crescent_moon" | "fire_lord" | "mountain_shield";
-export type RoomPhase = "lobby" | "battle" | "gameOver";
+export type RoomPhase = "lobby" | "battle" | "reward" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
-export type GameMode = "classic" | "duo_2v2";
+export type GameMode = "classic" | "duo_2v2" | "pve_1v1" | "pve_roguelite";
 export type TeamId = "A" | "B";
 export type CharacterDifficulty = "simple" | "normal" | "complex" | "expert";
 export type CharacterRole = "attack" | "defense" | "healing" | "burst" | "special";
@@ -32,6 +32,7 @@ export interface Player {
     nickname: string;
     isHost: boolean;
     isOnline: boolean;
+    isBot?: boolean;
     characterId?: CharacterId;
     summonerSkillId?: SummonerSkillId;
     characterSelected?: boolean;
@@ -40,6 +41,7 @@ export interface Player {
     hp: number;
     maxHp: number;
     shield: number;
+    rogueliteSummonerCooldownReduction?: number;
     zhaoZilongHitCount?: number;
     flameMarks?: number;
     guarding?: boolean;
@@ -96,7 +98,21 @@ export interface RoomSettings {
     allowDuplicateCharacters: boolean;
     gameMode?: GameMode;
 }
-export type CharacterReactionSkillId = "gunslinger_copy_damage" | "gunslinger_barrage" | "vampire_life_steal" | "vampire_blood_rite" | "zhao_zilong_hold" | "paladin_invincible" | "self_destruct" | "war_knight_heal" | "crescent_moon_strike" | "fire_lord_spark" | "fire_lord_burst" | "mountain_shield_guard";
+export type RogueliteRewardType = "max_hp_plus_3" | "shield_plus_2" | "heal_5" | "summoner_cooldown_minus_1";
+export interface RogueliteReward {
+    id: string;
+    name: string;
+    description: string;
+    type: RogueliteRewardType;
+    value: number;
+}
+export interface RogueliteRunState {
+    stage: number;
+    maxStage: number;
+    rewardChoices?: RogueliteReward[];
+    appliedRewards?: RogueliteReward[];
+}
+export type CharacterReactionSkillId = "gunslinger_copy_damage" | "gunslinger_barrage" | "vampire_life_steal" | "vampire_blood_rite" | "zhao_zilong_hold" | "paladin_invincible" | "self_destruct" | "war_knight_heal" | "crescent_moon_strike" | "fire_lord_spark" | "fire_lord_burst" | "stone_titan_crush" | "mountain_shield_guard";
 export type SummonerSkillId = "lucky_plus_one" | "first_aid" | "iron_wall" | "fate_reroll" | "last_stand";
 export type RollActionType = "normal_attack" | "character_skill" | "summoner_skill";
 export type RollDecisionChoice = RollActionType | "settle";
@@ -174,6 +190,7 @@ export interface Room {
     winnerTeamId?: TeamId;
     controllerTurnOrder?: string[];
     duoSlots?: DuoCharacterSlot[];
+    roguelite?: RogueliteRunState;
     highlight?: CharacterHighlight;
     skillHints?: SkillHint[];
 }

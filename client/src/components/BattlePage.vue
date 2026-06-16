@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
-import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
+import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
@@ -105,6 +105,13 @@ const playedSkillHintIds = new Set<string>();
 
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
 const isDuoMode = computed(() => room.value.gameMode === "duo_2v2");
+const isPveMode = computed(() => room.value.gameMode === "pve_1v1");
+const isRogueliteMode = computed(() => room.value.gameMode === "pve_roguelite");
+const isSinglePlayerPveMode = computed(() => isPveMode.value || isRogueliteMode.value);
+const isBotTurn = computed(() => isSinglePlayerPveMode.value && Boolean(activePlayer.value?.isBot) && room.value.phase === "battle");
+const rogueliteState = computed(() => room.value.roguelite);
+const rogueliteRewardChoices = computed(() => rogueliteState.value?.rewardChoices ?? []);
+const rogueliteAppliedRewards = computed(() => rogueliteState.value?.appliedRewards ?? []);
 const activeControllerId = computed(() => room.value.activeControllerId);
 const isMyDuoControllerTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId);
 const selectedActor = computed(() => room.value.players.find((player) => player.id === room.value.selectedActorId));
@@ -130,6 +137,8 @@ const aliveEnemies = computed(() => room.value.players.filter((player) => !playe
 const winner = computed(() => room.value.players.find((player) => player.id === room.value.winnerId));
 const winnerText = computed(() => {
   if (isDuoMode.value && room.value.winnerTeamId) return `${room.value.winnerTeamId} 队获胜`;
+  if (isRogueliteMode.value) return winner.value?.id === props.playerId ? "挑战成功" : "挑战失败";
+  if (isPveMode.value) return winner.value?.id === props.playerId ? "胜利" : "失败";
   return `胜者：${winner.value?.nickname ?? "--"}`;
 });
 const pendingRoll = computed(() => room.value.pendingRoll);
@@ -181,7 +190,7 @@ const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
 const rematchParticipants = computed<RematchParticipant[]>(() => {
   if (!isDuoMode.value) {
-    return room.value.players.map((player) => ({
+    return room.value.players.filter((player) => !player.isBot).map((player) => ({
       id: player.id,
       nickname: player.nickname,
       isHost: player.id === room.value.hostId || player.isHost
@@ -199,7 +208,7 @@ const rematchParticipants = computed<RematchParticipant[]>(() => {
   });
 });
 const rematchControllerIds = computed(() => {
-  if (!isDuoMode.value) return room.value.players.map((player) => player.id);
+  if (!isDuoMode.value) return room.value.players.filter((player) => !player.isBot).map((player) => player.id);
   const ids: string[] = [];
   for (const controllerId of room.value.controllerTurnOrder ?? []) {
     if (!ids.includes(controllerId)) ids.push(controllerId);
@@ -215,12 +224,14 @@ const isAllRematchReady = computed(() => rematchParticipants.value.length > 0 &&
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
 const actionStageText = computed(() => {
+  if (room.value.phase === "reward") return "请选择一个奖励";
   if (room.value.phase === "gameOver") return "游戏结束";
   if (me.value?.isDead) return "你已死亡，等待本局结束";
   if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
   if (isRolling.value) return "骰子滚动中……";
   if (pendingGuardCheck.value && isGuardCheckMine.value) return "架盾判定：点击投骰";
   if (pendingGuardCheck.value) return `等待 ${guardCheckActor.value?.nickname ?? "山盾"} 进行架盾判定`;
+  if (isBotTurn.value) return "AI 思考中...";
   if (pendingRollDecision.value && isDecisionMine.value) return "请选择本回合行动";
   if (pendingRollDecision.value) return `等待 ${activePlayer.value?.nickname ?? "玩家"} 选择骰子用途`;
   if (pendingRoll.value && isPendingMine.value) return "技能触发：请继续投骰";
@@ -408,12 +419,14 @@ const rollButtonText = computed(() => {
 });
 
 const turnGuideText = computed(() => {
+  if (room.value.phase === "reward") return "选择一个奖励后进入下一关";
   if (room.value.phase === "gameOver") return "游戏结束";
   if (me.value?.isDead) return "你已死亡，等待本局结束";
   if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
   if (isRolling.value) return "骰子滚动中……";
   if (pendingGuardCheck.value && isGuardCheckMine.value) return "架盾判定：点击投骰";
   if (pendingGuardCheck.value) return `等待【${guardCheckActor.value?.nickname ?? "山盾"}】进行架盾判定`;
+  if (isBotTurn.value) return "AI 思考中...";
   if (pendingRollDecision.value && isDecisionMine.value) return "骰点已揭示：选择一个骰子行动卡槽";
   if (pendingRollDecision.value) return `等待【${activePlayer.value?.nickname ?? "玩家"}】选择骰子用途`;
   if (pendingRoll.value && isPendingMine.value) return "技能触发：请继续投骰";
@@ -423,11 +436,13 @@ const turnGuideText = computed(() => {
 });
 
 const turnGuideTone = computed(() => {
+  if (room.value.phase === "reward") return "mine";
   if (room.value.phase === "gameOver") return "ended";
   if (me.value?.isDead) return "dead";
   if (rollRequestLocked.value || isRolling.value) return "busy";
   if (pendingGuardCheck.value && isGuardCheckMine.value) return "mine";
   if (pendingRoll.value && isPendingMine.value) return "continue";
+  if (isBotTurn.value) return "busy";
   if (isMyTurn.value) return "mine";
   return "waiting";
 });
@@ -664,6 +679,11 @@ function readyForRematch(): void {
   socket.emit("readyForRematch", {});
 }
 
+function chooseRogueliteReward(reward: RogueliteReward): void {
+  if (!isRogueliteMode.value || room.value.phase !== "reward") return;
+  socket.emit("chooseRogueliteReward", { rewardId: reward.id });
+}
+
 function startRollAnimation(mode: RollMode, shouldEmit: boolean): void {
   if (isRolling.value) return;
   clearRollTimers();
@@ -892,6 +912,36 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   <section class="battle-layout">
     <section class="battle-tools">
       <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
+    </section>
+
+    <section v-if="isRogueliteMode" class="roguelite-status">
+      <div>
+        <strong>第 {{ rogueliteState?.stage ?? 1 }} / {{ rogueliteState?.maxStage ?? 3 }} 关</strong>
+        <span>{{ room.phase === "reward" ? "选择奖励" : room.phase === "gameOver" ? winnerText : "挑战中" }}</span>
+      </div>
+      <div class="reward-chip-list">
+        <span v-if="rogueliteAppliedRewards.length === 0">尚未获得奖励</span>
+        <span v-for="reward in rogueliteAppliedRewards" :key="reward.id">{{ reward.name }}</span>
+      </div>
+    </section>
+
+    <section v-if="isRogueliteMode && room.phase === 'reward'" class="roguelite-reward-panel">
+      <div class="section-heading">
+        <h2>选择奖励</h2>
+        <span class="hint">选择 1 个奖励后进入下一关</span>
+      </div>
+      <div class="reward-card-grid">
+        <button
+          v-for="reward in rogueliteRewardChoices"
+          :key="reward.id"
+          class="reward-card"
+          type="button"
+          @click="chooseRogueliteReward(reward)"
+        >
+          <strong>{{ reward.name }}</strong>
+          <small>{{ reward.description }}</small>
+        </button>
+      </div>
     </section>
 
     <section v-if="isDuoMode" class="battle-zone duo-battle-zone">
@@ -1316,6 +1366,77 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+}
+
+.roguelite-status,
+.roguelite-reward-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.roguelite-status > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #172033;
+}
+
+.roguelite-status strong {
+  font-size: 16px;
+}
+
+.roguelite-status span,
+.reward-card small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.reward-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reward-chip-list span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #eef2ff;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.reward-card-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.reward-card {
+  display: grid;
+  gap: 5px;
+  min-height: 84px;
+  border: 1px solid #2563eb;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+  color: #172033;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.reward-card:hover {
+  background: #eff6ff;
+}
+
+.reward-card strong {
+  font-size: 16px;
 }
 
 .battle-zone,

@@ -22,6 +22,7 @@ const isSocketConnected = ref(socket.connected);
 const roundTripMs = ref<number | null>(null);
 const transportName = ref("");
 const frontPage = ref<"home" | "pvpMode">("home");
+const modePageInitialMode = ref<GameMode | null>(null);
 const query = new URLSearchParams(window.location.search);
 const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
 const inviteJoinStarted = ref(false);
@@ -170,10 +171,24 @@ function requestRoomList(): void {
 }
 
 function openPvpMode(): void {
+  modePageInitialMode.value = null;
   frontPage.value = "pvpMode";
 }
 
+function openPveMode(): void {
+  modePageInitialMode.value = "pve_1v1";
+  frontPage.value = "pvpMode";
+}
+
+function openRogueliteMode(): void {
+  const savedNickname = localStorage.getItem("career-war-nickname")?.trim();
+  const nickname = savedNickname || `玩家${clientId.slice(0, 4)}`;
+  localStorage.setItem("career-war-nickname", nickname);
+  createRoom({ nickname, gameMode: "pve_roguelite" });
+}
+
 function backToHome(): void {
+  modePageInitialMode.value = null;
   frontPage.value = "home";
 }
 
@@ -346,11 +361,14 @@ function getTransportName(transport: unknown): string {
     <HomePage
       v-if="page === 'home'"
       @select-pvp="openPvpMode"
+      @select-pve="openPveMode"
+      @select-roguelite="openRogueliteMode"
     />
     <PvpModePage
       v-else-if="page === 'pvpMode'"
       :invite-room-id="inviteRoomId"
       :room-list="roomList"
+      :initial-mode="modePageInitialMode"
       @back-home="backToHome"
       @create-room="createRoom"
       @join-room="joinRoom"

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import type { GameMode, RoomListItem } from "@career-war/shared";
 
 const props = defineProps<{
   inviteRoomId?: string;
   roomList: RoomListItem[];
+  initialMode?: GameMode | null;
 }>();
 
 const emit = defineEmits<{
@@ -20,7 +21,12 @@ const inviteRoomId = ref("");
 const selectedMode = ref<GameMode | null>(null);
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
 const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
-const selectedModeTitle = computed(() => selectedMode.value === "duo_2v2" ? "2V2 双角色房间" : "经典对战房间");
+const isPveMode = computed(() => selectedMode.value === "pve_1v1");
+const selectedModeTitle = computed(() => {
+  if (selectedMode.value === "duo_2v2") return "2V2 双角色房间";
+  if (selectedMode.value === "pve_1v1") return "人机练习";
+  return "经典对战房间";
+});
 
 onMounted(() => {
   const query = new URLSearchParams(window.location.search);
@@ -29,8 +35,17 @@ onMounted(() => {
     inviteRoomId.value = queryRoomId.toUpperCase().slice(0, 4);
     roomId.value = inviteRoomId.value;
     selectedMode.value = "classic";
+    return;
   }
+  if (props.initialMode) selectedMode.value = props.initialMode;
 });
+
+watch(
+  () => props.initialMode,
+  (mode) => {
+    if (mode) selectedMode.value = mode;
+  }
+);
 
 function openClassicMode(): void {
   selectedMode.value = "classic";
@@ -40,6 +55,10 @@ function openClassicMode(): void {
 function openDuoMode(): void {
   selectedMode.value = "duo_2v2";
   emit("refreshRoomList");
+}
+
+function openPveMode(): void {
+  selectedMode.value = "pve_1v1";
 }
 
 function backToModeSelect(): void {
@@ -71,6 +90,7 @@ function selectRoom(room: RoomListItem): void {
 
 function isRoomVisibleForSelectedMode(room: RoomListItem): boolean {
   if (selectedMode.value === "classic") return room.gameMode === undefined || room.gameMode === "classic";
+  if (selectedMode.value === "pve_1v1") return false;
   return room.gameMode === selectedMode.value;
 }
 
@@ -103,6 +123,12 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <strong>2V2 双角色（测试版）</strong>
         <small>两名真实玩家，每人控制两个同阵营角色，支持选角、投骰和行动结算。</small>
       </button>
+
+      <button class="pvp-mode-card available" type="button" @click="openPveMode">
+        <span class="mode-status ready">可进入</span>
+        <strong>人机练习</strong>
+        <small>单人 1V1：创建练习房间后选择职业和召唤师技能，开始后自动生成 AI 对手。</small>
+      </button>
     </div>
 
     <section v-else class="page-panel pvp-room-flow">
@@ -116,9 +142,9 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <input v-model="nickname" maxlength="12" placeholder="输入你的昵称" />
       </label>
 
-      <button v-if="!isInviteMode" class="primary-btn" type="button" @click="createRoom">创建房间</button>
+      <button v-if="!isInviteMode" class="primary-btn" type="button" @click="createRoom">{{ isPveMode ? "创建人机练习" : "创建房间" }}</button>
 
-      <div v-if="!isInviteMode" class="divider">或</div>
+      <div v-if="!isInviteMode && !isPveMode" class="divider">或</div>
 
       <template v-if="isInviteMode">
         <div class="room-code">
@@ -128,7 +154,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <button class="secondary-btn" type="button" @click="joinRoom">加入该房间</button>
       </template>
 
-      <template v-else>
+      <template v-else-if="!isPveMode">
         <section class="room-list-panel">
           <div class="section-heading">
             <h2>当前房间</h2>

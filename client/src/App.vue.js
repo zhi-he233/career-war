@@ -18,6 +18,7 @@ const isSocketConnected = ref(socket.connected);
 const roundTripMs = ref(null);
 const transportName = ref("");
 const frontPage = ref("home");
+const modePageInitialMode = ref(null);
 const query = new URLSearchParams(window.location.search);
 const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
 const inviteJoinStarted = ref(false);
@@ -149,9 +150,21 @@ function requestRoomList() {
     });
 }
 function openPvpMode() {
+    modePageInitialMode.value = null;
     frontPage.value = "pvpMode";
 }
+function openPveMode() {
+    modePageInitialMode.value = "pve_1v1";
+    frontPage.value = "pvpMode";
+}
+function openRogueliteMode() {
+    const savedNickname = localStorage.getItem("career-war-nickname")?.trim();
+    const nickname = savedNickname || `玩家${clientId.slice(0, 4)}`;
+    localStorage.setItem("career-war-nickname", nickname);
+    createRoom({ nickname, gameMode: "pve_roguelite" });
+}
 function backToHome() {
+    modePageInitialMode.value = null;
     frontPage.value = "home";
 }
 function chooseCharacter(characterId) {
@@ -336,14 +349,22 @@ if (__VLS_ctx.page === 'home') {
     // @ts-ignore
     const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
         ...{ 'onSelectPvp': {} },
+        ...{ 'onSelectPve': {} },
+        ...{ 'onSelectRoguelite': {} },
     }));
     const __VLS_2 = __VLS_1({
         ...{ 'onSelectPvp': {} },
+        ...{ 'onSelectPve': {} },
+        ...{ 'onSelectRoguelite': {} },
     }, ...__VLS_functionalComponentArgsRest(__VLS_1));
     let __VLS_5;
     const __VLS_6 = {
         ...{ selectPvp: {} },
         onSelectPvp: (__VLS_ctx.openPvpMode),
+        ...{ selectPve: {} },
+        onSelectPve: (__VLS_ctx.openPveMode),
+        ...{ selectRoguelite: {} },
+        onSelectRoguelite: (__VLS_ctx.openRogueliteMode),
     };
     var __VLS_3;
     var __VLS_4;
@@ -358,6 +379,7 @@ else if (__VLS_ctx.page === 'pvpMode') {
         ...{ 'onRefreshRoomList': {} },
         inviteRoomId: (__VLS_ctx.inviteRoomId),
         roomList: (__VLS_ctx.roomList),
+        initialMode: (__VLS_ctx.modePageInitialMode),
     }));
     const __VLS_9 = __VLS_8({
         ...{ 'onBackHome': {} },
@@ -366,6 +388,7 @@ else if (__VLS_ctx.page === 'pvpMode') {
         ...{ 'onRefreshRoomList': {} },
         inviteRoomId: (__VLS_ctx.inviteRoomId),
         roomList: (__VLS_ctx.roomList),
+        initialMode: (__VLS_ctx.modePageInitialMode),
     }, ...__VLS_functionalComponentArgsRest(__VLS_8));
     let __VLS_12;
     const __VLS_13 = {
@@ -464,6 +487,6 @@ else if (__VLS_ctx.room) {
     var __VLS_25;
 }
 // @ts-ignore
-[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, connectionStatusText, latencyText, transportText, page, page, page, openPvpMode, inviteRoomId, roomList, backToHome, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, chooseSummonerSkill, chooseDuoSlotCharacter, chooseDuoSlotSummonerSkill, updateRoomSettings, startGame, lastEvent, lastEmote, selectTarget, selectActor, rollDice, confirmRollDecision,];
+[room, room, room, room, room, leaveRoom, errorMessage, errorMessage, connectionStatusText, latencyText, transportText, page, page, page, openPvpMode, openPveMode, openRogueliteMode, inviteRoomId, roomList, modePageInitialMode, backToHome, createRoom, joinRoom, requestRoomList, playerId, playerId, characters, characters, chooseCharacter, chooseSummonerSkill, chooseDuoSlotCharacter, chooseDuoSlotSummonerSkill, updateRoomSettings, startGame, lastEvent, lastEmote, selectTarget, selectActor, rollDice, confirmRollDecision,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

@@ -50,6 +50,23 @@ export function createPlayer(id: string, clientId: string, nickname: string, isH
   return { id, clientId, nickname, isHost, isOnline: true, summonerSkillId: "lucky_plus_one", summonerSkillCooldown: 0, hp: 0, maxHp: 0, shield: 0, zhaoZilongHitCount: 0, flameMarks: 0, guarding: false, isDead: false };
 }
 
+const SUMMONER_SKILL_CONFIGS: Record<SummonerSkillId, { initialCooldown: number }> = {
+  lucky_plus_one: { initialCooldown: 2 },
+  first_aid: { initialCooldown: 0 },
+  iron_wall: { initialCooldown: 0 },
+  fate_reroll: { initialCooldown: 0 },
+  last_stand: { initialCooldown: 0 }
+};
+
+export function getSummonerSkillInitialCooldown(skillId: SummonerSkillId | undefined): number {
+  return SUMMONER_SKILL_CONFIGS[skillId ?? "lucky_plus_one"].initialCooldown;
+}
+
+function getSummonerSkillCooldown(player: Player, baseCooldown: number): number {
+  const reduction = player.rogueliteSummonerCooldownReduction ?? 0;
+  return Math.max(1, baseCooldown - reduction);
+}
+
 export function chooseCharacter(room: Room, playerId: string, characterId: CharacterId): GameEvent {
   const player = getPlayerOrThrow(room, playerId);
   const character = characters[characterId];
@@ -103,7 +120,7 @@ export function startGame(room: Room, ctx: Pick<EngineContext, "now" | "makeId">
     player.isDead = false;
     player.isOnline = true;
     player.summonerSkillId ??= "lucky_plus_one";
-    player.summonerSkillCooldown = 0;
+    player.summonerSkillCooldown = getSummonerSkillInitialCooldown(player.summonerSkillId);
     player.selectedTargetId = undefined;
   }
 
@@ -418,7 +435,7 @@ function confirmSummonerSkill(
   if ((actor.summonerSkillCooldown ?? 0) > 0) throw new Error("召唤师技能冷却中");
 
   if (skillId === "first_aid") {
-    actor.summonerSkillCooldown = 3;
+    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
     room.pendingRollDecision = undefined;
     const outcome: SkillOutcome = {
       damage: 0,
@@ -439,7 +456,7 @@ function confirmSummonerSkill(
   }
 
   if (skillId === "iron_wall") {
-    actor.summonerSkillCooldown = 3;
+    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
     room.pendingRollDecision = undefined;
     const outcome: SkillOutcome = {
       damage: 0,
@@ -461,7 +478,7 @@ function confirmSummonerSkill(
 
   if (skillId === "last_stand") {
     const outcome = resolveSkill(actor.characterId as CharacterId, decision.currentRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
-    actor.summonerSkillCooldown = 3;
+    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
     room.pendingRollDecision = undefined;
     outcome.damage += 2;
     outcome.selfDamage = 2;
@@ -470,7 +487,7 @@ function confirmSummonerSkill(
   }
 
   if (skillId === "lucky_plus_one") {
-    actor.summonerSkillCooldown = 3;
+    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
     const nextRoll = Math.min(6, decision.currentRoll + 1);
     rollEvent.dice = [nextRoll];
     rollEvent.message = `${actor.nickname} 发动幸运骰，骰点变为 ${nextRoll} 点`;
@@ -500,7 +517,7 @@ function confirmSummonerSkill(
   }
 
   if (skillId === "fate_reroll") {
-    actor.summonerSkillCooldown = 3;
+    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
     const nextRoll = ctx.rollDice();
     rollEvent.dice = [nextRoll];
     rollEvent.message = `${actor.nickname} 命运重掷发动，新的骰点为 ${nextRoll} 点`;

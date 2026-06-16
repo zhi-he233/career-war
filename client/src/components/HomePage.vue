@@ -1,6 +1,8 @@
 <script setup lang="ts">
 const emit = defineEmits<{
   selectPvp: [];
+  selectPve: [];
+  selectRoguelite: [];
 }>();
 </script>
 
@@ -19,15 +21,25 @@ const emit = defineEmits<{
         <small>创建房间、加入房间、查看房间列表，进入 1V1 / 自由对战或 2V2 双角色。</small>
       </button>
 
-      <article class="mode-entry-card disabled" aria-disabled="true">
-        <span class="mode-status">开发中</span>
-        <strong>PVE 冒险</strong>
-        <small>人机对战、无限肉鸽准备中，需要玩家档案系统后开放。</small>
+      <button class="mode-entry-card available" type="button" @click="emit('selectPve')">
+        <span class="mode-status ready">可进入</span>
+        <strong>人机练习</strong>
+        <small>单人 1V1 练习模式：选择 1 个职业和 1 个召唤师技能，服务端生成 AI 对手。</small>
         <div class="sub-mode-list">
-          <span>人机对战：开发中</span>
-          <span>无限肉鸽：开发中</span>
+          <span>玩家 vs AI</span>
+          <span>无账号 / 无存档</span>
         </div>
-      </article>
+      </button>
+
+      <button class="mode-entry-card available" type="button" @click="emit('selectRoguelite')">
+        <span class="mode-status ready">可进入</span>
+        <strong>肉鸽挑战</strong>
+        <small>连续挑战 3 关，每关胜利后选择 1 个奖励，不做账号、存档、商店或地图。</small>
+        <div class="sub-mode-list">
+          <span>3 关挑战</span>
+          <span>胜利选奖励</span>
+        </div>
+      </button>
 
       <article class="mode-entry-card disabled" aria-disabled="true">
         <span class="mode-status">占位</span>

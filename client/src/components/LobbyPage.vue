@@ -123,8 +123,8 @@ const duoTeams = computed<Array<{ id: TeamId; label: string; player: Player | un
   { id: "B", label: "B 队", player: props.room.players[1] }
 ]);
 const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]!);
-const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => slot.characterId && slot.summonerSkillId) && !hasDuplicateCharacterConflict.value);
-const canStart = computed(() => isDuoModeDevelopment.value ? isDuoReadyToStart.value : props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
+const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => isDuoSlotCharacterReady(slot) && isDuoSlotSummonerSkillReady(slot)) && !hasDuplicateCharacterConflict.value);
+const canStart = computed(() => isDuoModeDevelopment.value ? isDuoReadyToStart.value : props.room.players.length >= 2 && props.room.players.every(isClassicPlayerReady) && !hasDuplicateCharacterConflict.value);
 const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && (isDuoModeDevelopment.value ? duoDuplicateCharacterIds.value.size > 0 : duplicateCharacterIds.value.size > 0));
 const duplicateCharacterIds = computed(() => {
   const counts = new Map<CharacterId, number>();
@@ -209,6 +209,34 @@ function duoSlotsForTeam(teamId: TeamId): DuoCharacterSlot[] {
 
 function canEditDuoSlot(slot: DuoCharacterSlot): boolean {
   return slot.controllerId === props.playerId;
+}
+
+function isClassicPlayerReady(player: Player): boolean {
+  return Boolean(player.characterId || player.characterSelected);
+}
+
+function classicPlayerChoiceText(player: Player): string {
+  const characterText = player.characterId ? characterName(player.characterId) : player.characterSelected ? "已选择职业" : "未选择职业";
+  const summonerText = player.summonerSkillId ? summonerSkillDescription(player.summonerSkillId) : player.summonerSkillSelected ? "已选择召唤师技能" : "未选择召唤师技能";
+  return `${characterText} / ${summonerText}`;
+}
+
+function isDuoSlotCharacterReady(slot: DuoCharacterSlot): boolean {
+  return Boolean(slot.characterId || slot.characterSelected);
+}
+
+function isDuoSlotSummonerSkillReady(slot: DuoCharacterSlot): boolean {
+  return Boolean(slot.summonerSkillId || slot.summonerSkillSelected);
+}
+
+function duoSlotCharacterText(slot: DuoCharacterSlot): string {
+  if (slot.characterId) return characterName(slot.characterId);
+  return slot.characterSelected ? "已选择职业" : "未选择职业";
+}
+
+function duoSlotSummonerSkillText(slot: DuoCharacterSlot): string {
+  if (slot.summonerSkillId) return summonerSkillDescription(slot.summonerSkillId);
+  return slot.summonerSkillSelected ? "已选择召唤师技能" : "未选择召唤师技能";
 }
 
 function updateDuoSlotCharacter(slot: DuoCharacterSlot, event: Event): void {
@@ -320,7 +348,7 @@ function fullDescription(character: CharacterCard): string[] {
               <span v-if="player.id === room.hostId || player.isHost" class="badge host-badge">房主</span>
               <span class="badge" :class="{ offline: !player.isOnline }">{{ player.isOnline ? "在线" : "离线" }}</span>
             </div>
-            <p>{{ characterName(player.characterId) }}</p>
+            <p>{{ classicPlayerChoiceText(player) }}</p>
           </article>
         </div>
       </section>
@@ -420,7 +448,7 @@ function fullDescription(character: CharacterCard): string[] {
 
               <label class="compact-field">
                 <span>职业</span>
-                <select :value="slot.characterId ?? ''" :disabled="!canEditDuoSlot(slot)" @change="updateDuoSlotCharacter(slot, $event)">
+                <select v-if="canEditDuoSlot(slot)" :value="slot.characterId ?? ''" @change="updateDuoSlotCharacter(slot, $event)">
                   <option value="">未选择职业</option>
                   <option
                     v-for="character in props.characters"
@@ -431,18 +459,20 @@ function fullDescription(character: CharacterCard): string[] {
                     {{ character.name }}{{ isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "" }}
                   </option>
                 </select>
+                <span v-else class="hint">{{ duoSlotCharacterText(slot) }}</span>
               </label>
 
               <label class="compact-field">
                 <span>召唤师技能</span>
-                <select :value="slot.summonerSkillId ?? 'lucky_plus_one'" :disabled="!canEditDuoSlot(slot)" @change="updateDuoSlotSummonerSkill(slot, $event)">
+                <select v-if="canEditDuoSlot(slot)" :value="slot.summonerSkillId ?? 'lucky_plus_one'" @change="updateDuoSlotSummonerSkill(slot, $event)">
                   <option v-for="skill in SUMMONER_SKILLS" :key="skill.id" :value="skill.id">
                     {{ skill.name }}
                   </option>
                 </select>
+                <span v-else class="hint">{{ duoSlotSummonerSkillText(slot) }}</span>
               </label>
 
-              <p class="hint">当前：{{ characterName(slot.characterId) }} / {{ summonerSkillDescription(slot.summonerSkillId) }}</p>
+              <p class="hint">当前：{{ duoSlotCharacterText(slot) }} / {{ duoSlotSummonerSkillText(slot) }}</p>
             </article>
           </div>
 

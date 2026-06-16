@@ -98,8 +98,8 @@ const duoTeams = computed(() => [
     { id: "B", label: "B 队", player: props.room.players[1] }
 ]);
 const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]);
-const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => slot.characterId && slot.summonerSkillId) && !hasDuplicateCharacterConflict.value);
-const canStart = computed(() => isDuoModeDevelopment.value ? isDuoReadyToStart.value : props.room.players.length >= 2 && props.room.players.every((player) => player.characterId) && !hasDuplicateCharacterConflict.value);
+const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => isDuoSlotCharacterReady(slot) && isDuoSlotSummonerSkillReady(slot)) && !hasDuplicateCharacterConflict.value);
+const canStart = computed(() => isDuoModeDevelopment.value ? isDuoReadyToStart.value : props.room.players.length >= 2 && props.room.players.every(isClassicPlayerReady) && !hasDuplicateCharacterConflict.value);
 const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && (isDuoModeDevelopment.value ? duoDuplicateCharacterIds.value.size > 0 : duplicateCharacterIds.value.size > 0));
 const duplicateCharacterIds = computed(() => {
     const counts = new Map();
@@ -184,6 +184,30 @@ function duoSlotsForTeam(teamId) {
 }
 function canEditDuoSlot(slot) {
     return slot.controllerId === props.playerId;
+}
+function isClassicPlayerReady(player) {
+    return Boolean(player.characterId || player.characterSelected);
+}
+function classicPlayerChoiceText(player) {
+    const characterText = player.characterId ? characterName(player.characterId) : player.characterSelected ? "已选择职业" : "未选择职业";
+    const summonerText = player.summonerSkillId ? summonerSkillDescription(player.summonerSkillId) : player.summonerSkillSelected ? "已选择召唤师技能" : "未选择召唤师技能";
+    return `${characterText} / ${summonerText}`;
+}
+function isDuoSlotCharacterReady(slot) {
+    return Boolean(slot.characterId || slot.characterSelected);
+}
+function isDuoSlotSummonerSkillReady(slot) {
+    return Boolean(slot.summonerSkillId || slot.summonerSkillSelected);
+}
+function duoSlotCharacterText(slot) {
+    if (slot.characterId)
+        return characterName(slot.characterId);
+    return slot.characterSelected ? "已选择职业" : "未选择职业";
+}
+function duoSlotSummonerSkillText(slot) {
+    if (slot.summonerSkillId)
+        return summonerSkillDescription(slot.summonerSkillId);
+    return slot.summonerSkillSelected ? "已选择召唤师技能" : "未选择召唤师技能";
 }
 function updateDuoSlotCharacter(slot, event) {
     if (!canEditDuoSlot(slot))
@@ -351,9 +375,9 @@ for (const [player, index] of __VLS_vFor((__VLS_ctx.room.players))) {
     /** @type {__VLS_StyleScopedClasses['offline']} */ ;
     (player.isOnline ? "在线" : "离线");
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    (__VLS_ctx.characterName(player.characterId));
+    (__VLS_ctx.classicPlayerChoiceText(player));
     // @ts-ignore
-    [room, room, room, visibleMaxPlayers, characterName,];
+    [room, room, room, visibleMaxPlayers, classicPlayerChoiceText,];
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "room-settings-panel" },
@@ -507,7 +531,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             __VLS_ctx.emit('startGame');
             // @ts-ignore
-            [characterName, isHost, isHost, isDuoModeDevelopment, emit, me, selectedSummonerSkill, startHint,];
+            [isHost, isHost, isDuoModeDevelopment, emit, me, selectedSummonerSkill, startHint, characterName,];
         } },
     ...{ class: "primary-btn" },
     type: "button",
@@ -581,68 +605,88 @@ if (__VLS_ctx.isDuoModeDevelopment) {
                 });
                 /** @type {__VLS_StyleScopedClasses['compact-field']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-                __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
-                    ...{ onChange: (...[$event]) => {
-                            if (!(__VLS_ctx.isDuoModeDevelopment))
-                                return;
-                            if (!(team.player))
-                                return;
-                            __VLS_ctx.updateDuoSlotCharacter(slot, $event);
-                            // @ts-ignore
-                            [isHost, isHost, isHost, isDuoModeDevelopment, isDuoModeDevelopment, canStart, canStart, duoTeams, duoSlotsForTeam, canEditDuoSlot, canEditDuoSlot, updateDuoSlotCharacter,];
-                        } },
-                    value: (slot.characterId ?? ''),
-                    disabled: (!__VLS_ctx.canEditDuoSlot(slot)),
-                });
-                __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-                    value: "",
-                });
-                for (const [character] of __VLS_vFor((props.characters))) {
-                    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-                        key: (character.id),
-                        value: (character.id),
-                        disabled: (__VLS_ctx.isDuoCharacterTakenByOtherSlot(slot, character.id)),
+                if (__VLS_ctx.canEditDuoSlot(slot)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+                        ...{ onChange: (...[$event]) => {
+                                if (!(__VLS_ctx.isDuoModeDevelopment))
+                                    return;
+                                if (!(team.player))
+                                    return;
+                                if (!(__VLS_ctx.canEditDuoSlot(slot)))
+                                    return;
+                                __VLS_ctx.updateDuoSlotCharacter(slot, $event);
+                                // @ts-ignore
+                                [isHost, isHost, isHost, isDuoModeDevelopment, isDuoModeDevelopment, canStart, canStart, duoTeams, duoSlotsForTeam, canEditDuoSlot, canEditDuoSlot, canEditDuoSlot, updateDuoSlotCharacter,];
+                            } },
+                        value: (slot.characterId ?? ''),
                     });
-                    (character.name);
-                    (__VLS_ctx.isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "");
-                    // @ts-ignore
-                    [canEditDuoSlot, isDuoCharacterTakenByOtherSlot, isDuoCharacterTakenByOtherSlot,];
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                        value: "",
+                    });
+                    for (const [character] of __VLS_vFor((props.characters))) {
+                        __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                            key: (character.id),
+                            value: (character.id),
+                            disabled: (__VLS_ctx.isDuoCharacterTakenByOtherSlot(slot, character.id)),
+                        });
+                        (character.name);
+                        (__VLS_ctx.isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "");
+                        // @ts-ignore
+                        [isDuoCharacterTakenByOtherSlot, isDuoCharacterTakenByOtherSlot,];
+                    }
+                }
+                else {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                        ...{ class: "hint" },
+                    });
+                    /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+                    (__VLS_ctx.duoSlotCharacterText(slot));
                 }
                 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
                     ...{ class: "compact-field" },
                 });
                 /** @type {__VLS_StyleScopedClasses['compact-field']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-                __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
-                    ...{ onChange: (...[$event]) => {
-                            if (!(__VLS_ctx.isDuoModeDevelopment))
-                                return;
-                            if (!(team.player))
-                                return;
-                            __VLS_ctx.updateDuoSlotSummonerSkill(slot, $event);
-                            // @ts-ignore
-                            [updateDuoSlotSummonerSkill,];
-                        } },
-                    value: (slot.summonerSkillId ?? 'lucky_plus_one'),
-                    disabled: (!__VLS_ctx.canEditDuoSlot(slot)),
-                });
-                for (const [skill] of __VLS_vFor((__VLS_ctx.SUMMONER_SKILLS))) {
-                    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-                        key: (skill.id),
-                        value: (skill.id),
+                if (__VLS_ctx.canEditDuoSlot(slot)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+                        ...{ onChange: (...[$event]) => {
+                                if (!(__VLS_ctx.isDuoModeDevelopment))
+                                    return;
+                                if (!(team.player))
+                                    return;
+                                if (!(__VLS_ctx.canEditDuoSlot(slot)))
+                                    return;
+                                __VLS_ctx.updateDuoSlotSummonerSkill(slot, $event);
+                                // @ts-ignore
+                                [canEditDuoSlot, duoSlotCharacterText, updateDuoSlotSummonerSkill,];
+                            } },
+                        value: (slot.summonerSkillId ?? 'lucky_plus_one'),
                     });
-                    (skill.name);
-                    // @ts-ignore
-                    [SUMMONER_SKILLS, canEditDuoSlot,];
+                    for (const [skill] of __VLS_vFor((__VLS_ctx.SUMMONER_SKILLS))) {
+                        __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                            key: (skill.id),
+                            value: (skill.id),
+                        });
+                        (skill.name);
+                        // @ts-ignore
+                        [SUMMONER_SKILLS,];
+                    }
+                }
+                else {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                        ...{ class: "hint" },
+                    });
+                    /** @type {__VLS_StyleScopedClasses['hint']} */ ;
+                    (__VLS_ctx.duoSlotSummonerSkillText(slot));
                 }
                 __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
                     ...{ class: "hint" },
                 });
                 /** @type {__VLS_StyleScopedClasses['hint']} */ ;
-                (__VLS_ctx.characterName(slot.characterId));
-                (__VLS_ctx.summonerSkillDescription(slot.summonerSkillId));
+                (__VLS_ctx.duoSlotCharacterText(slot));
+                (__VLS_ctx.duoSlotSummonerSkillText(slot));
                 // @ts-ignore
-                [characterName, summonerSkillDescription,];
+                [duoSlotCharacterText, duoSlotSummonerSkillText, duoSlotSummonerSkillText,];
             }
         }
         else {
@@ -702,7 +746,7 @@ else {
                         return;
                     __VLS_ctx.activeFilter = filter.id;
                     // @ts-ignore
-                    [characterName, me, chooseRandomCharacter, randomCandidates, searchKeyword, FILTERS, activeFilter,];
+                    [me, characterName, chooseRandomCharacter, randomCandidates, searchKeyword, FILTERS, activeFilter,];
                 } },
             key: (filter.id),
             ...{ class: "filter-chip" },

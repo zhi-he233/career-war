@@ -6,11 +6,13 @@ import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import {
   EMOTE_IDS,
+  beginGuardCheckIfNeeded,
   characterList,
   chooseCharacter,
   confirmRollDecision,
   createPlayer,
   resetToLobbyForRematch,
+  resolveGuardCheck,
   rollForActivePlayer,
   selectTarget,
   serializeRoom,
@@ -138,7 +140,7 @@ io.on("connection", (socket) => {
       const event = addEvent(room, "system", `${nickname} 创建了房间 ${roomId}`);
       broadcastRoom(room, [event]);
       broadcastRoomList();
-      return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+      return { roomId, playerId: socket.id, room: serializeRoomForViewer(room, socket.id, clientId) };
     });
   });
 
@@ -161,7 +163,7 @@ io.on("connection", (socket) => {
           const event = addEvent(room, "system", `${existing.nickname} 已重新连接`);
           broadcastRoom(room, [event]);
           broadcastRoomList();
-          return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+          return { roomId, playerId: socket.id, room: serializeRoomForViewer(room, socket.id, clientId) };
         }
         const previousId = existing.id;
         existing.id = socket.id;
@@ -172,7 +174,7 @@ io.on("connection", (socket) => {
         const event = addEvent(room, "system", `${existing.nickname} 已重新连接`);
         broadcastRoom(room, [event]);
         broadcastRoomList();
-        return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+        return { roomId, playerId: socket.id, room: serializeRoomForViewer(room, socket.id, clientId) };
       }
 
       if (room.phase !== "lobby") throw new Error("游戏已经开始，不能加入");
@@ -186,7 +188,7 @@ io.on("connection", (socket) => {
       const event = addEvent(room, "system", `${nickname} 加入了房间`);
       broadcastRoom(room, [event]);
       broadcastRoomList();
-      return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+      return { roomId, playerId: socket.id, room: serializeRoomForViewer(room, socket.id, clientId) };
     });
   });
 
@@ -205,7 +207,7 @@ io.on("connection", (socket) => {
         const event = addEvent(room, "system", `${player.nickname} 已重新连接`);
         broadcastRoom(room, [event]);
         broadcastRoomList();
-        return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+        return { roomId, playerId: socket.id, room: serializeRoomForViewer(room, socket.id, clientId) };
       }
       const previousId = player.id;
       player.id = socket.id;
@@ -216,7 +218,7 @@ io.on("connection", (socket) => {
       const event = addEvent(room, "system", `${player.nickname} 已重新连接`);
       broadcastRoom(room, [event]);
       broadcastRoomList();
-      return { roomId, playerId: socket.id, room: serializePublicRoom(room) };
+      return { roomId, playerId: socket.id, room: serializeRoomForViewer(room, socket.id, clientId) };
     });
   });
 
@@ -250,7 +252,7 @@ io.on("connection", (socket) => {
       if (!player) throw new Error("玩家不存在");
       player.summonerSkillId = payload.summonerSkillId;
       player.summonerSkillCooldown = 0;
-      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      emitRoomToParticipants(room);
       return { ok: true };
     });
   });
@@ -263,7 +265,7 @@ io.on("connection", (socket) => {
       if (payload.slotIndex !== 0 && payload.slotIndex !== 1) throw new Error("2V2 槽位无效");
       if (!payload.characterId || !isCharacterId(payload.characterId)) throw new Error("请选择有效职业");
       chooseDuoSlotCharacter(room, socket.id, payload.slotIndex, payload.characterId);
-      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      emitRoomToParticipants(room);
       broadcastRoomList();
       return { ok: true };
     });
@@ -277,7 +279,7 @@ io.on("connection", (socket) => {
       if (payload.slotIndex !== 0 && payload.slotIndex !== 1) throw new Error("2V2 槽位无效");
       if (!payload.summonerSkillId || !isSummonerSkillId(payload.summonerSkillId)) throw new Error("请选择有效召唤师技能");
       chooseDuoSlotSummonerSkill(room, socket.id, payload.slotIndex, payload.summonerSkillId);
-      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      emitRoomToParticipants(room);
       return { ok: true };
     });
   });
@@ -286,7 +288,7 @@ io.on("connection", (socket) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       updateRoomSettings(room, socket.id, payload ?? {});
-      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      emitRoomToParticipants(room);
       return { ok: true };
     });
   });
@@ -315,7 +317,7 @@ io.on("connection", (socket) => {
       if (room.phase !== "battle") throw new Error("2V2 尚未进入战斗阶段");
       if (room.activeControllerId !== socket.id) throw new Error("轮到你时才能选择行动角色");
       if (!payload.actorId) throw new Error("请选择行动角色");
-      if (room.pendingRoll || room.pendingRollDecision) throw new Error("请先完成当前投骰流程");
+      if (room.pendingRoll || room.pendingRollDecision || room.pendingGuardCheck) throw new Error("请先完成当前投骰流程");
 
       const actor = room.players.find((player) => player.id === payload.actorId);
       if (!actor) throw new Error("行动角色不存在");
@@ -323,7 +325,8 @@ io.on("connection", (socket) => {
       if (actor.isDead) throw new Error("死亡角色不能行动");
 
       room.selectedActorId = actor.id;
-      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+      beginGuardCheckIfNeeded(room, actor.id, socket.id);
+      emitRoomToParticipants(room);
       return { ok: true };
     });
   });
@@ -337,7 +340,7 @@ io.on("connection", (socket) => {
         } else {
           selectTarget(room, socket.id, payload.targetId);
         }
-        io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+        emitRoomToParticipants(room);
         return { ok: true };
       });
     });
@@ -356,7 +359,33 @@ io.on("connection", (socket) => {
     });
   });
 
-    socket.on("confirmRollDecision", (payload: { roomId?: string; pendingDecisionId?: string; decisionId?: string; actionType?: RollActionType; choice?: RollDecisionChoice; skillId?: string; summonerSkillId?: SummonerSkillId }, reply?: Ack) => {
+  socket.on("rollGuardCheck", (_payload: unknown, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (room.phase !== "battle") throw new Error("游戏尚未开始");
+      const pending = room.pendingGuardCheck;
+      if (!pending) throw new Error("当前没有需要结算的架盾判定");
+      const actor = room.players.find((player) => player.id === pending.actorId);
+      if (!actor) throw new Error("架盾判定角色不存在");
+      if (actor.characterId !== "mountain_shield") throw new Error("只有山盾需要架盾判定");
+      if (!actor.guarding) throw new Error("山盾当前不在架盾状态");
+      if (ensureRoomGameMode(room) === "duo_2v2") {
+        if (room.activeControllerId !== socket.id || pending.controllerId !== socket.id || actor.controllerId !== socket.id) {
+          throw new Error("只有当前控制者可以进行架盾判定");
+        }
+      } else {
+        if (actor.id !== socket.id || room.players[room.activePlayerIndex]?.id !== actor.id) {
+          throw new Error("只有当前山盾玩家可以进行架盾判定");
+        }
+      }
+
+      const result = resolveGuardCheck(room, actor.id, serverContext);
+      broadcastRoom(room, result.events);
+      return { ok: true };
+    });
+  });
+
+    socket.on("confirmRollDecision", (payload: { roomId?: string; pendingDecisionId?: string; decisionId?: string; actionType?: RollActionType; choice?: RollDecisionChoice; skillId?: string; summonerSkillId?: SummonerSkillId; selfDamageAmount?: number }, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       if (payload.roomId && payload.roomId !== room.id) throw new Error("房间不匹配");
@@ -366,8 +395,8 @@ io.on("connection", (socket) => {
       if (!decisionId || !choice) throw new Error("缺少投后选择");
       if (!isRollDecisionChoice(choice)) throw new Error("未知的投后选择");
       const result = ensureRoomGameMode(room) === "duo_2v2"
-        ? confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId, socket.id)
-        : confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId);
+        ? confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId, payload.selfDamageAmount, socket.id)
+        : confirmRollDecision(room, socket.id, decisionId, choice, serverContext, summonerSkillId, payload.selfDamageAmount);
       broadcastRoom(room, result.events);
       if (result.gameOver) {
         io.to(room.id).emit("gameOver", result.gameOver);
@@ -398,11 +427,11 @@ io.on("connection", (socket) => {
       }
       if (requiredPlayerIds.length > 0 && requiredPlayerIds.every((playerId) => room.rematchReadyPlayerIds.includes(playerId))) {
         resetToLobbyForRematch(room);
-        io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+        emitRoomToParticipants(room);
         return { ok: true, reset: true };
       }
 
-      io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+        emitRoomToParticipants(room);
       return { ok: true };
     });
   });
@@ -470,7 +499,16 @@ function handle(socketId: string, reply: Ack | undefined, fn: () => Record<strin
 
 function broadcastRoom(room: Room, _events: GameEvent[]): void {
   trimBattleLog(room);
-  io.to(room.id).emit("gameStateUpdated", serializePublicRoom(room));
+  emitRoomToParticipants(room);
+}
+
+function emitRoomToParticipants(room: Room): void {
+  trimBattleLog(room);
+  for (const [socketId, roomId] of Array.from(socketToRoom.entries())) {
+    if (roomId !== room.id) continue;
+    const socket = io.sockets.sockets.get(socketId);
+    socket?.emit("gameStateUpdated", serializeRoomForViewer(room, socketId, socketToClient.get(socketId)));
+  }
 }
 
 function broadcastRoomList(): void {
@@ -497,6 +535,59 @@ function serializePublicRoom(room: Room): Room {
   publicRoom.battleLog = publicRoom.battleLog.slice(0, MAX_BATTLE_LOG);
   publicRoom.snapshots = [];
   return publicRoom;
+}
+
+function serializeRoomForViewer(room: Room, viewerSocketId: string, viewerClientId: string | undefined): Room {
+  const publicRoom = serializePublicRoom(room);
+  if (room.phase !== "lobby") return publicRoom;
+
+  if (ensureRoomGameMode(room) !== "duo_2v2") {
+    publicRoom.players = publicRoom.players.map((player) => {
+      if (player.id === viewerSocketId || Boolean(viewerClientId && player.clientId === viewerClientId)) {
+        return {
+          ...player,
+          characterSelected: Boolean(player.characterId),
+          summonerSkillSelected: Boolean(player.summonerSkillId)
+        };
+      }
+
+      const sanitized = { ...player };
+      delete sanitized.characterId;
+      delete sanitized.summonerSkillId;
+      return {
+        ...sanitized,
+        characterSelected: Boolean(player.characterId),
+        summonerSkillSelected: Boolean(player.summonerSkillId)
+      };
+    });
+    return publicRoom;
+  }
+
+  const viewerControllerId = getViewerDuoControllerId(room, viewerSocketId, viewerClientId);
+  publicRoom.duoSlots = publicRoom.duoSlots?.map((slot) => {
+    if (slot.controllerId === viewerControllerId) {
+      return {
+        ...slot,
+        characterSelected: Boolean(slot.characterId),
+        summonerSkillSelected: Boolean(slot.summonerSkillId)
+      };
+    }
+
+    const rest = { ...slot };
+    delete rest.characterId;
+    delete rest.summonerSkillId;
+    return {
+      ...rest,
+      characterSelected: Boolean(slot.characterId),
+      summonerSkillSelected: Boolean(slot.summonerSkillId)
+    };
+  });
+  return publicRoom;
+}
+
+function getViewerDuoControllerId(room: Room, viewerSocketId: string, viewerClientId: string | undefined): string | undefined {
+  const player = room.players.find((item) => item.id === viewerSocketId || item.controllerId === viewerSocketId || Boolean(viewerClientId && item.clientId === viewerClientId));
+  return player?.controllerId ?? player?.id;
 }
 
 function getPublicRoomList(): RoomListItem[] {
@@ -710,13 +801,19 @@ function startDuoGameV0(room: Room): GameEvent[] {
   room.previousFinalDamage = 0;
   room.pendingRoll = undefined;
   room.pendingRollDecision = undefined;
+  room.pendingGuardCheck = undefined;
+  room.guardCheckCompletedForActorId = undefined;
   room.rematchReadyPlayerIds = [];
   room.winnerId = undefined;
   room.winnerTeamId = undefined;
   room.highlight = undefined;
   room.skillHints = undefined;
-  room.controllerTurnOrder = [aControllerId, bControllerId];
-  room.activeControllerId = aControllerId;
+  const controllerTurnOrder = [aControllerId, bControllerId];
+  if (Math.floor(Math.random() * controllerTurnOrder.length) === 1) {
+    controllerTurnOrder.reverse();
+  }
+  room.controllerTurnOrder = controllerTurnOrder;
+  room.activeControllerId = controllerTurnOrder[0];
   room.selectedActorId = undefined;
 
   room.players = sortedSlots.map((slot) => {
@@ -736,18 +833,23 @@ function startDuoGameV0(room: Room): GameEvent[] {
       characterId: slot.characterId,
       summonerSkillId: slot.summonerSkillId,
       summonerSkillCooldown: 0,
-      hp: character.maxHp,
+      hp: slot.characterId === "crescent_moon" ? 3 : character.maxHp,
       maxHp: character.maxHp,
       shield: 0,
       zhaoZilongHitCount: 0,
+      flameMarks: 0,
+      guarding: false,
       isDead: false,
       selectedTargetId: undefined
     };
   });
 
-  const activeController = controllerById.get(aControllerId);
+  const activeController = controllerById.get(room.activeControllerId);
+  const activeTeamId = sortedSlots.find((slot) => slot.controllerId === room.activeControllerId)?.teamId;
+  const activeTeamName = activeTeamId === "B" ? "B 队" : "A 队";
   const events = [
     addEvent(room, "startGame", "2V2 V0 开始：已生成 4 个战斗单位"),
+    addEvent(room, "turn", `随机先手：${activeTeamName}`),
     addEvent(room, "turn", `轮到 ${activeController?.nickname ?? "A 队玩家"} 选择行动角色`)
   ];
   return events;
@@ -994,6 +1096,12 @@ function removeDuoControllerFromRoom(room: Room, controllerId: string): void {
   if (room.pendingRollDecision && (removedCombatantIds.has(room.pendingRollDecision.actorId) || removedCombatantIds.has(room.pendingRollDecision.targetId))) {
     room.pendingRollDecision = undefined;
   }
+  if (room.pendingGuardCheck && removedCombatantIds.has(room.pendingGuardCheck.actorId)) {
+    room.pendingGuardCheck = undefined;
+  }
+  if (room.guardCheckCompletedForActorId && removedCombatantIds.has(room.guardCheckCompletedForActorId)) {
+    room.guardCheckCompletedForActorId = undefined;
+  }
 
   for (const player of room.players) {
     if (player.selectedTargetId && removedCombatantIds.has(player.selectedTargetId)) {
@@ -1078,6 +1186,9 @@ function rebindPlayerReferences(room: Room, previousId: string, nextId: string):
   if (room.pendingRoll?.targetId === previousId) room.pendingRoll.targetId = nextId;
   if (room.pendingRollDecision?.actorId === previousId) room.pendingRollDecision.actorId = nextId;
   if (room.pendingRollDecision?.targetId === previousId) room.pendingRollDecision.targetId = nextId;
+  if (room.pendingGuardCheck?.actorId === previousId) room.pendingGuardCheck.actorId = nextId;
+  if (room.pendingGuardCheck?.controllerId === previousId) room.pendingGuardCheck.controllerId = nextId;
+  if (room.guardCheckCompletedForActorId === previousId) room.guardCheckCompletedForActorId = nextId;
   for (const slot of room.duoSlots ?? []) {
     if (slot.controllerId === previousId) slot.controllerId = nextId;
   }
@@ -1105,6 +1216,7 @@ function rebindDuoControllerReferences(room: Room, previousId: string, nextId: s
   if (previousId === nextId) return;
   if (room.hostId === previousId) room.hostId = nextId;
   if (room.activeControllerId === previousId) room.activeControllerId = nextId;
+  if (room.pendingGuardCheck?.controllerId === previousId) room.pendingGuardCheck.controllerId = nextId;
   room.controllerTurnOrder = room.controllerTurnOrder?.map((controllerId) => (controllerId === previousId ? nextId : controllerId));
   for (const slot of room.duoSlots ?? []) {
     if (slot.controllerId === previousId) slot.controllerId = nextId;

@@ -17,11 +17,10 @@ const emit = defineEmits<{
 const nickname = ref(localStorage.getItem("career-war-nickname") ?? "");
 const roomId = ref("");
 const inviteRoomId = ref("");
-const showRoomFlow = ref(false);
-const selectedGameMode = ref<GameMode>("classic");
+const selectedMode = ref<GameMode | null>(null);
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
 const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
-const selectedModeTitle = computed(() => selectedGameMode.value === "duo_2v2" ? "2V2 双角色（测试版）大厅" : "1V1 / 自由对战大厅");
+const selectedModeTitle = computed(() => selectedMode.value === "duo_2v2" ? "2V2 双角色房间" : "经典对战房间");
 
 onMounted(() => {
   const query = new URLSearchParams(window.location.search);
@@ -29,20 +28,22 @@ onMounted(() => {
   if (queryRoomId) {
     inviteRoomId.value = queryRoomId.toUpperCase().slice(0, 4);
     roomId.value = inviteRoomId.value;
-    showRoomFlow.value = true;
+    selectedMode.value = "classic";
   }
 });
 
 function openClassicMode(): void {
-  selectedGameMode.value = "classic";
-  showRoomFlow.value = true;
+  selectedMode.value = "classic";
   emit("refreshRoomList");
 }
 
 function openDuoMode(): void {
-  selectedGameMode.value = "duo_2v2";
-  showRoomFlow.value = true;
+  selectedMode.value = "duo_2v2";
   emit("refreshRoomList");
+}
+
+function backToModeSelect(): void {
+  selectedMode.value = null;
 }
 
 function rememberName(): void {
@@ -50,25 +51,27 @@ function rememberName(): void {
 }
 
 function createRoom(): void {
+  if (!selectedMode.value) return;
   rememberName();
-  emit("createRoom", { nickname: nickname.value, gameMode: selectedGameMode.value });
+  emit("createRoom", { nickname: nickname.value, gameMode: selectedMode.value });
 }
 
 function joinRoom(): void {
+  if (!selectedMode.value) return;
   rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedGameMode.value });
+  emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedMode.value });
 }
 
 function selectRoom(room: RoomListItem): void {
-  if (!room.canJoin) return;
+  if (!room.canJoin || !selectedMode.value) return;
   roomId.value = room.roomId;
   rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedGameMode.value });
+  emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedMode.value });
 }
 
 function isRoomVisibleForSelectedMode(room: RoomListItem): boolean {
-  if (selectedGameMode.value === "classic") return room.gameMode === undefined || room.gameMode === "classic";
-  return room.gameMode === selectedGameMode.value;
+  if (selectedMode.value === "classic") return room.gameMode === undefined || room.gameMode === "classic";
+  return room.gameMode === selectedMode.value;
 }
 
 function phaseLabel(phase: RoomListItem["phase"]): string {
@@ -88,7 +91,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
       </div>
     </div>
 
-    <div class="pvp-mode-grid">
+    <div v-if="selectedMode === null" class="pvp-mode-grid">
       <button class="pvp-mode-card available" type="button" @click="openClassicMode">
         <span class="mode-status ready">可进入</span>
         <strong>1V1 / 自由对战</strong>
@@ -100,18 +103,12 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <strong>2V2 双角色（测试版）</strong>
         <small>两名真实玩家，每人控制两个同阵营角色，支持选角、投骰和行动结算。</small>
       </button>
-
-      <article class="pvp-mode-card disabled" aria-disabled="true">
-        <span class="mode-status">开发中</span>
-        <strong>5V5 阵营大战</strong>
-        <small>阵营大战规则与大型战场 UI 规划中。</small>
-      </article>
     </div>
 
-    <section v-if="showRoomFlow" class="page-panel pvp-room-flow">
+    <section v-else class="page-panel pvp-room-flow">
       <div class="section-heading">
         <h2>{{ selectedModeTitle }}</h2>
-        <button class="ghost-btn small-btn" type="button" @click="showRoomFlow = false">返回模式选择</button>
+        <button class="ghost-btn small-btn" type="button" @click="backToModeSelect">返回模式选择</button>
       </div>
 
       <label class="field">

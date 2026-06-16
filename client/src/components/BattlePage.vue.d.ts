@@ -18,6 +18,7 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
         decisionId: string;
         choice: RollDecisionChoice;
         summonerSkillId?: SummonerSkillId;
+        selfDamageAmount?: number;
     }) => any;
 }, string, import("vue").PublicProps, Readonly<__VLS_Props> & Readonly<{
     onRollDice?: (() => any) | undefined;
@@ -31,6 +32,7 @@ declare const __VLS_export: import("vue").DefineComponent<__VLS_Props, {}, {}, {
         decisionId: string;
         choice: RollDecisionChoice;
         summonerSkillId?: SummonerSkillId;
+        selfDamageAmount?: number;
     }) => any) | undefined;
 }>, {}, {}, {}, {}, string, import("vue").ComponentProvideOptions, false, {}, any>;
 declare const _default: typeof __VLS_export;

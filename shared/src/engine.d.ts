@@ -19,5 +19,7 @@ export declare function resetToLobbyForRematch(room: Room): void;
 export declare function selectTarget(room: Room, playerId: string, targetId: string, requesterId?: string): void;
 export declare function rollForActivePlayer(room: Room, playerId: string, ctx: EngineContext, requesterId?: string): RollResult;
 export declare function serializeRoom(room: Room): Room;
-export declare function confirmRollDecision(room: Room, playerId: string, decisionId: string, choice: RollDecisionChoice, ctx: EngineContext, summonerSkillId?: SummonerSkillId, requesterId?: string): RollResult;
+export declare function confirmRollDecision(room: Room, playerId: string, decisionId: string, choice: RollDecisionChoice, ctx: EngineContext, summonerSkillId?: SummonerSkillId, selfDamageAmount?: number, requesterId?: string): RollResult;
+export declare function beginGuardCheckIfNeeded(room: Room, actorId: string, controllerId?: string): boolean;
+export declare function resolveGuardCheck(room: Room, actorId: string, ctx: EngineContext): RollResult;
 export {};

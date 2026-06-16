@@ -4,52 +4,56 @@ const emit = defineEmits();
 const nickname = ref(localStorage.getItem("career-war-nickname") ?? "");
 const roomId = ref("");
 const inviteRoomId = ref("");
-const showRoomFlow = ref(false);
-const selectedGameMode = ref("classic");
+const selectedMode = ref(null);
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
 const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
-const selectedModeTitle = computed(() => selectedGameMode.value === "duo_2v2" ? "2V2 双角色（测试版）大厅" : "1V1 / 自由对战大厅");
+const selectedModeTitle = computed(() => selectedMode.value === "duo_2v2" ? "2V2 双角色房间" : "经典对战房间");
 onMounted(() => {
     const query = new URLSearchParams(window.location.search);
     const queryRoomId = props.inviteRoomId ?? query.get("room") ?? query.get("roomId") ?? "";
     if (queryRoomId) {
         inviteRoomId.value = queryRoomId.toUpperCase().slice(0, 4);
         roomId.value = inviteRoomId.value;
-        showRoomFlow.value = true;
+        selectedMode.value = "classic";
     }
 });
 function openClassicMode() {
-    selectedGameMode.value = "classic";
-    showRoomFlow.value = true;
+    selectedMode.value = "classic";
     emit("refreshRoomList");
 }
 function openDuoMode() {
-    selectedGameMode.value = "duo_2v2";
-    showRoomFlow.value = true;
+    selectedMode.value = "duo_2v2";
     emit("refreshRoomList");
+}
+function backToModeSelect() {
+    selectedMode.value = null;
 }
 function rememberName() {
     localStorage.setItem("career-war-nickname", nickname.value.trim());
 }
 function createRoom() {
+    if (!selectedMode.value)
+        return;
     rememberName();
-    emit("createRoom", { nickname: nickname.value, gameMode: selectedGameMode.value });
+    emit("createRoom", { nickname: nickname.value, gameMode: selectedMode.value });
 }
 function joinRoom() {
+    if (!selectedMode.value)
+        return;
     rememberName();
-    emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedGameMode.value });
+    emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedMode.value });
 }
 function selectRoom(room) {
-    if (!room.canJoin)
+    if (!room.canJoin || !selectedMode.value)
         return;
     roomId.value = room.roomId;
     rememberName();
-    emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedGameMode.value });
+    emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedMode.value });
 }
 function isRoomVisibleForSelectedMode(room) {
-    if (selectedGameMode.value === "classic")
+    if (selectedMode.value === "classic")
         return room.gameMode === undefined || room.gameMode === "classic";
-    return room.gameMode === selectedGameMode.value;
+    return room.gameMode === selectedMode.value;
 }
 function phaseLabel(phase) {
     if (phase === "waiting")
@@ -102,51 +106,41 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
 });
 /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "pvp-mode-grid" },
-});
-/** @type {__VLS_StyleScopedClasses['pvp-mode-grid']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (__VLS_ctx.openClassicMode) },
-    ...{ class: "pvp-mode-card available" },
-    type: "button",
-});
-/** @type {__VLS_StyleScopedClasses['pvp-mode-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['available']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-    ...{ class: "mode-status ready" },
-});
-/** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
-/** @type {__VLS_StyleScopedClasses['ready']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (__VLS_ctx.openDuoMode) },
-    ...{ class: "pvp-mode-card available" },
-    type: "button",
-});
-/** @type {__VLS_StyleScopedClasses['pvp-mode-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['available']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-    ...{ class: "mode-status ready" },
-});
-/** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
-/** @type {__VLS_StyleScopedClasses['ready']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-    ...{ class: "pvp-mode-card disabled" },
-    'aria-disabled': "true",
-});
-/** @type {__VLS_StyleScopedClasses['pvp-mode-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['disabled']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-    ...{ class: "mode-status" },
-});
-/** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-if (__VLS_ctx.showRoomFlow) {
+if (__VLS_ctx.selectedMode === null) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "pvp-mode-grid" },
+    });
+    /** @type {__VLS_StyleScopedClasses['pvp-mode-grid']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.openClassicMode) },
+        ...{ class: "pvp-mode-card available" },
+        type: "button",
+    });
+    /** @type {__VLS_StyleScopedClasses['pvp-mode-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['available']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "mode-status ready" },
+    });
+    /** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
+    /** @type {__VLS_StyleScopedClasses['ready']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.openDuoMode) },
+        ...{ class: "pvp-mode-card available" },
+        type: "button",
+    });
+    /** @type {__VLS_StyleScopedClasses['pvp-mode-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['available']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "mode-status ready" },
+    });
+    /** @type {__VLS_StyleScopedClasses['mode-status']} */ ;
+    /** @type {__VLS_StyleScopedClasses['ready']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+}
+else {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "page-panel pvp-room-flow" },
     });
@@ -159,13 +153,7 @@ if (__VLS_ctx.showRoomFlow) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
     (__VLS_ctx.selectedModeTitle);
     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (...[$event]) => {
-                if (!(__VLS_ctx.showRoomFlow))
-                    return;
-                __VLS_ctx.showRoomFlow = false;
-                // @ts-ignore
-                [openClassicMode, openDuoMode, showRoomFlow, showRoomFlow, selectedModeTitle,];
-            } },
+        ...{ onClick: (__VLS_ctx.backToModeSelect) },
         ...{ class: "ghost-btn small-btn" },
         type: "button",
     });
@@ -222,13 +210,13 @@ if (__VLS_ctx.showRoomFlow) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.showRoomFlow))
+                    if (!!(__VLS_ctx.selectedMode === null))
                         return;
                     if (!!(__VLS_ctx.isInviteMode))
                         return;
                     __VLS_ctx.emit('refreshRoomList');
                     // @ts-ignore
-                    [emit, nickname, isInviteMode, isInviteMode, isInviteMode, createRoom, inviteRoomId, joinRoom,];
+                    [emit, selectedMode, openClassicMode, openDuoMode, selectedModeTitle, backToModeSelect, nickname, isInviteMode, isInviteMode, isInviteMode, createRoom, inviteRoomId, joinRoom,];
                 } },
             ...{ class: "ghost-btn small-btn" },
             type: "button",
@@ -268,7 +256,7 @@ if (__VLS_ctx.showRoomFlow) {
                 (__VLS_ctx.phaseLabel(room.phase));
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.showRoomFlow))
+                            if (!!(__VLS_ctx.selectedMode === null))
                                 return;
                             if (!!(__VLS_ctx.isInviteMode))
                                 return;
@@ -296,7 +284,7 @@ if (__VLS_ctx.showRoomFlow) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
             ...{ onInput: (...[$event]) => {
-                    if (!(__VLS_ctx.showRoomFlow))
+                    if (!!(__VLS_ctx.selectedMode === null))
                         return;
                     if (!!(__VLS_ctx.isInviteMode))
                         return;

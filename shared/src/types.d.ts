@@ -1,4 +1,4 @@
-export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin";
+export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin" | "self_destructor" | "war_knight" | "crescent_moon" | "fire_lord" | "mountain_shield";
 export type RoomPhase = "lobby" | "battle" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
 export type GameMode = "classic" | "duo_2v2";
@@ -34,11 +34,15 @@ export interface Player {
     isOnline: boolean;
     characterId?: CharacterId;
     summonerSkillId?: SummonerSkillId;
+    characterSelected?: boolean;
+    summonerSkillSelected?: boolean;
     summonerSkillCooldown?: number;
     hp: number;
     maxHp: number;
     shield: number;
     zhaoZilongHitCount?: number;
+    flameMarks?: number;
+    guarding?: boolean;
     isDead: boolean;
     selectedTargetId?: string;
     controllerId?: string;
@@ -48,7 +52,7 @@ export interface Player {
 export interface GameEvent {
     id: string;
     createdAt: number;
-    type: "system" | "chooseCharacter" | "startGame" | "turn" | "roll" | "skill" | "damage" | "heal" | "death" | "victory";
+    type: "system" | "chooseCharacter" | "startGame" | "turn" | "roll" | "guardCheck" | "skill" | "damage" | "heal" | "death" | "victory";
     message: string;
     playerId?: string;
     targetId?: string;
@@ -84,13 +88,15 @@ export interface DuoCharacterSlot {
     slotIndex: 0 | 1;
     characterId?: CharacterId;
     summonerSkillId?: SummonerSkillId;
+    characterSelected?: boolean;
+    summonerSkillSelected?: boolean;
 }
 export interface RoomSettings {
     maxPlayers: number;
     allowDuplicateCharacters: boolean;
     gameMode?: GameMode;
 }
-export type CharacterReactionSkillId = "gunslinger_barrage" | "vampire_blood_rite" | "paladin_invincible";
+export type CharacterReactionSkillId = "gunslinger_copy_damage" | "gunslinger_barrage" | "vampire_life_steal" | "vampire_blood_rite" | "zhao_zilong_hold" | "paladin_invincible" | "self_destruct" | "war_knight_heal" | "crescent_moon_strike" | "fire_lord_spark" | "fire_lord_burst" | "mountain_shield_guard";
 export type SummonerSkillId = "lucky_plus_one" | "first_aid" | "iron_wall" | "fate_reroll" | "last_stand";
 export type RollActionType = "normal_attack" | "character_skill" | "summoner_skill";
 export type RollDecisionChoice = RollActionType | "settle";
@@ -102,6 +108,7 @@ export interface RollDecisionAvailableAction {
     reason?: string;
     skillId?: CharacterReactionSkillId | SummonerSkillId;
     skillName?: string;
+    requiresSelfDamageAmount?: boolean;
 }
 export interface PendingRollDecision {
     id: string;
@@ -130,6 +137,10 @@ export interface PendingRoll {
     characterId: CharacterId;
     message: string;
 }
+export interface PendingGuardCheck {
+    actorId: string;
+    controllerId?: string;
+}
 export interface ActionSnapshot {
     id: string;
     createdAt: number;
@@ -155,6 +166,8 @@ export interface Room {
     emptySince?: number;
     pendingRoll?: PendingRoll;
     pendingRollDecision?: PendingRollDecision;
+    pendingGuardCheck?: PendingGuardCheck;
+    guardCheckCompletedForActorId?: string;
     winnerId?: string;
     activeControllerId?: string;
     selectedActorId?: string;

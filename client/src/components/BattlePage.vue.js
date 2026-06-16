@@ -31,9 +31,12 @@ const displayedRoom = ref(cloneRoomForDisplay(props.room));
 const pendingRoom = ref(null);
 const room = computed(() => displayedRoom.value);
 const rollPhase = ref("idle");
+const rollMode = ref("normal");
 const rollingDice = ref(1);
 const visibleRollId = ref(getLatestRoll(props.room)?.id);
+const visibleGuardCheckId = ref(getLatestGuardCheck(props.room)?.id);
 const pendingRevealRollId = ref();
+const pendingRevealGuardCheckId = ref();
 const activeEffectRollId = ref();
 const activeFloatingEffects = ref([]);
 const animatedRollIds = new Set();
@@ -85,6 +88,30 @@ const winnerText = computed(() => {
 });
 const pendingRoll = computed(() => room.value.pendingRoll);
 const pendingRollDecision = computed(() => room.value.pendingRollDecision);
+const pendingGuardCheck = computed(() => room.value.pendingGuardCheck);
+const guardCheckActor = computed(() => {
+    const pending = pendingGuardCheck.value;
+    if (!pending)
+        return undefined;
+    return room.value.players.find((player) => player.id === pending.actorId);
+});
+const visibleGuardCheckEvent = computed(() => {
+    if (rollMode.value !== "guard" || (rollPhase.value !== "reveal" && rollPhase.value !== "idle"))
+        return undefined;
+    return room.value.battleLog.find((event) => event.id === visibleGuardCheckId.value && event.type === "guardCheck");
+});
+const displayedGuardDice = computed(() => visibleGuardCheckEvent.value?.dice?.[0] ?? "?");
+const isGuardCheckMine = computed(() => {
+    const pending = pendingGuardCheck.value;
+    if (!pending)
+        return false;
+    if (isDuoMode.value) {
+        const actor = guardCheckActor.value;
+        return activeControllerId.value === props.playerId && pending.controllerId === props.playerId && actor?.controllerId === props.playerId;
+    }
+    return pending.actorId === props.playerId && activePlayer.value?.id === props.playerId;
+});
+const canRollGuardCheck = computed(() => Boolean(pendingGuardCheck.value && isGuardCheckMine.value && !isRolling.value && !rollRequestLocked.value));
 const isPendingMine = computed(() => {
     const pending = pendingRoll.value;
     if (!pending)
@@ -107,7 +134,7 @@ const isDecisionMine = computed(() => {
 });
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
 const isSelfDead = computed(() => Boolean(me.value?.isDead));
-const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
+const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !pendingGuardCheck.value && !isRolling.value && !rollRequestLocked.value));
 const shouldShowActionSlots = computed(() => Boolean(canUseActionSlots.value && !isSelfDead.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
@@ -157,6 +184,10 @@ const actionStageText = computed(() => {
         return "正在结算……";
     if (isRolling.value)
         return "骰子滚动中……";
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "架盾判定：点击投骰";
+    if (pendingGuardCheck.value)
+        return `等待 ${guardCheckActor.value?.nickname ?? "山盾"} 进行架盾判定`;
     if (pendingRollDecision.value && isDecisionMine.value)
         return "请选择本回合行动";
     if (pendingRollDecision.value)
@@ -192,13 +223,41 @@ const actionSlots = computed(() => {
         return [];
     return decision.availableActions ?? [];
 });
+const activeDecisionActor = computed(() => {
+    const decision = pendingRollDecision.value;
+    if (!decision)
+        return undefined;
+    return room.value.players.find((player) => player.id === decision.actorId);
+});
+const selfDestructSlot = computed(() => actionSlots.value.find((slot) => slot.requiresSelfDamageAmount));
+const shouldShowSelfDestructChoices = computed(() => Boolean(canUseActionSlots.value && selfDestructSlot.value?.enabled && activeDecisionActor.value?.characterId === "self_destructor"));
+const selfDestructAmounts = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 watch(() => props.room, (nextRoom) => {
     const nextRollId = getLatestRoll(nextRoom)?.id;
     const shownRollId = getLatestRoll(displayedRoom.value)?.id;
-    if (nextRollId && nextRollId !== shownRollId) {
+    const nextGuardCheckId = getLatestGuardCheck(nextRoom)?.id;
+    const shownGuardCheckId = getLatestGuardCheck(displayedRoom.value)?.id;
+    if (nextGuardCheckId && nextGuardCheckId !== shownGuardCheckId && isRolling.value && rollMode.value === "guard") {
+        pendingRoom.value = cloneRoomForDisplay(nextRoom);
+        pendingRevealGuardCheckId.value = nextGuardCheckId;
+        return;
+    }
+    if (nextRollId && nextRollId !== shownRollId && isRolling.value) {
         pendingRoom.value = cloneRoomForDisplay(nextRoom);
         pendingRevealRollId.value = nextRollId;
-        startRollAnimation(false);
+        return;
+    }
+    if (nextGuardCheckId && nextGuardCheckId !== shownGuardCheckId) {
+        displayedRoom.value = cloneRoomForDisplay(nextRoom);
+        visibleGuardCheckId.value = nextGuardCheckId;
+        rollRequestLocked.value = false;
+        return;
+    }
+    if (nextRollId && nextRollId !== shownRollId) {
+        displayedRoom.value = cloneRoomForDisplay(nextRoom);
+        visibleRollId.value = nextRollId;
+        startEffectWindow(nextRollId);
+        rollRequestLocked.value = false;
         return;
     }
     if (isRolling.value) {
@@ -223,18 +282,35 @@ onUnmounted(() => {
     clearSkillHintTimer();
 });
 const visibleRoll = computed(() => {
+    if (rollMode.value === "guard")
+        return undefined;
     if (rollPhase.value !== "idle" && rollPhase.value !== "reveal")
         return undefined;
     return room.value.battleLog.find((event) => event.id === visibleRollId.value && event.type === "roll");
 });
+const currentDiceMode = computed(() => {
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "guard_check";
+    if (rollMode.value === "guard" && (isRolling.value || visibleGuardCheckEvent.value))
+        return "guard_check";
+    if (pendingRollDecision.value || visibleRoll.value || pendingRoll.value)
+        return "action_roll";
+    return null;
+});
 const displayedDiceValues = computed(() => {
     if (isRolling.value)
         return [rollPhase.value === "pause" ? "..." : rollingDice.value];
+    if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value?.dice?.length)
+        return visibleGuardCheckEvent.value.dice;
+    if (currentDiceMode.value === "guard_check")
+        return ["?"];
     if (pendingRollDecision.value)
         return [pendingRollDecision.value.currentRoll];
     return visibleRoll.value?.dice ?? ["?"];
 });
 const latestActionEvents = computed(() => {
+    if (currentDiceMode.value === "guard_check")
+        return [];
     const rollId = visibleRoll.value?.id;
     const firstRollIndex = room.value.battleLog.findIndex((event) => event.id === rollId);
     if (firstRollIndex < 0)
@@ -244,6 +320,14 @@ const latestActionEvents = computed(() => {
 });
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
 const latestDiceText = computed(() => {
+    if (currentDiceMode.value === "guard_check" && isRolling.value)
+        return "架盾判定中……";
+    if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value)
+        return visibleGuardCheckEvent.value.message;
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "1-4 架盾继续，5-6 架盾结束";
+    if (pendingGuardCheck.value)
+        return "对方正在进行架盾判定";
     if (isRolling.value)
         return pendingRoll.value?.message ?? "";
     if (pendingRollDecision.value)
@@ -253,18 +337,41 @@ const latestDiceText = computed(() => {
         return pendingRoll.value?.message ?? "等待投骰";
     return `投出了 ${dice.join("、")} 点`;
 });
+const dicePanelTitle = computed(() => {
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "架盾判定";
+    if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value)
+        return "架盾判定";
+    return latestDiceText.value;
+});
+const dicePanelDetail = computed(() => {
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "1-4 架盾继续，5-6 架盾结束";
+    if (pendingGuardCheck.value)
+        return "对方正在进行架盾判定";
+    if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value)
+        return visibleGuardCheckEvent.value.message;
+    if (pendingRoll.value && !isRolling.value)
+        return pendingRoll.value.message;
+    return visibleRoll.value?.message;
+});
 const currentActionTitle = computed(() => {
     if (isSelfDead.value)
         return "你已死亡，正在观战";
     return actionStageText.value;
 });
 const currentDiceValueText = computed(() => {
+    if (pendingGuardCheck.value)
+        return String(displayedGuardDice.value);
     if (pendingRollDecision.value)
         return String(pendingRollDecision.value.currentRoll);
     return latestDiceText.value;
 });
 const currentActionLines = computed(() => {
     const actorName = activePlayer.value?.nickname ?? "玩家";
+    if (pendingGuardCheck.value) {
+        return [`架盾角色：${guardCheckActor.value?.nickname ?? "山盾"}`, `架盾判定骰：${displayedGuardDice.value}`, isGuardCheckMine.value ? "点击架盾判定骰子" : "等待架盾判定"];
+    }
     if (isSelfDead.value) {
         return [`当前行动：${actorName}`, `当前骰点：${currentDiceValueText.value}`, `等待 ${actorName} 操作`];
     }
@@ -276,6 +383,10 @@ const currentActionLines = computed(() => {
 const rollButtonText = computed(() => {
     if (isRolling.value)
         return "摇骰中...";
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "投骰";
+    if (pendingGuardCheck.value)
+        return "等待架盾判定";
     if (pendingRollDecision.value)
         return "等待选择";
     if (pendingRoll.value)
@@ -291,6 +402,10 @@ const turnGuideText = computed(() => {
         return "正在结算……";
     if (isRolling.value)
         return "骰子滚动中……";
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "架盾判定：点击投骰";
+    if (pendingGuardCheck.value)
+        return `等待【${guardCheckActor.value?.nickname ?? "山盾"}】进行架盾判定`;
     if (pendingRollDecision.value && isDecisionMine.value)
         return "骰点已揭示：选择一个骰子行动卡槽";
     if (pendingRollDecision.value)
@@ -310,6 +425,8 @@ const turnGuideTone = computed(() => {
         return "dead";
     if (rollRequestLocked.value || isRolling.value)
         return "busy";
+    if (pendingGuardCheck.value && isGuardCheckMine.value)
+        return "mine";
     if (pendingRoll.value && isPendingMine.value)
         return "continue";
     if (isMyTurn.value)
@@ -317,7 +434,7 @@ const turnGuideTone = computed(() => {
     return "waiting";
 });
 const canRoll = computed(() => {
-    if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || pendingRollDecision.value || !isMyTurn.value)
+    if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || pendingRollDecision.value || pendingGuardCheck.value || !isMyTurn.value)
         return false;
     if (pendingRoll.value)
         return isPendingMine.value;
@@ -325,7 +442,7 @@ const canRoll = computed(() => {
 });
 const canRollForDuo = computed(() => {
     if (isDuoMode.value && room.value.phase === "battle") {
-        if (rollRequestLocked.value || isRolling.value || pendingRollDecision.value)
+        if (rollRequestLocked.value || isRolling.value || pendingRollDecision.value || pendingGuardCheck.value)
             return false;
         if (pendingRoll.value)
             return isPendingMine.value;
@@ -360,6 +477,8 @@ function playerStatus(player) {
         return "离线";
     if (player.isDead)
         return "死亡";
+    if (player.characterId === "mountain_shield" && player.guarding)
+        return "架盾";
     if (pendingRoll.value?.playerId === player.id)
         return "待继续";
     if (player.id === activePlayer.value?.id)
@@ -367,6 +486,20 @@ function playerStatus(player) {
     if (hasInvincible(player))
         return "无敌";
     return "待机";
+}
+function guardBadges(player) {
+    if (player.characterId === "mountain_shield" && player.guarding) {
+        return ["架盾", "护甲+1", "团体护甲+2"];
+    }
+    if (isDuoMode.value && isProtectedByGuardingMountainShield(player)) {
+        return ["受架盾保护", "团体护甲+2"];
+    }
+    return [];
+}
+function isProtectedByGuardingMountainShield(player) {
+    if (!player.teamId || player.characterId === "mountain_shield")
+        return false;
+    return room.value.players.some((item) => item.characterId === "mountain_shield" && item.guarding && !item.isDead && item.teamId === player.teamId);
 }
 function hasInvincible(player) {
     return room.value.effects.some((effect) => effect.type === "invincible" && effect.sourcePlayerId === player.id);
@@ -397,7 +530,7 @@ function zhaoZilongHitText(player) {
     return `龙胆：${player.zhaoZilongHitCount ?? 0}/3`;
 }
 function canSelectTarget(player) {
-    return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.id !== props.playerId && !player.isDead;
+    return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.id !== props.playerId && !player.isDead;
 }
 function selectTargetFromSeat(player) {
     if (!canSelectTarget(player))
@@ -405,10 +538,10 @@ function selectTargetFromSeat(player) {
     emit("selectTarget", player.id);
 }
 function canSelectDuoActor(player) {
-    return isMyDuoControllerTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.controllerId === props.playerId && !player.isDead;
+    return isMyDuoControllerTurn.value && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.controllerId === props.playerId && !player.isDead;
 }
 function canSelectDuoEnemy(player) {
-    return isDuoMode.value && Boolean(selectedActor.value) && !pendingRoll.value && !pendingRollDecision.value && player.teamId !== selectedActor.value?.teamId && player.controllerId !== props.playerId && !player.isDead;
+    return isDuoMode.value && Boolean(selectedActor.value) && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.teamId !== selectedActor.value?.teamId && player.controllerId !== props.playerId && !player.isDead;
 }
 function handleDuoSeatClick(player) {
     if (canSelectDuoActor(player)) {
@@ -445,10 +578,27 @@ function rollWithAnimation() {
     if (isDuoMode.value ? !canRollForDuo.value : !canRoll.value)
         return;
     rollRequestLocked.value = true;
-    startRollAnimation(true);
+    startRollAnimation("normal", true);
     emit("rollDice");
 }
-function confirmDecision(choice, summonerSkillId) {
+function rollGuardCheck() {
+    if (!canRollGuardCheck.value)
+        return;
+    rollRequestLocked.value = true;
+    startRollAnimation("guard", true);
+    socket.emit("rollGuardCheck", {}, () => {
+        if (!isRolling.value)
+            rollRequestLocked.value = false;
+    });
+}
+function rollMainDice() {
+    if (pendingGuardCheck.value) {
+        rollGuardCheck();
+        return;
+    }
+    rollWithAnimation();
+}
+function confirmDecision(choice, summonerSkillId, selfDamageAmount) {
     const decision = pendingRollDecision.value;
     if (!decision || !isDecisionMine.value || rollRequestLocked.value)
         return;
@@ -461,14 +611,25 @@ function confirmDecision(choice, summonerSkillId) {
         skillId: summonerSkillId,
         decisionId: decision.id,
         choice,
-        summonerSkillId
+        summonerSkillId,
+        selfDamageAmount
     });
 }
 function confirmActionSlot(slot) {
     if (!pendingRollDecision.value || !isDecisionMine.value || rollRequestLocked.value || !slot.enabled)
         return;
+    if (slot.requiresSelfDamageAmount)
+        return;
     const summonerSkillId = slot.id === "summoner_skill" && isSummonerSkillId(slot.skillId) ? slot.skillId : undefined;
     confirmDecision(slot.id, summonerSkillId);
+}
+function canChooseSelfDestructAmount(amount) {
+    return Boolean(shouldShowSelfDestructChoices.value && activeDecisionActor.value && amount <= activeDecisionActor.value.hp);
+}
+function confirmSelfDestructAmount(amount) {
+    if (!canChooseSelfDestructAmount(amount) || rollRequestLocked.value)
+        return;
+    confirmDecision("character_skill", undefined, amount);
 }
 function isSummonerSkillId(value) {
     return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
@@ -498,10 +659,11 @@ function readyForRematch() {
         return;
     socket.emit("readyForRematch", {});
 }
-function startRollAnimation(shouldEmit) {
+function startRollAnimation(mode, shouldEmit) {
     if (isRolling.value)
         return;
     clearRollTimers();
+    rollMode.value = mode;
     activeEffectRollId.value = undefined;
     activeFloatingEffects.value = [];
     activeSkillHints.value = [];
@@ -523,6 +685,7 @@ function startRollAnimation(shouldEmit) {
     timers.push(window.setTimeout(() => {
         if (rollPhase.value !== "idle" && !pendingRoom.value) {
             rollPhase.value = "idle";
+            rollMode.value = "normal";
             rollRequestLocked.value = false;
             window.clearInterval(rollingTimer);
             rollingTimer = undefined;
@@ -531,6 +694,26 @@ function startRollAnimation(shouldEmit) {
 }
 function revealServerRoll() {
     const revealRoom = pendingRoom.value ?? cloneRoomForDisplay(props.room);
+    if (rollMode.value === "guard") {
+        const revealGuardCheckId = pendingRevealGuardCheckId.value ?? getLatestGuardCheck(revealRoom)?.id;
+        if (!revealGuardCheckId || revealGuardCheckId === visibleGuardCheckId.value)
+            return;
+        displayedRoom.value = revealRoom;
+        visibleGuardCheckId.value = revealGuardCheckId;
+        pendingRoom.value = null;
+        pendingRevealGuardCheckId.value = undefined;
+        rollRequestLocked.value = false;
+        rollPhase.value = "reveal";
+        window.clearInterval(rollingTimer);
+        rollingTimer = undefined;
+        timers.push(window.setTimeout(() => {
+            rollPhase.value = "idle";
+            visibleRollId.value = undefined;
+            pendingRevealRollId.value = undefined;
+            rollMode.value = "normal";
+        }, 420));
+        return;
+    }
     const revealRollId = pendingRevealRollId.value ?? getLatestRoll(revealRoom)?.id;
     if (!revealRollId || revealRollId === visibleRollId.value)
         return;
@@ -547,6 +730,7 @@ function revealServerRoll() {
     rollingTimer = undefined;
     timers.push(window.setTimeout(() => {
         rollPhase.value = "idle";
+        rollMode.value = "normal";
     }, 220));
 }
 function startDiceTicker(interval) {
@@ -627,6 +811,9 @@ function randomDice() {
 function getLatestRoll(targetRoom) {
     return targetRoom.battleLog.find((event) => event.type === "roll");
 }
+function getLatestGuardCheck(targetRoom) {
+    return targetRoom.battleLog.find((event) => event.type === "guardCheck");
+}
 function startEffectWindow(rollId) {
     if (animatedRollIds.has(rollId))
         return;
@@ -697,6 +884,8 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['duo-team-column']} */ ;
 /** @type {__VLS_StyleScopedClasses['seat-button']} */ ;
 /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
+/** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
+/** @type {__VLS_StyleScopedClasses['guard-badge']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
@@ -706,7 +895,16 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['action-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-meta']} */ ;
 /** @type {__VLS_StyleScopedClasses['emote-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
 /** @type {__VLS_StyleScopedClasses['battle-tools']} */ ;
@@ -722,6 +920,8 @@ let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['seat-tags']} */ ;
 /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
 /** @type {__VLS_StyleScopedClasses['slot-grid']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-title']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
 /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
 /** @type {__VLS_StyleScopedClasses['self-panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['self-avatar']} */ ;
@@ -982,6 +1182,16 @@ if (__VLS_ctx.isDuoMode) {
             (__VLS_ctx.characterName(player.characterId));
             __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             (__VLS_ctx.summonerSkillName(player.summonerSkillId));
+            for (const [badge] of __VLS_vFor((__VLS_ctx.guardBadges(player)))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    key: (`${player.id}-${badge}`),
+                    ...{ class: "guard-badge" },
+                });
+                /** @type {__VLS_StyleScopedClasses['guard-badge']} */ ;
+                (badge);
+                // @ts-ignore
+                [characterName, summonerSkillName, guardBadges,];
+            }
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                 ...{ class: "seat-stats" },
             });
@@ -1004,7 +1214,7 @@ if (__VLS_ctx.isDuoMode) {
             /** @type {__VLS_StyleScopedClasses['seat-status']} */ ;
             (__VLS_ctx.playerStatus(player));
             // @ts-ignore
-            [playerStatus, characterName, summonerSkillName, lastRollText,];
+            [playerStatus, lastRollText,];
         }
         // @ts-ignore
         [];
@@ -1021,7 +1231,13 @@ if (__VLS_ctx.isDuoMode) {
     });
     /** @type {__VLS_StyleScopedClasses['action-phase']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    if (__VLS_ctx.selectedActor && !__VLS_ctx.selectedActor.selectedTargetId) {
+    if (__VLS_ctx.pendingGuardCheck && __VLS_ctx.isGuardCheckMine) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    }
+    else if (__VLS_ctx.pendingGuardCheck) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    }
+    else if (__VLS_ctx.selectedActor && !__VLS_ctx.selectedActor.selectedTargetId) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
         (__VLS_ctx.selectedActor.nickname);
     }
@@ -1034,7 +1250,13 @@ if (__VLS_ctx.isDuoMode) {
     else {
         __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
     }
-    if (__VLS_ctx.isMyDuoControllerTurn && !__VLS_ctx.selectedActor) {
+    if (__VLS_ctx.pendingGuardCheck && __VLS_ctx.isGuardCheckMine) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
+    else if (__VLS_ctx.pendingGuardCheck) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
+    else if (__VLS_ctx.isMyDuoControllerTurn && !__VLS_ctx.selectedActor) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
     }
     else if (__VLS_ctx.selectedActor && !__VLS_ctx.selectedActor.selectedTargetId) {
@@ -1070,7 +1292,7 @@ if (__VLS_ctx.isDuoMode) {
         });
         (dice);
         // @ts-ignore
-        [isDuoMode, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, isMyDuoControllerTurn, isMyDuoControllerTurn, isMyDuoControllerTurn, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, displayedDiceValues, pendingRollDecision,];
+        [isDuoMode, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, selectedActor, isMyDuoControllerTurn, isMyDuoControllerTurn, isMyDuoControllerTurn, pendingGuardCheck, pendingGuardCheck, pendingGuardCheck, pendingGuardCheck, isGuardCheckMine, isGuardCheckMine, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, rollPhase, visibleRoll, visibleRoll, visibleRoll, displayedDiceValues, pendingRollDecision,];
     }
     let __VLS_24;
     /** @ts-ignore @type { | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group'] | typeof __VLS_components.transitionGroup | typeof __VLS_components.TransitionGroup | typeof __VLS_components['transition-group']} */
@@ -1113,14 +1335,10 @@ if (__VLS_ctx.isDuoMode) {
     });
     /** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (__VLS_ctx.latestDiceText);
-    if (__VLS_ctx.pendingRoll && !__VLS_ctx.isRolling) {
+    (__VLS_ctx.dicePanelTitle);
+    if (__VLS_ctx.dicePanelDetail) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-        (__VLS_ctx.pendingRoll.message);
-    }
-    else if (__VLS_ctx.visibleRoll) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-        (__VLS_ctx.visibleRoll.message);
+        (__VLS_ctx.dicePanelDetail);
     }
     if (__VLS_ctx.latestSkill.length) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
@@ -1131,6 +1349,50 @@ if (__VLS_ctx.isDuoMode) {
             ...{ class: "dice-action-slots" },
         });
         /** @type {__VLS_StyleScopedClasses['dice-action-slots']} */ ;
+        if (__VLS_ctx.shouldShowSelfDestructChoices) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "self-destruct-panel" },
+            });
+            /** @type {__VLS_StyleScopedClasses['self-destruct-panel']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "self-destruct-title" },
+            });
+            /** @type {__VLS_StyleScopedClasses['self-destruct-title']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "self-destruct-grid" },
+            });
+            /** @type {__VLS_StyleScopedClasses['self-destruct-grid']} */ ;
+            for (const [amount] of __VLS_vFor((__VLS_ctx.selfDestructAmounts))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.isDuoMode))
+                                return;
+                            if (!(__VLS_ctx.shouldShowActionSlots))
+                                return;
+                            if (!(__VLS_ctx.shouldShowSelfDestructChoices))
+                                return;
+                            __VLS_ctx.confirmSelfDestructAmount(amount);
+                            // @ts-ignore
+                            [dicePanelTitle, dicePanelDetail, dicePanelDetail, latestSkill, latestSkill, shouldShowActionSlots, shouldShowSelfDestructChoices, selfDestructAmounts, confirmSelfDestructAmount,];
+                        } },
+                    key: (`duo-self-destruct-${amount}`),
+                    ...{ class: "self-destruct-btn" },
+                    type: "button",
+                    disabled: (!__VLS_ctx.canChooseSelfDestructAmount(amount) || __VLS_ctx.rollRequestLocked),
+                    title: (__VLS_ctx.canChooseSelfDestructAmount(amount) ? `扣 ${amount} 血，造成 ${amount * 2} 伤害` : '血量不足'),
+                });
+                /** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+                (amount);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+                (amount);
+                (amount * 2);
+                // @ts-ignore
+                [canChooseSelfDestructAmount, canChooseSelfDestructAmount, rollRequestLocked,];
+            }
+        }
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "slot-heading" },
         });
@@ -1150,13 +1412,13 @@ if (__VLS_ctx.isDuoMode) {
                             return;
                         __VLS_ctx.confirmActionSlot(slot);
                         // @ts-ignore
-                        [visibleRoll, visibleRoll, pendingRollDecision, latestDiceText, pendingRoll, pendingRoll, isRolling, latestSkill, latestSkill, shouldShowActionSlots, actionSlots, confirmActionSlot,];
+                        [pendingRollDecision, actionSlots, confirmActionSlot,];
                     } },
                 key: (slot.id),
                 ...{ class: "dice-action-slot" },
                 type: "button",
-                ...{ class: ({ enabled: slot.enabled, disabled: !slot.enabled, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
-                disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled),
+                ...{ class: ({ enabled: slot.enabled && !slot.requiresSelfDamageAmount, disabled: !slot.enabled || slot.requiresSelfDamageAmount, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
+                disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled || slot.requiresSelfDamageAmount),
             });
             /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
             /** @type {__VLS_StyleScopedClasses['enabled']} */ ;
@@ -1170,19 +1432,21 @@ if (__VLS_ctx.isDuoMode) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
             (__VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked ? "结算中……" : slot.label);
             __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-            (slot.enabled ? slot.description : slot.reason ?? slot.description);
+            (slot.requiresSelfDamageAmount ? "请在上方选择扣血量" : slot.enabled ? slot.description : slot.reason ?? slot.description);
             // @ts-ignore
-            [pendingRollDecision, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
+            [pendingRollDecision, rollRequestLocked, rollRequestLocked, selectedActionSlot, selectedActionSlot, canUseActionSlots,];
         }
     }
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (__VLS_ctx.rollWithAnimation) },
-        ...{ class: "roll-btn" },
-        type: "button",
-        disabled: (!__VLS_ctx.canRollForDuo),
-    });
-    /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
-    (__VLS_ctx.rollButtonText);
+    if (!__VLS_ctx.pendingGuardCheck || __VLS_ctx.isGuardCheckMine) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (__VLS_ctx.rollMainDice) },
+            ...{ class: "roll-btn" },
+            type: "button",
+            disabled: (__VLS_ctx.pendingGuardCheck ? !__VLS_ctx.canRollGuardCheck : !__VLS_ctx.canRollForDuo),
+        });
+        /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
+        (__VLS_ctx.rollButtonText);
+    }
 }
 if (!__VLS_ctx.isDuoMode) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
@@ -1229,7 +1493,7 @@ if (!__VLS_ctx.isDuoMode) {
                         return;
                     __VLS_ctx.selectTargetFromSeat(player);
                     // @ts-ignore
-                    [isDuoMode, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, rollWithAnimation, canRollForDuo, rollButtonText, turnGuideTone, battlePlayers, activePlayer, canSelectTarget, selectTargetFromSeat,];
+                    [isDuoMode, selectedTargetId, isRecentDamageTarget, isRecentHealTarget, isNoDamageTarget, pendingGuardCheck, pendingGuardCheck, isGuardCheckMine, rollMainDice, canRollGuardCheck, canRollForDuo, rollButtonText, turnGuideTone, battlePlayers, activePlayer, canSelectTarget, selectTargetFromSeat,];
                 } },
             ...{ class: "seat-button" },
             type: "button",
@@ -1396,6 +1660,16 @@ if (!__VLS_ctx.isDuoMode) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         (__VLS_ctx.summonerSkillName(player.summonerSkillId));
         (player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : "");
+        for (const [badge] of __VLS_vFor((__VLS_ctx.guardBadges(player)))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                key: (`${player.id}-${badge}`),
+                ...{ class: "guard-badge" },
+            });
+            /** @type {__VLS_StyleScopedClasses['guard-badge']} */ ;
+            (badge);
+            // @ts-ignore
+            [characterName, summonerSkillName, guardBadges,];
+        }
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "seat-stats" },
         });
@@ -1424,7 +1698,7 @@ if (!__VLS_ctx.isDuoMode) {
         /** @type {__VLS_StyleScopedClasses['seat-status']} */ ;
         (__VLS_ctx.playerStatus(player));
         // @ts-ignore
-        [playerStatus, characterName, summonerSkillName, lastRollText, zhaoZilongHitText, zhaoZilongHitText,];
+        [playerStatus, lastRollText, zhaoZilongHitText, zhaoZilongHitText,];
     }
 }
 if (!__VLS_ctx.isDuoMode) {
@@ -1518,14 +1792,10 @@ if (!__VLS_ctx.isDuoMode) {
     });
     /** @type {__VLS_StyleScopedClasses['action-summary']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    (__VLS_ctx.latestDiceText);
-    if (__VLS_ctx.pendingRoll && !__VLS_ctx.isRolling) {
+    (__VLS_ctx.dicePanelTitle);
+    if (__VLS_ctx.dicePanelDetail) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-        (__VLS_ctx.pendingRoll.message);
-    }
-    else if (__VLS_ctx.visibleRoll) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-        (__VLS_ctx.visibleRoll.message);
+        (__VLS_ctx.dicePanelDetail);
     }
     if (__VLS_ctx.latestSkill.length) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
@@ -1536,6 +1806,50 @@ if (!__VLS_ctx.isDuoMode) {
             ...{ class: "dice-action-slots" },
         });
         /** @type {__VLS_StyleScopedClasses['dice-action-slots']} */ ;
+        if (__VLS_ctx.shouldShowSelfDestructChoices) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "self-destruct-panel" },
+            });
+            /** @type {__VLS_StyleScopedClasses['self-destruct-panel']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "self-destruct-title" },
+            });
+            /** @type {__VLS_StyleScopedClasses['self-destruct-title']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "self-destruct-grid" },
+            });
+            /** @type {__VLS_StyleScopedClasses['self-destruct-grid']} */ ;
+            for (const [amount] of __VLS_vFor((__VLS_ctx.selfDestructAmounts))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(!__VLS_ctx.isDuoMode))
+                                return;
+                            if (!(__VLS_ctx.shouldShowActionSlots))
+                                return;
+                            if (!(__VLS_ctx.shouldShowSelfDestructChoices))
+                                return;
+                            __VLS_ctx.confirmSelfDestructAmount(amount);
+                            // @ts-ignore
+                            [dicePanelTitle, dicePanelDetail, dicePanelDetail, latestSkill, latestSkill, shouldShowActionSlots, shouldShowSelfDestructChoices, selfDestructAmounts, confirmSelfDestructAmount,];
+                        } },
+                    key: (`classic-self-destruct-${amount}`),
+                    ...{ class: "self-destruct-btn" },
+                    type: "button",
+                    disabled: (!__VLS_ctx.canChooseSelfDestructAmount(amount) || __VLS_ctx.rollRequestLocked),
+                    title: (__VLS_ctx.canChooseSelfDestructAmount(amount) ? `扣 ${amount} 血，造成 ${amount * 2} 伤害` : '血量不足'),
+                });
+                /** @type {__VLS_StyleScopedClasses['self-destruct-btn']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+                (amount);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+                (amount);
+                (amount * 2);
+                // @ts-ignore
+                [canChooseSelfDestructAmount, canChooseSelfDestructAmount, rollRequestLocked,];
+            }
+        }
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "slot-heading" },
         });
@@ -1555,13 +1869,13 @@ if (!__VLS_ctx.isDuoMode) {
                             return;
                         __VLS_ctx.confirmActionSlot(slot);
                         // @ts-ignore
-                        [visibleRoll, visibleRoll, pendingRollDecision, latestDiceText, pendingRoll, pendingRoll, isRolling, latestSkill, latestSkill, shouldShowActionSlots, actionSlots, confirmActionSlot,];
+                        [pendingRollDecision, actionSlots, confirmActionSlot,];
                     } },
                 key: (slot.id),
                 ...{ class: "dice-action-slot" },
                 type: "button",
-                ...{ class: ({ enabled: slot.enabled, disabled: !slot.enabled, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
-                disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled),
+                ...{ class: ({ enabled: slot.enabled && !slot.requiresSelfDamageAmount, disabled: !slot.enabled || slot.requiresSelfDamageAmount, settling: __VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked }) },
+                disabled: (!__VLS_ctx.canUseActionSlots || !slot.enabled || slot.requiresSelfDamageAmount),
             });
             /** @type {__VLS_StyleScopedClasses['dice-action-slot']} */ ;
             /** @type {__VLS_StyleScopedClasses['enabled']} */ ;
@@ -1575,19 +1889,21 @@ if (!__VLS_ctx.isDuoMode) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
             (__VLS_ctx.selectedActionSlot === slot.id && __VLS_ctx.rollRequestLocked ? "结算中……" : slot.label);
             __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-            (slot.enabled ? slot.description : slot.reason ?? slot.description);
+            (slot.requiresSelfDamageAmount ? "请在上方选择扣血量" : slot.enabled ? slot.description : slot.reason ?? slot.description);
             // @ts-ignore
-            [pendingRollDecision, selectedActionSlot, selectedActionSlot, rollRequestLocked, rollRequestLocked, canUseActionSlots,];
+            [pendingRollDecision, rollRequestLocked, rollRequestLocked, selectedActionSlot, selectedActionSlot, canUseActionSlots,];
         }
     }
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (__VLS_ctx.rollWithAnimation) },
-        ...{ class: "roll-btn" },
-        type: "button",
-        disabled: (!__VLS_ctx.canRoll),
-    });
-    /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
-    (__VLS_ctx.rollButtonText);
+    if (!__VLS_ctx.pendingGuardCheck || __VLS_ctx.isGuardCheckMine) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (__VLS_ctx.rollMainDice) },
+            ...{ class: "roll-btn" },
+            type: "button",
+            disabled: (__VLS_ctx.pendingGuardCheck ? !__VLS_ctx.canRollGuardCheck : !__VLS_ctx.canRoll),
+        });
+        /** @type {__VLS_StyleScopedClasses['roll-btn']} */ ;
+        (__VLS_ctx.rollButtonText);
+    }
 }
 if (!__VLS_ctx.isDuoMode && __VLS_ctx.me) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
@@ -1603,7 +1919,7 @@ if (!__VLS_ctx.isDuoMode && __VLS_ctx.me) {
                     return;
                 __VLS_ctx.openPlayerDetail(__VLS_ctx.me);
                 // @ts-ignore
-                [isDuoMode, openPlayerDetail, rollWithAnimation, rollButtonText, activePlayer, canRoll, me, me, me, me,];
+                [isDuoMode, openPlayerDetail, pendingGuardCheck, pendingGuardCheck, isGuardCheckMine, rollMainDice, canRollGuardCheck, rollButtonText, activePlayer, canRoll, me, me, me, me,];
             } },
         ...{ class: "self-avatar" },
         type: "button",
@@ -1730,6 +2046,16 @@ if (!__VLS_ctx.isDuoMode && __VLS_ctx.me) {
     (__VLS_ctx.selfActionStateText);
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     (__VLS_ctx.selfSummonerText);
+    for (const [badge] of __VLS_vFor((__VLS_ctx.guardBadges(__VLS_ctx.me)))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            key: (`self-${badge}`),
+            ...{ class: "guard-badge" },
+        });
+        /** @type {__VLS_StyleScopedClasses['guard-badge']} */ ;
+        (badge);
+        // @ts-ignore
+        [playerStatus, characterName, guardBadges, me, me, me, me, me, me, me, me, selfActionStateText, selfSummonerText,];
+    }
     if (__VLS_ctx.lastRollText(__VLS_ctx.me)) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         (__VLS_ctx.lastRollText(__VLS_ctx.me));
@@ -1748,7 +2074,7 @@ if (!__VLS_ctx.isDuoMode && __VLS_ctx.me) {
                     return;
                 __VLS_ctx.openPlayerDetail(__VLS_ctx.me);
                 // @ts-ignore
-                [playerStatus, openPlayerDetail, characterName, lastRollText, lastRollText, me, me, me, me, me, me, me, me, me, me, me, selfActionStateText, selfSummonerText, hpPercent,];
+                [openPlayerDetail, lastRollText, lastRollText, me, me, me, me, hpPercent,];
             } },
         ...{ class: "seat-info-btn self-info-btn" },
         type: "button",

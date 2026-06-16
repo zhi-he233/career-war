@@ -16,10 +16,12 @@ const emit = defineEmits<{
   selectTarget: [targetId: string];
   selectActor: [actorId: string];
   rollDice: [];
-  confirmRollDecision: [payload: { roomId: string; pendingDecisionId: string; actionType: RollActionType; skillId?: string; decisionId: string; choice: RollDecisionChoice; summonerSkillId?: SummonerSkillId }];
+  confirmRollDecision: [payload: { roomId: string; pendingDecisionId: string; actionType: RollActionType; skillId?: string; decisionId: string; choice: RollDecisionChoice; summonerSkillId?: SummonerSkillId; selfDamageAmount?: number }];
 }>();
 
 type RollPhase = "idle" | "fast" | "slow" | "pause" | "reveal";
+type RollMode = "normal" | "guard";
+type CurrentDiceMode = "guard_check" | "action_roll" | null;
 type RematchParticipant = {
   id: string;
   nickname: string;
@@ -75,9 +77,12 @@ const displayedRoom = ref<Room>(cloneRoomForDisplay(props.room));
 const pendingRoom = ref<Room | null>(null);
 const room = computed(() => displayedRoom.value);
 const rollPhase = ref<RollPhase>("idle");
+const rollMode = ref<RollMode>("normal");
 const rollingDice = ref(1);
 const visibleRollId = ref<string | undefined>(getLatestRoll(props.room)?.id);
+const visibleGuardCheckId = ref<string | undefined>(getLatestGuardCheck(props.room)?.id);
 const pendingRevealRollId = ref<string | undefined>();
+const pendingRevealGuardCheckId = ref<string | undefined>();
 const activeEffectRollId = ref<string | undefined>();
 const activeFloatingEffects = ref<FloatingEffect[]>([]);
 const animatedRollIds = new Set<string>();
@@ -129,6 +134,27 @@ const winnerText = computed(() => {
 });
 const pendingRoll = computed(() => room.value.pendingRoll);
 const pendingRollDecision = computed(() => room.value.pendingRollDecision);
+const pendingGuardCheck = computed(() => room.value.pendingGuardCheck);
+const guardCheckActor = computed(() => {
+  const pending = pendingGuardCheck.value;
+  if (!pending) return undefined;
+  return room.value.players.find((player) => player.id === pending.actorId);
+});
+const visibleGuardCheckEvent = computed(() => {
+  if (rollMode.value !== "guard" || (rollPhase.value !== "reveal" && rollPhase.value !== "idle")) return undefined;
+  return room.value.battleLog.find((event) => event.id === visibleGuardCheckId.value && event.type === "guardCheck");
+});
+const displayedGuardDice = computed(() => visibleGuardCheckEvent.value?.dice?.[0] ?? "?");
+const isGuardCheckMine = computed(() => {
+  const pending = pendingGuardCheck.value;
+  if (!pending) return false;
+  if (isDuoMode.value) {
+    const actor = guardCheckActor.value;
+    return activeControllerId.value === props.playerId && pending.controllerId === props.playerId && actor?.controllerId === props.playerId;
+  }
+  return pending.actorId === props.playerId && activePlayer.value?.id === props.playerId;
+});
+const canRollGuardCheck = computed(() => Boolean(pendingGuardCheck.value && isGuardCheckMine.value && !isRolling.value && !rollRequestLocked.value));
 const isPendingMine = computed(() => {
   const pending = pendingRoll.value;
   if (!pending) return false;
@@ -149,7 +175,7 @@ const isDecisionMine = computed(() => {
 });
 const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
 const isSelfDead = computed(() => Boolean(me.value?.isDead));
-const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !isRolling.value && !rollRequestLocked.value));
+const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !pendingGuardCheck.value && !isRolling.value && !rollRequestLocked.value));
 const shouldShowActionSlots = computed(() => Boolean(canUseActionSlots.value && !isSelfDead.value));
 const rematchReadyIds = computed(() => room.value.rematchReadyPlayerIds ?? []);
 const isRematchReady = computed(() => rematchReadyIds.value.includes(props.playerId));
@@ -193,6 +219,8 @@ const actionStageText = computed(() => {
   if (me.value?.isDead) return "你已死亡，等待本局结束";
   if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
   if (isRolling.value) return "骰子滚动中……";
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "架盾判定：点击投骰";
+  if (pendingGuardCheck.value) return `等待 ${guardCheckActor.value?.nickname ?? "山盾"} 进行架盾判定`;
   if (pendingRollDecision.value && isDecisionMine.value) return "请选择本回合行动";
   if (pendingRollDecision.value) return `等待 ${activePlayer.value?.nickname ?? "玩家"} 选择骰子用途`;
   if (pendingRoll.value && isPendingMine.value) return "技能触发：请继续投骰";
@@ -218,17 +246,47 @@ const actionSlots = computed<RollDecisionAvailableAction[]>(() => {
   if (!decision) return [];
   return decision.availableActions ?? [];
 });
+const activeDecisionActor = computed(() => {
+  const decision = pendingRollDecision.value;
+  if (!decision) return undefined;
+  return room.value.players.find((player) => player.id === decision.actorId);
+});
+const selfDestructSlot = computed(() => actionSlots.value.find((slot) => slot.requiresSelfDamageAmount));
+const shouldShowSelfDestructChoices = computed(() => Boolean(canUseActionSlots.value && selfDestructSlot.value?.enabled && activeDecisionActor.value?.characterId === "self_destructor"));
+const selfDestructAmounts = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 watch(
   () => props.room,
   (nextRoom) => {
     const nextRollId = getLatestRoll(nextRoom)?.id;
     const shownRollId = getLatestRoll(displayedRoom.value)?.id;
+    const nextGuardCheckId = getLatestGuardCheck(nextRoom)?.id;
+    const shownGuardCheckId = getLatestGuardCheck(displayedRoom.value)?.id;
 
-    if (nextRollId && nextRollId !== shownRollId) {
+    if (nextGuardCheckId && nextGuardCheckId !== shownGuardCheckId && isRolling.value && rollMode.value === "guard") {
+      pendingRoom.value = cloneRoomForDisplay(nextRoom);
+      pendingRevealGuardCheckId.value = nextGuardCheckId;
+      return;
+    }
+
+    if (nextRollId && nextRollId !== shownRollId && isRolling.value) {
       pendingRoom.value = cloneRoomForDisplay(nextRoom);
       pendingRevealRollId.value = nextRollId;
-      startRollAnimation(false);
+      return;
+    }
+
+    if (nextGuardCheckId && nextGuardCheckId !== shownGuardCheckId) {
+      displayedRoom.value = cloneRoomForDisplay(nextRoom);
+      visibleGuardCheckId.value = nextGuardCheckId;
+      rollRequestLocked.value = false;
+      return;
+    }
+
+    if (nextRollId && nextRollId !== shownRollId) {
+      displayedRoom.value = cloneRoomForDisplay(nextRoom);
+      visibleRollId.value = nextRollId;
+      startEffectWindow(nextRollId);
+      rollRequestLocked.value = false;
       return;
     }
 
@@ -261,16 +319,26 @@ onUnmounted(() => {
 });
 
 const visibleRoll = computed(() => {
+  if (rollMode.value === "guard") return undefined;
   if (rollPhase.value !== "idle" && rollPhase.value !== "reveal") return undefined;
   return room.value.battleLog.find((event) => event.id === visibleRollId.value && event.type === "roll");
 });
+const currentDiceMode = computed<CurrentDiceMode>(() => {
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "guard_check";
+  if (rollMode.value === "guard" && (isRolling.value || visibleGuardCheckEvent.value)) return "guard_check";
+  if (pendingRollDecision.value || visibleRoll.value || pendingRoll.value) return "action_roll";
+  return null;
+});
 const displayedDiceValues = computed(() => {
   if (isRolling.value) return [rollPhase.value === "pause" ? "..." : rollingDice.value];
+  if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value?.dice?.length) return visibleGuardCheckEvent.value.dice;
+  if (currentDiceMode.value === "guard_check") return ["?"];
   if (pendingRollDecision.value) return [pendingRollDecision.value.currentRoll];
   return visibleRoll.value?.dice ?? ["?"];
 });
 
 const latestActionEvents = computed(() => {
+  if (currentDiceMode.value === "guard_check") return [];
   const rollId = visibleRoll.value?.id;
   const firstRollIndex = room.value.battleLog.findIndex((event) => event.id === rollId);
   if (firstRollIndex < 0) return [];
@@ -280,11 +348,29 @@ const latestActionEvents = computed(() => {
 
 const latestSkill = computed(() => latestActionEvents.value.filter((event) => event.type === "skill"));
 const latestDiceText = computed(() => {
+  if (currentDiceMode.value === "guard_check" && isRolling.value) return "架盾判定中……";
+  if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value) return visibleGuardCheckEvent.value.message;
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "1-4 架盾继续，5-6 架盾结束";
+  if (pendingGuardCheck.value) return "对方正在进行架盾判定";
   if (isRolling.value) return pendingRoll.value?.message ?? "";
   if (pendingRollDecision.value) return `当前骰点 ${pendingRollDecision.value.currentRoll}`;
   const dice = visibleRoll.value?.dice ?? [];
   if (dice.length === 0) return pendingRoll.value?.message ?? "等待投骰";
   return `投出了 ${dice.join("、")} 点`;
+});
+
+const dicePanelTitle = computed(() => {
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "架盾判定";
+  if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value) return "架盾判定";
+  return latestDiceText.value;
+});
+
+const dicePanelDetail = computed(() => {
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "1-4 架盾继续，5-6 架盾结束";
+  if (pendingGuardCheck.value) return "对方正在进行架盾判定";
+  if (currentDiceMode.value === "guard_check" && visibleGuardCheckEvent.value) return visibleGuardCheckEvent.value.message;
+  if (pendingRoll.value && !isRolling.value) return pendingRoll.value.message;
+  return visibleRoll.value?.message;
 });
 
 const currentActionTitle = computed(() => {
@@ -293,12 +379,16 @@ const currentActionTitle = computed(() => {
 });
 
 const currentDiceValueText = computed(() => {
+  if (pendingGuardCheck.value) return String(displayedGuardDice.value);
   if (pendingRollDecision.value) return String(pendingRollDecision.value.currentRoll);
   return latestDiceText.value;
 });
 
 const currentActionLines = computed(() => {
   const actorName = activePlayer.value?.nickname ?? "玩家";
+  if (pendingGuardCheck.value) {
+    return [`架盾角色：${guardCheckActor.value?.nickname ?? "山盾"}`, `架盾判定骰：${displayedGuardDice.value}`, isGuardCheckMine.value ? "点击架盾判定骰子" : "等待架盾判定"];
+  }
   if (isSelfDead.value) {
     return [`当前行动：${actorName}`, `当前骰点：${currentDiceValueText.value}`, `等待 ${actorName} 操作`];
   }
@@ -310,6 +400,8 @@ const currentActionLines = computed(() => {
 
 const rollButtonText = computed(() => {
   if (isRolling.value) return "摇骰中...";
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "投骰";
+  if (pendingGuardCheck.value) return "等待架盾判定";
   if (pendingRollDecision.value) return "等待选择";
   if (pendingRoll.value) return isPendingMine.value ? "继续投骰" : "等待继续投骰";
   return "投骰";
@@ -320,6 +412,8 @@ const turnGuideText = computed(() => {
   if (me.value?.isDead) return "你已死亡，等待本局结束";
   if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
   if (isRolling.value) return "骰子滚动中……";
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "架盾判定：点击投骰";
+  if (pendingGuardCheck.value) return `等待【${guardCheckActor.value?.nickname ?? "山盾"}】进行架盾判定`;
   if (pendingRollDecision.value && isDecisionMine.value) return "骰点已揭示：选择一个骰子行动卡槽";
   if (pendingRollDecision.value) return `等待【${activePlayer.value?.nickname ?? "玩家"}】选择骰子用途`;
   if (pendingRoll.value && isPendingMine.value) return "技能触发：请继续投骰";
@@ -332,20 +426,21 @@ const turnGuideTone = computed(() => {
   if (room.value.phase === "gameOver") return "ended";
   if (me.value?.isDead) return "dead";
   if (rollRequestLocked.value || isRolling.value) return "busy";
+  if (pendingGuardCheck.value && isGuardCheckMine.value) return "mine";
   if (pendingRoll.value && isPendingMine.value) return "continue";
   if (isMyTurn.value) return "mine";
   return "waiting";
 });
 
 const canRoll = computed(() => {
-  if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || pendingRollDecision.value || !isMyTurn.value) return false;
+  if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || pendingRollDecision.value || pendingGuardCheck.value || !isMyTurn.value) return false;
   if (pendingRoll.value) return isPendingMine.value;
   return Boolean(selectedTargetId.value) && aliveEnemies.value.length > 0;
 });
 
 const canRollForDuo = computed(() => {
   if (isDuoMode.value && room.value.phase === "battle") {
-    if (rollRequestLocked.value || isRolling.value || pendingRollDecision.value) return false;
+    if (rollRequestLocked.value || isRolling.value || pendingRollDecision.value || pendingGuardCheck.value) return false;
     if (pendingRoll.value) return isPendingMine.value;
     return isMyDuoActionTurn.value && Boolean(selectedActor.value?.selectedTargetId);
   }
@@ -376,10 +471,26 @@ function hpPercent(player: Player): number {
 function playerStatus(player: Player): string {
   if (!player.isOnline) return "离线";
   if (player.isDead) return "死亡";
+  if (player.characterId === "mountain_shield" && player.guarding) return "架盾";
   if (pendingRoll.value?.playerId === player.id) return "待继续";
   if (player.id === activePlayer.value?.id) return "行动中";
   if (hasInvincible(player)) return "无敌";
   return "待机";
+}
+
+function guardBadges(player: Player): string[] {
+  if (player.characterId === "mountain_shield" && player.guarding) {
+    return ["架盾", "护甲+1", "团体护甲+2"];
+  }
+  if (isDuoMode.value && isProtectedByGuardingMountainShield(player)) {
+    return ["受架盾保护", "团体护甲+2"];
+  }
+  return [];
+}
+
+function isProtectedByGuardingMountainShield(player: Player): boolean {
+  if (!player.teamId || player.characterId === "mountain_shield") return false;
+  return room.value.players.some((item) => item.characterId === "mountain_shield" && item.guarding && !item.isDead && item.teamId === player.teamId);
 }
 
 function hasInvincible(player: Player): boolean {
@@ -413,7 +524,7 @@ function zhaoZilongHitText(player: Player): string {
 }
 
 function canSelectTarget(player: Player): boolean {
-  return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.id !== props.playerId && !player.isDead;
+  return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.id !== props.playerId && !player.isDead;
 }
 
 function selectTargetFromSeat(player: Player): void {
@@ -422,11 +533,11 @@ function selectTargetFromSeat(player: Player): void {
 }
 
 function canSelectDuoActor(player: Player): boolean {
-  return isMyDuoControllerTurn.value && !pendingRoll.value && !pendingRollDecision.value && player.controllerId === props.playerId && !player.isDead;
+  return isMyDuoControllerTurn.value && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.controllerId === props.playerId && !player.isDead;
 }
 
 function canSelectDuoEnemy(player: Player): boolean {
-  return isDuoMode.value && Boolean(selectedActor.value) && !pendingRoll.value && !pendingRollDecision.value && player.teamId !== selectedActor.value?.teamId && player.controllerId !== props.playerId && !player.isDead;
+  return isDuoMode.value && Boolean(selectedActor.value) && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.teamId !== selectedActor.value?.teamId && player.controllerId !== props.playerId && !player.isDead;
 }
 
 function handleDuoSeatClick(player: Player): void {
@@ -469,11 +580,28 @@ function floatingEffectFor(player: Player, type: FloatingEffect["type"]): Floati
 function rollWithAnimation(): void {
   if (isDuoMode.value ? !canRollForDuo.value : !canRoll.value) return;
   rollRequestLocked.value = true;
-  startRollAnimation(true);
+  startRollAnimation("normal", true);
   emit("rollDice");
 }
 
-function confirmDecision(choice: RollDecisionChoice, summonerSkillId?: SummonerSkillId): void {
+function rollGuardCheck(): void {
+  if (!canRollGuardCheck.value) return;
+  rollRequestLocked.value = true;
+  startRollAnimation("guard", true);
+  socket.emit("rollGuardCheck", {}, () => {
+    if (!isRolling.value) rollRequestLocked.value = false;
+  });
+}
+
+function rollMainDice(): void {
+  if (pendingGuardCheck.value) {
+    rollGuardCheck();
+    return;
+  }
+  rollWithAnimation();
+}
+
+function confirmDecision(choice: RollDecisionChoice, summonerSkillId?: SummonerSkillId, selfDamageAmount?: number): void {
   const decision = pendingRollDecision.value;
   if (!decision || !isDecisionMine.value || rollRequestLocked.value) return;
   rollRequestLocked.value = true;
@@ -485,14 +613,25 @@ function confirmDecision(choice: RollDecisionChoice, summonerSkillId?: SummonerS
     skillId: summonerSkillId,
     decisionId: decision.id,
     choice,
-    summonerSkillId
+    summonerSkillId,
+    selfDamageAmount
   });
 }
 
 function confirmActionSlot(slot: RollDecisionAvailableAction): void {
   if (!pendingRollDecision.value || !isDecisionMine.value || rollRequestLocked.value || !slot.enabled) return;
+  if (slot.requiresSelfDamageAmount) return;
   const summonerSkillId = slot.id === "summoner_skill" && isSummonerSkillId(slot.skillId) ? slot.skillId : undefined;
   confirmDecision(slot.id, summonerSkillId);
+}
+
+function canChooseSelfDestructAmount(amount: number): boolean {
+  return Boolean(shouldShowSelfDestructChoices.value && activeDecisionActor.value && amount <= activeDecisionActor.value.hp);
+}
+
+function confirmSelfDestructAmount(amount: number): void {
+  if (!canChooseSelfDestructAmount(amount) || rollRequestLocked.value) return;
+  confirmDecision("character_skill", undefined, amount);
 }
 
 function isSummonerSkillId(value: unknown): value is SummonerSkillId {
@@ -525,9 +664,10 @@ function readyForRematch(): void {
   socket.emit("readyForRematch", {});
 }
 
-function startRollAnimation(shouldEmit: boolean): void {
+function startRollAnimation(mode: RollMode, shouldEmit: boolean): void {
   if (isRolling.value) return;
   clearRollTimers();
+  rollMode.value = mode;
   activeEffectRollId.value = undefined;
   activeFloatingEffects.value = [];
   activeSkillHints.value = [];
@@ -552,6 +692,7 @@ function startRollAnimation(shouldEmit: boolean): void {
   timers.push(window.setTimeout(() => {
     if (rollPhase.value !== "idle" && !pendingRoom.value) {
       rollPhase.value = "idle";
+      rollMode.value = "normal";
       rollRequestLocked.value = false;
       window.clearInterval(rollingTimer);
       rollingTimer = undefined;
@@ -561,6 +702,27 @@ function startRollAnimation(shouldEmit: boolean): void {
 
 function revealServerRoll(): void {
   const revealRoom = pendingRoom.value ?? cloneRoomForDisplay(props.room);
+  if (rollMode.value === "guard") {
+    const revealGuardCheckId = pendingRevealGuardCheckId.value ?? getLatestGuardCheck(revealRoom)?.id;
+    if (!revealGuardCheckId || revealGuardCheckId === visibleGuardCheckId.value) return;
+
+    displayedRoom.value = revealRoom;
+    visibleGuardCheckId.value = revealGuardCheckId;
+    pendingRoom.value = null;
+    pendingRevealGuardCheckId.value = undefined;
+    rollRequestLocked.value = false;
+    rollPhase.value = "reveal";
+    window.clearInterval(rollingTimer);
+    rollingTimer = undefined;
+    timers.push(window.setTimeout(() => {
+      rollPhase.value = "idle";
+      visibleRollId.value = undefined;
+      pendingRevealRollId.value = undefined;
+      rollMode.value = "normal";
+    }, 420));
+    return;
+  }
+
   const revealRollId = pendingRevealRollId.value ?? getLatestRoll(revealRoom)?.id;
   if (!revealRollId || revealRollId === visibleRollId.value) return;
 
@@ -577,6 +739,7 @@ function revealServerRoll(): void {
   rollingTimer = undefined;
   timers.push(window.setTimeout(() => {
     rollPhase.value = "idle";
+    rollMode.value = "normal";
   }, 220));
 }
 
@@ -661,6 +824,10 @@ function randomDice(): number {
 
 function getLatestRoll(targetRoom: Room): GameEvent | undefined {
   return targetRoom.battleLog.find((event) => event.type === "roll");
+}
+
+function getLatestGuardCheck(targetRoom: Room): GameEvent | undefined {
+  return targetRoom.battleLog.find((event) => event.type === "guardCheck");
 }
 
 function startEffectWindow(rollId: string): void {
@@ -790,6 +957,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
               <div class="seat-tags">
                 <span>{{ characterName(player.characterId) }}</span>
                 <span>{{ summonerSkillName(player.summonerSkillId) }}</span>
+                <span v-for="badge in guardBadges(player)" :key="`${player.id}-${badge}`" class="guard-badge">{{ badge }}</span>
               </div>
               <div class="seat-stats">
                 <span>♥ {{ player.hp }}/{{ player.maxHp }}</span>
@@ -806,11 +974,15 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
     <section v-if="isDuoMode" class="action-center duo-action-center">
       <div class="action-phase">
         <span>当前阶段</span>
-        <strong v-if="selectedActor && !selectedActor.selectedTargetId">已选角色：{{ selectedActor.nickname }}，请选择攻击目标</strong>
+        <strong v-if="pendingGuardCheck && isGuardCheckMine">架盾判定</strong>
+        <strong v-else-if="pendingGuardCheck">对方正在进行架盾判定</strong>
+        <strong v-else-if="selectedActor && !selectedActor.selectedTargetId">已选角色：{{ selectedActor.nickname }}，请选择攻击目标</strong>
         <strong v-else-if="selectedActor && selectedActor.selectedTargetId">已选目标，可以投骰</strong>
         <strong v-else-if="isMyDuoControllerTurn">请选择你的一个角色行动</strong>
         <strong v-else>等待对方选择行动角色</strong>
-        <small v-if="isMyDuoControllerTurn && !selectedActor">只能选择自己队伍中存活的角色。</small>
+        <small v-if="pendingGuardCheck && isGuardCheckMine">1-4 架盾继续，5-6 架盾结束。</small>
+        <small v-else-if="pendingGuardCheck">等待判定完成。</small>
+        <small v-else-if="isMyDuoControllerTurn && !selectedActor">只能选择自己队伍中存活的角色。</small>
         <small v-else-if="selectedActor && !selectedActor.selectedTargetId">点击敌方角色头像选择目标。</small>
         <small v-else-if="selectedActor && selectedActor.selectedTargetId">点击投骰按钮进行骰子投掷。</small>
       </div>
@@ -827,12 +999,31 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           </transition-group>
         </div>
         <div class="action-summary">
-          <strong>{{ latestDiceText }}</strong>
-          <p v-if="pendingRoll && !isRolling">{{ pendingRoll.message }}</p>
-          <p v-else-if="visibleRoll">{{ visibleRoll.message }}</p>
+          <strong>{{ dicePanelTitle }}</strong>
+          <p v-if="dicePanelDetail">{{ dicePanelDetail }}</p>
           <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
         </div>
         <div v-if="shouldShowActionSlots" class="dice-action-slots">
+          <div v-if="shouldShowSelfDestructChoices" class="self-destruct-panel">
+            <div class="self-destruct-title">
+              <strong>选择自爆扣血量</strong>
+              <span>造成双倍普通伤害</span>
+            </div>
+            <div class="self-destruct-grid">
+              <button
+                v-for="amount in selfDestructAmounts"
+                :key="`duo-self-destruct-${amount}`"
+                class="self-destruct-btn"
+                type="button"
+                :disabled="!canChooseSelfDestructAmount(amount) || rollRequestLocked"
+                :title="canChooseSelfDestructAmount(amount) ? `扣 ${amount} 血，造成 ${amount * 2} 伤害` : '血量不足'"
+                @click="confirmSelfDestructAmount(amount)"
+              >
+                <strong>{{ amount }}</strong>
+                <small>扣 {{ amount }} / 伤 {{ amount * 2 }}</small>
+              </button>
+            </div>
+          </div>
           <div class="slot-heading">
             <strong>行动卡槽 · 🎲 {{ pendingRollDecision?.currentRoll }}</strong>
           </div>
@@ -842,17 +1033,17 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
               :key="slot.id"
               class="dice-action-slot"
               type="button"
-              :class="{ enabled: slot.enabled, disabled: !slot.enabled, settling: selectedActionSlot === slot.id && rollRequestLocked }"
-              :disabled="!canUseActionSlots || !slot.enabled"
+              :class="{ enabled: slot.enabled && !slot.requiresSelfDamageAmount, disabled: !slot.enabled || slot.requiresSelfDamageAmount, settling: selectedActionSlot === slot.id && rollRequestLocked }"
+              :disabled="!canUseActionSlots || !slot.enabled || slot.requiresSelfDamageAmount"
               @click="confirmActionSlot(slot)"
             >
               <span class="slot-dice">🎲 {{ pendingRollDecision?.currentRoll }}</span>
               <strong>{{ selectedActionSlot === slot.id && rollRequestLocked ? "结算中……" : slot.label }}</strong>
-              <small>{{ slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
+              <small>{{ slot.requiresSelfDamageAmount ? "请在上方选择扣血量" : slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
             </button>
           </div>
         </div>
-        <button class="roll-btn" type="button" :disabled="!canRollForDuo" @click="rollWithAnimation">
+        <button v-if="!pendingGuardCheck || isGuardCheckMine" class="roll-btn" type="button" :disabled="pendingGuardCheck ? !canRollGuardCheck : !canRollForDuo" @click="rollMainDice">
           {{ rollButtonText }}
         </button>
       </div>
@@ -919,6 +1110,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           <div class="seat-tags">
             <span>{{ characterName(player.characterId) }}</span>
             <span>{{ summonerSkillName(player.summonerSkillId) }}{{ player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : "" }}</span>
+            <span v-for="badge in guardBadges(player)" :key="`${player.id}-${badge}`" class="guard-badge">{{ badge }}</span>
           </div>
           <div class="seat-stats">
             <span>♥ {{ player.hp }}</span>
@@ -951,12 +1143,31 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           </transition-group>
         </div>
         <div class="action-summary">
-          <strong>{{ latestDiceText }}</strong>
-          <p v-if="pendingRoll && !isRolling">{{ pendingRoll.message }}</p>
-          <p v-else-if="visibleRoll">{{ visibleRoll.message }}</p>
+          <strong>{{ dicePanelTitle }}</strong>
+          <p v-if="dicePanelDetail">{{ dicePanelDetail }}</p>
           <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
         </div>
         <div v-if="shouldShowActionSlots" class="dice-action-slots">
+          <div v-if="shouldShowSelfDestructChoices" class="self-destruct-panel">
+            <div class="self-destruct-title">
+              <strong>选择自爆扣血量</strong>
+              <span>造成双倍普通伤害</span>
+            </div>
+            <div class="self-destruct-grid">
+              <button
+                v-for="amount in selfDestructAmounts"
+                :key="`classic-self-destruct-${amount}`"
+                class="self-destruct-btn"
+                type="button"
+                :disabled="!canChooseSelfDestructAmount(amount) || rollRequestLocked"
+                :title="canChooseSelfDestructAmount(amount) ? `扣 ${amount} 血，造成 ${amount * 2} 伤害` : '血量不足'"
+                @click="confirmSelfDestructAmount(amount)"
+              >
+                <strong>{{ amount }}</strong>
+                <small>扣 {{ amount }} / 伤 {{ amount * 2 }}</small>
+              </button>
+            </div>
+          </div>
           <div class="slot-heading">
             <strong>行动卡槽 · 🎲 {{ pendingRollDecision?.currentRoll }}</strong>
           </div>
@@ -966,17 +1177,17 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
               :key="slot.id"
               class="dice-action-slot"
               type="button"
-              :class="{ enabled: slot.enabled, disabled: !slot.enabled, settling: selectedActionSlot === slot.id && rollRequestLocked }"
-              :disabled="!canUseActionSlots || !slot.enabled"
+              :class="{ enabled: slot.enabled && !slot.requiresSelfDamageAmount, disabled: !slot.enabled || slot.requiresSelfDamageAmount, settling: selectedActionSlot === slot.id && rollRequestLocked }"
+              :disabled="!canUseActionSlots || !slot.enabled || slot.requiresSelfDamageAmount"
               @click="confirmActionSlot(slot)"
             >
               <span class="slot-dice">🎲 {{ pendingRollDecision?.currentRoll }}</span>
               <strong>{{ selectedActionSlot === slot.id && rollRequestLocked ? "结算中……" : slot.label }}</strong>
-              <small>{{ slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
+              <small>{{ slot.requiresSelfDamageAmount ? "请在上方选择扣血量" : slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
             </button>
           </div>
         </div>
-        <button class="roll-btn" type="button" :disabled="!canRoll" @click="rollWithAnimation">
+        <button v-if="!pendingGuardCheck || isGuardCheckMine" class="roll-btn" type="button" :disabled="pendingGuardCheck ? !canRollGuardCheck : !canRoll" @click="rollMainDice">
           {{ rollButtonText }}
         </button>
       </div>
@@ -1008,6 +1219,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           <span v-if="me.shield > 0">🛡 {{ me.shield }}</span>
           <span>{{ playerStatus(me) }} · {{ selfActionStateText }}</span>
           <span>{{ selfSummonerText }}</span>
+          <span v-for="badge in guardBadges(me)" :key="`self-${badge}`" class="guard-badge">{{ badge }}</span>
           <span v-if="lastRollText(me)">{{ lastRollText(me) }}</span>
         </div>
         <div class="self-hp-bar" aria-label="自己的血量">
@@ -1226,6 +1438,12 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   white-space: nowrap;
 }
 
+.seat-tags .guard-badge,
+.self-meta .guard-badge {
+  background: #ecfdf5;
+  color: #047857;
+}
+
 .action-center {
   display: grid;
   gap: 0;
@@ -1285,6 +1503,79 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
 .dice-action-slots {
   margin-top: 4px;
+}
+
+.self-destruct-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7ed;
+}
+
+.self-destruct-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: #7f1d1d;
+}
+
+.self-destruct-title strong {
+  font-size: 13px;
+}
+
+.self-destruct-title span {
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.self-destruct-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.self-destruct-btn {
+  min-height: 46px;
+  border: 1px solid #fb923c;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #9a3412;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.self-destruct-btn strong,
+.self-destruct-btn small {
+  display: block;
+}
+
+.self-destruct-btn strong {
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.self-destruct-btn small {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.self-destruct-btn:not(:disabled):hover {
+  border-color: #ea580c;
+  background: #ffedd5;
+}
+
+.self-destruct-btn:disabled {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 .slot-grid {
@@ -1394,6 +1685,14 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
   .slot-grid {
     padding-bottom: 4px;
+  }
+
+  .self-destruct-title {
+    display: grid;
+  }
+
+  .self-destruct-btn {
+    min-height: 44px;
   }
 
   .dice-action-slot {

@@ -12,3 +12,5 @@ coverage/
 *.tsbuildinfo
 *.vue.js
 *.vue.d.ts
+server/data/*.db
+server/data/*.sqlite

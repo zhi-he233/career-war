@@ -158,4 +158,13 @@ export interface RoguelitePanelVM {
     hint: string;
     nextStage: number;
   };
+
+  resources?: {
+    fateTokens?: { current: number; max: number };
+    lowRollCharge?: number;
+    consecutiveLowRolls?: { current: number; max: number };
+    shieldOverloadUsed?: boolean;
+  };
+
+  enemyTraits?: string[];
 }

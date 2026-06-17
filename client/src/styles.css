@@ -2508,6 +2508,26 @@ h2 {
 .stage-elite { border-color: #c4b5fd; }
 .stage-boss { border-color: #fecaca; }
 
+/* Roguelite dynamic resources */
+.roguelite-resources {
+  display: flex; flex-wrap: wrap; gap: 5px;
+  padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc;
+}
+.resource-chip { border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 900; }
+.dice-chip { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.charge-chip { background: #ede9fe; color: #6b21a8; border: 1px solid #c4b5fd; }
+.low-chip { background: #e2e8f0; color: #475569; border: 1px solid #cbd5e1; }
+.overload-chip { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
+.overload-chip.used { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; text-decoration: line-through; }
+
+/* Roguelite enemy traits */
+.roguelite-enemy-traits {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  padding: 5px 8px; border: 1px solid #fee2e2; border-radius: 6px; background: #fef2f2;
+}
+.trait-label { color: #991b1b; font-size: 11px; font-weight: 900; text-transform: uppercase; }
+.trait-chip { border-radius: 999px; padding: 2px 8px; background: #fee2e2; color: #7f1d1d; font-size: 10px; font-weight: 800; border: 1px solid #fecaca; }
+
 .round-badge {
   display: inline-block;
   border-radius: var(--radius-full);

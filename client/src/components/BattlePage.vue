@@ -347,6 +347,8 @@ const roguelitePanelVM = computed<RoguelitePanelVM>(() => ({
   boss: buildRogueliteBossVM(),
   enemy: buildRogueliteEnemyVM(),
   perks: buildRoguelitePerksVM(),
+  resources: buildRogueliteResourcesVM(),
+  enemyTraits: buildRogueliteEnemyTraitsVM(),
 
   rewardPhase: room.value.phase === "reward" ? buildRogueliteRewardPhaseVM() : undefined,
   continuePhase: isRogueliteContinuePhase.value ? buildRogueliteContinuePhaseVM() : undefined
@@ -396,6 +398,34 @@ function buildRogueliteEnemyVM(): RoguelitePanelVM["enemy"] {
     damageBonus: info.damageBonus ?? 0,
     description: info.description
   };
+}
+
+function buildRogueliteResourcesVM(): RoguelitePanelVM["resources"] {
+  const m = me.value;
+  if (!m || room.value.phase !== "battle") return undefined;
+  const res: NonNullable<RoguelitePanelVM["resources"]> = {};
+  const hasFateTokens = m.roguelitePerkStacks?.["fate_tokens"];
+  if (hasFateTokens) res.fateTokens = { current: m.rogueliteFateTokens ?? 0, max: 3 };
+  if ((m.roguelitePerkStacks?.["low_roll_charge"])) res.lowRollCharge = m.rogueliteLowRollCharge ?? 0;
+  if (m.roguelitePerkStacks?.["lucky_floor"]) res.consecutiveLowRolls = { current: m.rogueliteConsecutiveLowRolls ?? 0, max: 2 };
+  if (m.roguelitePerkStacks?.["shield_overload"]) res.shieldOverloadUsed = m.rogueliteShieldOverloadUsed ?? false;
+  return Object.keys(res).length > 0 ? res : undefined;
+}
+
+function buildRogueliteEnemyTraitsVM(): string[] | undefined {
+  if (room.value.phase !== "battle") return undefined;
+  const bot = room.value.players.find(p => p.isBot);
+  if (!bot) return undefined;
+  const traits: string[] = [];
+  const bid = bot.rogueliteBossId;
+  if (bid === "normal_shield_breaker") traits.push("破盾：攻击护盾额外 +2");
+  if (bid === "normal_armor_piercer") traits.push("穿甲：无视 1 点护甲");
+  if (bid === "normal_gambler") traits.push("赌徒：投 1 自伤，投 6 增伤");
+  if (bid === "elite_reaper") traits.push("收割：玩家低血时增伤");
+  if (bid === "elite_armor_piercing") traits.push("强穿甲：无视护甲，半血后增强");
+  if (bid === "boss_god_berserker") traits.push("狂战增伤", "生命阈值");
+  if (bid === "boss_gambler_dealer") traits.push("骰子操控", "赌注", "庄家通吃");
+  return traits.length > 0 ? traits : undefined;
 }
 
 function buildRoguelitePerksVM(): RoguelitePanelVM["perks"] {
@@ -469,7 +499,13 @@ const PERK_DISPLAY: Record<string, { name: string; category: "growth" | "boss"; 
   starter_recovery: { name: "续航开局", category: "growth", perLevelDesc: "最大生命 +4，战后额外恢复 +5" },
   berserker_blood: { name: "狂怒之血", category: "boss", perLevelDesc: "攻击额外造成已损失生命一半的伤害 + 每级额外 +2" },
   vampire_instinct: { name: "吸血本能", category: "boss", perLevelDesc: "造成生命伤害后回复 2，溢出转护盾" },
-  dragon_courage: { name: "龙胆之力", category: "boss", perLevelDesc: "攻击无视护盾和护甲，每级额外伤害 +1" }
+  dragon_courage: { name: "龙胆之力", category: "boss", perLevelDesc: "攻击无视护盾和护甲，每级额外伤害 +1" },
+  vitality_boost: { name: "生命强化", category: "growth", perLevelDesc: "最大生命 +4" },
+  shield_wall: { name: "护盾壁垒", category: "growth", perLevelDesc: "每关开始护盾 +4" },
+  first_strike: { name: "先手优势", category: "growth", perLevelDesc: "每关首次攻击伤害 +3" },
+  low_hp_armor: { name: "绝境护甲", category: "growth", perLevelDesc: "血量低于一半时护甲 +1" },
+  kill_heal: { name: "战利品", category: "growth", perLevelDesc: "击败敌人后回复 3 点生命" },
+  comeback: { name: "翻盘之力", category: "growth", perLevelDesc: "血量低于一半时伤害 +3" }
 };
 
 const SKILL_DISPLAY: Record<string, { name: string; perLevelDesc: string }> = {
@@ -511,7 +547,10 @@ const BOSS_SKILL_DISPLAY: Record<string, string[]> = {
   boss_boxer_king: ["蓄力：投到 1/2 时蓄力，下次攻击额外伤害", "重拳：消耗蓄力造成额外伤害（每层 +3）", "狂暴：半血后伤害 +2"],
   boss_blood_demon: ["吸血攻击：造成生命伤害后回复 2 点血", "血盾：投到 3 时获得 4 点护盾", "血祭：血量低于 40% 时回复 5 点血并获得 3 点护盾"],
   boss_shield_guard: ["坚守：天生护甲 +1", "架盾：投到 1/2 时获得 5 点护盾并准备减伤", "盾击反击：架盾后受到攻击时反击 2 点伤害"],
-  boss_god_berserker: ["狂战：已损失生命转化为额外伤害", "生命阈值：15 / 10 / 5 / 1（一次只触发一个）", "濒死一击：1 血后完成最后一次攻击才会倒下"]
+  boss_god_berserker: ["狂战：已损失生命转化为额外伤害", "生命阈值：15 / 10 / 5 / 1（一次只触发一个）", "濒死一击：1 血后完成最后一次攻击才会倒下"],
+  boss_gambler_dealer: ["骰子操控：投到 1-3 时重投一次", "赌注：玩家投 6 时获得 3 点护盾", "庄家通吃：血量低于 30% 时伤害 +3"],
+  elite_iron_skin: ["铁皮：天生护甲 +1，每回合获 2 护盾"],
+  elite_berserker: ["狂暴：血量低于一半时伤害 +3"]
 };
 
 const currentBossPlayer = computed(() => {

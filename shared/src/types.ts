@@ -81,6 +81,16 @@ export interface Player {
   rogueliteStartShield?: number;
   roguelitePostBattleHealBonus?: number;
   roguelitePassiveIds?: string[];
+  rogueliteFirstStrikeUsed?: boolean;
+  rogueliteLowHpArmor?: number;
+  rogueliteKillHeal?: number;
+  rogueliteComebackDamage?: number;
+  rogueliteFateTokens?: number;
+  rogueliteLowRollCharge?: number;
+  rogueliteConsecutiveLowRolls?: number;
+  rogueliteShieldOverloadUsed?: boolean;
+  rogueliteShieldStrikeBonus?: number;
+  rogueliteLowRollDefenseShield?: number;
   zhaoZilongHitCount?: number;
   flameMarks?: number;
   guarding?: boolean;
@@ -173,7 +183,21 @@ export type RogueliteRewardType =
   | "flame_lord_mark"
   | "berserker_blood"
   | "vampire_instinct"
-  | "dragon_courage";
+  | "dragon_courage"
+  | "vitality_boost"
+  | "shield_wall"
+  | "first_strike"
+  | "low_hp_armor"
+  | "kill_heal"
+  | "comeback"
+  | "low_roll_defense"
+  | "shield_strike"
+  | "shield_overload"
+  | "sturdy_bulwark"
+  | "fate_tokens"
+  | "low_roll_charge"
+  | "desperate_reroll"
+  | "lucky_floor";
 
 export interface RogueliteReward {
   id: string;
@@ -181,6 +205,8 @@ export interface RogueliteReward {
   description: string;
   type: RogueliteRewardType;
   value: number;
+  tag?: "shield" | "dice" | "low_hp" | "burst" | "heal" | "armor" | "status";
+  maxStacks?: number;
 }
 
 export interface RogueliteRunState {

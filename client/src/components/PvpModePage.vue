@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import type { GameMode, RoomListItem } from "@career-war/shared";
+import { useAuth } from "../composables/useAuth";
 
 const props = defineProps<{
   inviteRoomId?: string;
@@ -15,7 +16,8 @@ const emit = defineEmits<{
   refreshRoomList: [];
 }>();
 
-const nickname = ref(localStorage.getItem("career-war-nickname") ?? "");
+const { currentUser } = useAuth();
+const nickname = ref((currentUser.value?.username || localStorage.getItem("career-war-nickname")) ?? "");
 const roomId = ref("");
 const inviteRoomId = ref("");
 const selectedMode = ref<GameMode | null>(null);
@@ -132,12 +134,6 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <strong>2V2 双角色（测试版）</strong>
         <small>两名真实玩家，每人控制两个同阵营角色，支持选角、投骰和行动结算。</small>
       </button>
-
-      <button class="pvp-mode-card available" type="button" @click="openPveMode">
-        <span class="mode-status ready">可进入</span>
-        <strong>人机练习</strong>
-        <small>单人 1V1：创建练习房间后选择职业和召唤师技能，开始后自动生成 AI 对手。</small>
-      </button>
     </div>
 
     <section v-else class="page-panel pvp-room-flow">
@@ -147,8 +143,8 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
       </div>
 
       <label class="field">
-        <span>昵称</span>
-        <input v-model="nickname" maxlength="12" placeholder="输入你的昵称" />
+        <span>{{ currentUser ? "游戏名（登录用户）" : "游客昵称" }}</span>
+        <input v-model="nickname" maxlength="12" placeholder="输入你的游戏名" />
       </label>
 
       <button v-if="!isInviteMode" class="primary-btn" type="button" :disabled="submitting" @click="createRoom">{{ submitting ? "创建中……" : isPveMode ? "创建人机练习" : "创建房间" }}</button>

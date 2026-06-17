@@ -288,7 +288,48 @@ export function rollForActivePlayer(room, playerId, ctx, requesterId) {
     decrementSummonerCooldown(actor);
     const events = [];
     applyTurnStartCharacterEffects(room, actor, events, ctx);
-    const first = ctx.rollDice();
+    let first = ctx.rollDice();
+    // ── Roguelite dice perks ──
+    if (room.gameMode === "pve_roguelite" && !actor.isBot) {
+        // 命运筹码: roll 1 → gain token; 3 tokens → auto +1
+        if (first === 1) {
+            actor.rogueliteFateTokens = (actor.rogueliteFateTokens ?? 0) + 1;
+            events.push(makeEvent(ctx.now, ctx.makeId, "skill", `命运筹码 +1（${actor.rogueliteFateTokens}/3）`, actor.id));
+        }
+        if ((actor.rogueliteFateTokens ?? 0) >= 3) {
+            const boosted = Math.min(6, first + 1);
+            if (boosted !== first) {
+                actor.rogueliteFateTokens = (actor.rogueliteFateTokens ?? 0) - 3;
+                first = boosted;
+                events.push(makeEvent(ctx.now, ctx.makeId, "skill", `命运筹码触发，骰点 +1 → ${first}`, actor.id));
+            }
+        }
+        // 幸运保底: track consecutive 1/2 rolls
+        if (actor.roguelitePerkStacks?.["lucky_floor"]) {
+            if (first <= 2) {
+                actor.rogueliteConsecutiveLowRolls = (actor.rogueliteConsecutiveLowRolls ?? 0) + 1;
+            }
+            else {
+                actor.rogueliteConsecutiveLowRolls = 0;
+            }
+            if ((actor.rogueliteConsecutiveLowRolls ?? 0) >= 2) {
+                first = Math.max(first, 4);
+                actor.rogueliteConsecutiveLowRolls = 0;
+                events.push(makeEvent(ctx.now, ctx.makeId, "skill", "幸运保底触发，骰点保底为 4", actor.id));
+            }
+        }
+        // 低点蓄力: roll 1/2/3 → gain charge
+        if (actor.roguelitePerkStacks?.["low_roll_charge"] && first >= 1 && first <= 3) {
+            actor.rogueliteLowRollCharge = (actor.rogueliteLowRollCharge ?? 0) + 1;
+            events.push(makeEvent(ctx.now, ctx.makeId, "skill", `低点蓄力 +1（${actor.rogueliteLowRollCharge} 层）`, actor.id));
+        }
+        // 低点防御: roll 1/2 → gain shield
+        const defShield = actor.rogueliteLowRollDefenseShield ?? 0;
+        if (defShield > 0 && (first === 1 || first === 2)) {
+            actor.shield += defShield;
+            events.push(makeEvent(ctx.now, ctx.makeId, "skill", `低点防御触发，获得 ${defShield} 护盾`, actor.id));
+        }
+    }
     const actorCharacter = characters[actor.characterId];
     events.push(makeEvent(ctx.now, ctx.makeId, "roll", `${actor.nickname}（${actorCharacter.name}）投出了 ${first} 点`, actor.id, target.id, [first]));
     room.pendingRollDecision = createPendingRollDecision(room, actor, target, first, events[0].id, ctx);
@@ -897,6 +938,66 @@ function finishAction(room, actor, target, outcome, events, ctx) {
             skillHintDrafts.push({ key: "god-berserker-fury", text: "狂战增伤", valueText: `+${missingHp}` });
             actor.rogueliteBossState = bossState;
         }
+        // ── 赌命庄家 Boss ──
+        if (actor.rogueliteBossId === "boss_gambler_dealer") {
+            // 骰子操控: roll 1-3 → reroll (must accept)
+            if (firstRoll >= 1 && firstRoll <= 3) {
+                const reroll = ctx.rollDice();
+                outcome.dice = [reroll];
+                outcome.damage = reroll;
+                outcome.skillMessages.push(`赌命庄家投出 ${firstRoll}，发动骰子操控，重投为 ${reroll}！`);
+            }
+            // 庄家通吃: HP < 30% → damage +3
+            if (actor.hp < actor.maxHp * 0.3 && outcome.damage > 0) {
+                if (!bossState.lowHpMode) {
+                    bossState.lowHpMode = true;
+                    outcome.skillMessages.push("赌命庄家发动庄家通吃，伤害 +3！");
+                }
+                if (bossState.lowHpMode)
+                    outcome.damage += 3;
+            }
+            actor.rogueliteBossState = bossState;
+        }
+        // ── Elite: 铁皮精英 ──
+        if (actor.rogueliteBossId === "elite_iron_skin") {
+            // 每回合开始获得 2 护盾
+            outcome.shieldGain += 2;
+            // Passive armor in getArmor
+        }
+        // ── Elite: 狂暴精英 ──
+        if (actor.rogueliteBossId === "elite_berserker" && outcome.damage > 0) {
+            if (actor.hp < actor.maxHp * 0.5) {
+                outcome.damage += 3;
+                outcome.skillMessages.push("狂暴精英低血狂暴，伤害 +3！");
+            }
+        }
+        // ── 普通怪：破盾兵 ──
+        if (actor.rogueliteBossId === "normal_shield_breaker" && outcome.damage > 0) {
+            const targetShield = target.shield;
+            if (targetShield > 0) {
+                outcome.damage += 2;
+                outcome.skillMessages.push("破盾兵击中护盾，额外 +2 伤害！");
+            }
+        }
+        // ── 普通怪：赌徒 ──
+        if (actor.rogueliteBossId === "normal_gambler") {
+            if (firstRoll === 1) {
+                outcome.damage = 0;
+                outcome.selfDamage = 1;
+                outcome.skillMessages.push("赌徒失手，自伤 1 点！");
+            }
+            if (firstRoll === 6 && outcome.damage > 0) {
+                outcome.damage += 2;
+                outcome.skillMessages.push("赌徒大赢，本次伤害 +2！");
+            }
+        }
+        // ── 精英：收割精英 ──
+        if (actor.rogueliteBossId === "elite_reaper" && outcome.damage > 0) {
+            if (target.hp < target.maxHp * 0.4) {
+                outcome.damage += 2;
+                outcome.skillMessages.push("收割精英嗅到残血，伤害 +2！");
+            }
+        }
     }
     // Roguelite boss ability: berserker_blood (stackable)
     const berserkerLevel = actor.roguelitePerkStacks?.["berserker_blood"] ?? 0;
@@ -922,10 +1023,43 @@ function finishAction(room, actor, target, outcome, events, ctx) {
         }
     }
     // Roguelite growth stats — damage bonus
-    const growthBonus = actor.rogueliteDamageBonus ?? 0;
+    let growthBonus = actor.rogueliteDamageBonus ?? 0;
+    // Perk: 翻盘之力 — extra damage when HP < 50%
+    if ((actor.rogueliteComebackDamage ?? 0) > 0 && actor.hp < actor.maxHp * 0.5) {
+        growthBonus += actor.rogueliteComebackDamage;
+    }
+    // Perk: 盾击 — bonus damage when actor has shield
+    if ((actor.rogueliteShieldStrikeBonus ?? 0) > 0 && actor.shield > 0 && outcome.damage > 0 && !actor.isBot) {
+        growthBonus += actor.rogueliteShieldStrikeBonus;
+        outcome.skillMessages.push(`盾击触发，拥有护盾，伤害 +${actor.rogueliteShieldStrikeBonus}`);
+    }
+    // Perk: 护盾过载 — once per stage, first attack with shield
+    if (actor.roguelitePerkStacks?.["shield_overload"] && !actor.rogueliteShieldOverloadUsed && actor.shield > 0 && outcome.damage > 0 && !actor.isBot) {
+        const consumed = Math.min(6, actor.shield);
+        actor.shield -= consumed;
+        const extraDamage = Math.floor(consumed / 2);
+        if (extraDamage > 0) {
+            growthBonus += extraDamage;
+            outcome.skillMessages.push(`护盾过载触发，消耗 ${consumed} 护盾，额外伤害 +${extraDamage}`);
+        }
+        actor.rogueliteShieldOverloadUsed = true;
+    }
+    // Perk: 低点蓄力 — consume charge on high-roll attack
+    const lowCharge = actor.rogueliteLowRollCharge ?? 0;
+    if (lowCharge > 0 && outcome.damage > 0 && !actor.isBot) {
+        const roll = outcome.dice[0] ?? 0;
+        if (roll >= 5) {
+            const chargeBonus = lowCharge * 2;
+            growthBonus += chargeBonus;
+            outcome.skillMessages.push(`低点蓄力触发，消耗 ${lowCharge} 层蓄力，额外伤害 +${chargeBonus}`);
+            actor.rogueliteLowRollCharge = 0;
+        }
+    }
     if (growthBonus > 0 && outcome.damage > 0) {
         outcome.damage += growthBonus;
-        outcome.skillMessages.push(`伤害计算：骰点基础 ${outcome.damage - growthBonus} + 成长加成 ${growthBonus} = ${outcome.damage}`);
+        if (growthBonus > (actor.rogueliteDamageBonus ?? 0)) {
+            outcome.skillMessages.push(`伤害计算：骰点基础 ${outcome.damage - growthBonus} + 成长加成 ${growthBonus} = ${outcome.damage}`);
+        }
     }
     // Roguelite character skills — only via selectable action (outcome.rogueliteSkillId)
     if (outcome.rogueliteSkillId === "gunner_triple_shot" && outcome.damage > 0) {
@@ -992,8 +1126,22 @@ function finishAction(room, actor, target, outcome, events, ctx) {
                     }
                 }
             }
-            if (target.isDead)
+            // ── 赌命庄家 赌注：玩家投6 → Boss获护盾 ──
+            if (target.rogueliteBossId === "boss_gambler_dealer" && (outcome.dice[0] ?? 0) === 6 && !actor.isBot && finalDamage > 0) {
+                target.shield += 3;
+                events.push(makeEvent(ctx.now, ctx.makeId, "skill", "赌命庄家发动赌注，玩家投出 6，获得 3 点护盾！", target.id, undefined, outcome.dice));
+            }
+            if (target.isDead) {
                 events.push(makeEvent(ctx.now, ctx.makeId, "death", `${target.nickname} 已死亡`, target.id));
+                // Perk: 战利品 — heal on kill
+                const killHealAmount = actor.rogueliteKillHeal ?? 0;
+                if (killHealAmount > 0 && !actor.isBot) {
+                    const healed = applyHpHealing(actor, killHealAmount);
+                    if (healed > 0) {
+                        events.push(makeEvent(ctx.now, ctx.makeId, "heal", `战利品触发，回复 ${healed} 点生命`, actor.id, undefined, outcome.dice, undefined, healed));
+                    }
+                }
+            }
         }
     }
     else {
@@ -1503,9 +1651,30 @@ function getArmor(room, target) {
         armor += 2;
     if (target.rogueliteArmorBonus)
         armor += target.rogueliteArmorBonus;
+    // Roguelite perk: 绝境护甲 — armor when HP < 50%
+    if ((target.rogueliteLowHpArmor ?? 0) > 0 && target.hp < target.maxHp * 0.5) {
+        armor += target.rogueliteLowHpArmor;
+    }
     // Roguelite boss: 山盾守卫 passive armor
     if (target.rogueliteBossId === "boss_shield_guard")
         armor += 1;
+    // Roguelite elite: 铁皮精英 passive armor
+    if (target.rogueliteBossId === "elite_iron_skin")
+        armor += 1;
+    // Perk: 稳固壁垒 — armor +1 when shield > 0
+    if (target.roguelitePerkStacks?.["sturdy_bulwark"] && target.shield > 0)
+        armor += 1;
+    // Enemy: 穿甲兵/穿甲精英 — reduce target armor (only affects this calculation)
+    if (room.gameMode === "pve_roguelite") {
+        const attacker = room.players[room.activePlayerIndex];
+        if (attacker?.isBot && attacker.rogueliteBossId === "normal_armor_piercer") {
+            armor = Math.max(0, armor - 1);
+        }
+        if (attacker?.isBot && attacker.rogueliteBossId === "elite_armor_piercing") {
+            const reduction = attacker.hp < attacker.maxHp * 0.5 ? 2 : 1;
+            armor = Math.max(0, armor - reduction);
+        }
+    }
     // Roguelite boss: 山盾守卫 架盾额外减伤
     const guardReduction = target.rogueliteBossState?.guardReduction;
     if (guardReduction && guardReduction > 0)

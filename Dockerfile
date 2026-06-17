@@ -11,6 +11,8 @@ RUN npm ci
 
 COPY . .
 
+RUN mkdir -p /app/server/data
+
 RUN npm run build
 
 ENV NODE_ENV=production

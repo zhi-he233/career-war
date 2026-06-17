@@ -9,6 +9,8 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
     expose:
       - "8080"
+    volumes:
+      - db_data:/app/server/data
 
   caddy:
     image: caddy:2
@@ -26,3 +28,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  db_data:

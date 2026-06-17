@@ -11,6 +11,8 @@ import HomePage from "./components/HomePage.vue";
 import PvpModePage from "./components/PvpModePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
 import BattlePage from "./components/BattlePage.vue";
+import AuthDialog from "./components/AuthDialog.vue";
+import { useAuth } from "./composables/useAuth";
 
 const ROOM_ID_KEY = "career-war-room-id";
 const isDev = import.meta.env.DEV;
@@ -27,6 +29,9 @@ const isSocketConnected = ref(socket.connected);
 const roundTripMs = ref<number | null>(null);
 const transportName = ref("");
 const showLeaveConfirm = ref(false);
+/** Auth dialog visibility */
+const showAuthDialog = ref(false);
+const { currentUser, isLoggedIn, loading: authLoading, logout: authLogout } = useAuth();
 /** Invite room ID from BOTH old format (?room=XXXX) and new format (/room/XXXX). */
 const _qs = new URLSearchParams(window.location.search);
 const _pathRoom = (window.location.pathname.match(/^\/room\/([A-Z0-9]{4})/) ?? [])[1] ?? "";
@@ -172,7 +177,7 @@ function enterFromCurrentUrl(): void {
 function joinInviteRoom(): void {
   if (inviteJoinStarted.value || room.value) return;
   inviteJoinStarted.value = true;
-  const savedNickname = localStorage.getItem("career-war-nickname")?.trim();
+  const savedNickname = currentUser.value?.username || localStorage.getItem("career-war-nickname")?.trim();
   const nickname = savedNickname || `玩家${clientId.slice(0, 4)}`;
   localStorage.setItem("career-war-nickname", nickname);
 
@@ -238,7 +243,7 @@ function openPveMode(): void {
 }
 
 function openRogueliteMode(): void {
-  const savedNickname = localStorage.getItem("career-war-nickname")?.trim();
+  const savedNickname = currentUser.value?.username || localStorage.getItem("career-war-nickname")?.trim();
   const nickname = savedNickname || `玩家${clientId.slice(0, 4)}`;
   localStorage.setItem("career-war-nickname", nickname);
   createRoom({ nickname, gameMode: "pve_roguelite" });
@@ -295,6 +300,10 @@ function leaveRoom(): void {
     sessionStorage.removeItem(ROOM_ID_KEY);
     router.replace("/modes");
   });
+}
+
+async function handleLogout(): Promise<void> {
+  await authLogout();
 }
 
 function emitWithAck<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -402,6 +411,15 @@ function getTransportName(transport: unknown): string {
       <div>
         <h1>职业互怼</h1>
       </div>
+      <div class="top-bar-right">
+        <template v-if="!authLoading">
+          <template v-if="isLoggedIn">
+            <span class="user-nickname">{{ currentUser?.username }}</span>
+            <button class="ghost-btn small-btn" type="button" @click="handleLogout">退出</button>
+          </template>
+          <button v-else class="secondary-btn small-btn" type="button" @click="showAuthDialog = true">登录</button>
+        </template>
+      </div>
       <button v-if="room" class="ghost-btn" type="button" @click="showLeaveConfirm = true">离开</button>
     </header>
 
@@ -468,10 +486,28 @@ function getTransportName(transport: unknown): string {
         </div>
       </div>
     </div>
+
+    <AuthDialog :visible="showAuthDialog" @close="showAuthDialog = false" @updated="showAuthDialog = false" />
   </main>
 </template>
 
 <style scoped>
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-nickname {
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .net-diagnostics {
   position: fixed;
   right: 8px;

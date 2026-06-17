@@ -9,6 +9,10 @@ const emit = defineEmits<{
   chooseReward: [rewardId: string];
   chooseContinue: [choice: "finish" | "continue"];
 }>();
+
+function hasAnyResource(r: Record<string, unknown>): boolean {
+  return Boolean(r.fateTokens || (Number(r.lowRollCharge ?? 0) > 0) || (r.consecutiveLowRolls && (r.consecutiveLowRolls as Record<string,number>).current > 0) || r.shieldOverloadUsed !== undefined);
+}
 </script>
 
 <template>
@@ -21,6 +25,20 @@ const emit = defineEmits<{
         <span class="stage-type-badge" :class="`stage-type-${data.stageType}`">{{ data.stageTypeLabel }}</span>
         <span>{{ data.phaseText }}</span>
       </div>
+    </section>
+
+    <!-- Dynamic resources -->
+    <section v-if="data.resources && hasAnyResource(data.resources)" class="roguelite-resources">
+      <span v-if="data.resources.fateTokens" class="resource-chip dice-chip">🎲 命运筹码：{{ data.resources.fateTokens.current }}/{{ data.resources.fateTokens.max }}</span>
+      <span v-if="(data.resources.lowRollCharge ?? 0) > 0" class="resource-chip charge-chip">⚡ 蓄力：{{ data.resources.lowRollCharge }} 层</span>
+      <span v-if="data.resources.consecutiveLowRolls && data.resources.consecutiveLowRolls.current > 0" class="resource-chip low-chip">📉 连续低点：{{ data.resources.consecutiveLowRolls.current }}/{{ data.resources.consecutiveLowRolls.max }}</span>
+      <span v-if="data.resources.shieldOverloadUsed !== undefined" class="resource-chip overload-chip" :class="{ used: data.resources.shieldOverloadUsed }">💥 护盾过载：{{ data.resources.shieldOverloadUsed ? '已使用' : '可用' }}</span>
+    </section>
+
+    <!-- Enemy traits -->
+    <section v-if="data.enemyTraits && data.enemyTraits.length > 0" class="roguelite-enemy-traits">
+      <span class="trait-label">敌人特性</span>
+      <span v-for="(t, i) in data.enemyTraits" :key="i" class="trait-chip">{{ t }}</span>
     </section>
 
     <!-- Boss panel -->

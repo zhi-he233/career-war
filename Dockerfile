@@ -2,7 +2,7 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.cloud.tencent.com/debian|g; s|http://deb.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g; s|http://security.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g' /etc/apt/sources.list.d/debian.sources \
+RUN printf 'Types: deb\nURIs: https://mirrors.cloud.tencent.com/debian\nSuites: bookworm bookworm-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: https://mirrors.cloud.tencent.com/debian-security\nSuites: bookworm-security\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' > /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
@@ -18,12 +18,7 @@ RUN npm ci
 
 COPY . .
 
-RUN mkdir -p /app/server/data
-
 RUN npm run build
-
-ENV NODE_ENV=production
-ENV PORT=8080
 
 EXPOSE 8080
 

@@ -40,6 +40,7 @@ interface SkillOutcome {
   dice: number[];
   skillMessages: string[];
   skillHints: SkillHintDraft[];
+  rogueliteSkillId?: string;
 }
 
 type SkillHintDraft = Pick<SkillHint, "text" | "valueText"> & {
@@ -403,6 +404,34 @@ export function confirmRollDecision(
     return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
   }
 
+  if (normalizedChoice === "roguelite_skill") {
+    const action = decision.availableActions?.find(a => a.id === "roguelite_skill" && a.enabled);
+    const skillId = (action?.skillId as string) ?? "";
+
+    if (skillId === "gunner_triple_shot") {
+      // Two-roll pattern: first roll (6) triggers, second roll determines damage
+      room.pendingRollDecision = undefined;
+      const pending: PendingRoll = {
+        playerId: actor.id,
+        type: "roguelite_gunner_triple_shot",
+        targetId: target.id,
+        sourceRoll: decision.rawRoll,
+        characterId: actor.characterId!,
+        message: "枪手技能发动：进行技能骰投掷！"
+      };
+      room.pendingRoll = pending;
+      const events = [makeEvent(ctx.now, ctx.makeId, "skill", `投出 ${decision.rawRoll} 点，发动枪手技能！请继续投技能骰`, actor.id, target.id, [decision.rawRoll])];
+      room.battleLog.unshift(...events);
+      return { room, events };
+    }
+
+    // Other roguelite skills resolve immediately
+    room.pendingRollDecision = undefined;
+    const outcome = resolveSkill(actor.characterId, decision.currentRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
+    outcome.rogueliteSkillId = skillId;
+    return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
+  }
+
   if (normalizedChoice !== "normal_attack") throw new Error("未知的投后选择");
   room.pendingRollDecision = undefined;
   const outcome = resolveSkill(actor.characterId, decision.currentRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
@@ -427,6 +456,7 @@ function confirmSummonerSkill(
   ctx: EngineContext,
   requestedSkillId?: SummonerSkillId
 ): RollResult {
+  if (room.gameMode === "pve_roguelite") throw new Error("肉鸽模式不能发动召唤师技能");
   const skillId = requestedSkillId ?? decision.availableSummonerSkillId;
   ensureSummonerSkill(actor);
   if (!skillId || skillId !== decision.availableSummonerSkillId || skillId !== actor.summonerSkillId) throw new Error("当前没有可发动的召唤师技能");
@@ -627,6 +657,24 @@ function createAvailableActions(
     });
   }
 
+  // Roguelite character skills — only for human players in roguelite mode
+  if (room.gameMode === "pve_roguelite" && !actor.isBot) {
+    const gunnerLevel = actor.roguelitePerkStacks?.["gunner_triple_shot"] ?? 0;
+    if (gunnerLevel > 0) {
+      const canUse = (gunnerLevel >= 3 && roll >= 5) || roll === 6;
+      if (canUse) {
+        actions.push({
+          id: "roguelite_skill",
+          label: "枪手技能：三倍射击",
+          enabled: true,
+          description: gunnerLevel >= 2 ? `造成三倍伤害，额外 +3（Lv.${gunnerLevel}）` : "造成三倍伤害",
+          skillId: "gunner_triple_shot" as unknown as SummonerSkillId,
+          skillName: "三倍射击"
+        });
+      }
+    }
+  }
+
   return actions;
 }
 
@@ -689,6 +737,8 @@ function getAvailableCharacterReactionSkill(characterId: CharacterId | undefined
 }
 
 function getAvailableSummonerSkill(room: Room, actor: Player, target: Player, roll: number): { id: SummonerSkillId; name: string } | undefined {
+  if (room.gameMode === "pve_roguelite") return undefined;
+  if (!actor.summonerSkillId) return undefined;
   ensureSummonerSkill(actor);
   if (actor.isDead || (actor.summonerSkillCooldown ?? 0) > 0) return undefined;
   const skillId = actor.summonerSkillId as SummonerSkillId;
@@ -748,6 +798,24 @@ function resolvePendingRoll(room: Room, playerId: string, ctx: EngineContext): R
       dice,
       skillMessages: [`枪手第二次骰点 ${second} x3，最终伤害 ${second * 3}`],
       skillHints: []
+    };
+  } else if (pending.type === "roguelite_gunner_triple_shot") {
+    // Roguelite gunslinger skill: second roll is the base, ×3 applied in finishAction
+    outcome = {
+      damage: second,
+      healing: 0,
+      shieldGain: 0,
+      selfDamage: 0,
+      ignoresShield: false,
+      grantsInvincible: false,
+      executesTarget: false,
+      flameMarksToAdd: 0,
+      clearsFlameMarks: false,
+      entersGuarding: false,
+      dice,
+      skillMessages: [`枪手技能骰为 ${second} 点`],
+      skillHints: [{ key: "gunner-triple-shot", text: "三倍射击！" }],
+      rogueliteSkillId: "gunner_triple_shot"
     };
   } else if (pending.type === "vampire_bonus_heal") {
     outcome = {
@@ -827,6 +895,129 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
     });
   }
 
+  // ── Roguelite Boss Skills (pre-damage) ──
+  if (room.gameMode === "pve_roguelite" && actor.isBot && actor.rogueliteBossId) {
+    const bossState = actor.rogueliteBossState ?? {};
+    const firstRoll = outcome.dice[0] ?? 0;
+
+    if (actor.rogueliteBossId === "boss_boxer_king") {
+      // 蓄力: roll 1 or 2 → gain charge, no damage
+      if (firstRoll === 1 || firstRoll === 2) {
+        bossState.charge = ((bossState.charge as number) ?? 0) + 1;
+        outcome.damage = 0;
+        outcome.skillMessages.push("小Boss：拳王开始蓄力，下一次攻击更危险！");
+        skillHintDrafts.push({ key: "boss-charge", text: "蓄力！" });
+      }
+      // 重拳: consume charge for extra damage
+      const charge = (bossState.charge as number) ?? 0;
+      if (charge > 0 && outcome.damage > 0) {
+        const extraDamage = charge * 3;
+        outcome.damage += extraDamage;
+        outcome.skillMessages.push(`拳王释放蓄力重拳！额外伤害 +${extraDamage}！`);
+        skillHintDrafts.push({ key: "boss-heavy-punch", text: "蓄力重拳！", valueText: `+${extraDamage}` });
+        bossState.charge = 0;
+      }
+      // 狂暴: HP < 50% → damage +2
+      if (outcome.damage > 0) {
+        if (!bossState.enraged && actor.hp < actor.maxHp * 0.5) {
+          bossState.enraged = true;
+          outcome.skillMessages.push("拳王进入狂暴状态，伤害 +2！");
+        }
+        if (bossState.enraged) outcome.damage += 2;
+      }
+      actor.rogueliteBossState = bossState;
+    }
+
+    if (actor.rogueliteBossId === "boss_blood_demon") {
+      // 血盾: roll 3 → gain shield, no attack
+      if (firstRoll === 3) {
+        outcome.damage = 0;
+        outcome.shieldGain = 4;
+        outcome.skillMessages.push("血魔凝聚血盾，获得 4 点护盾！");
+      }
+      // 血祭: HP < 40% → heal + shield (once)
+      if (!bossState.bloodSacrificeUsed && actor.hp < actor.maxHp * 0.4 && actor.hp > 0) {
+        bossState.bloodSacrificeUsed = true;
+        outcome.healing += 5;
+        outcome.shieldGain += 3;
+        outcome.skillMessages.push("血魔发动血祭，回复 5 点生命并获得 3 点护盾！");
+      }
+      actor.rogueliteBossState = bossState;
+    }
+
+    if (actor.rogueliteBossId === "boss_shield_guard") {
+      if (firstRoll === 1 || firstRoll === 2) {
+        outcome.damage = 0;
+        outcome.shieldGain = 5;
+        bossState.guarding = true;
+        bossState.guardReduction = 2;
+        outcome.skillMessages.push("山盾守卫架起巨盾，获得 5 点护盾并准备减伤！");
+        skillHintDrafts.push({ key: "boss-guard", text: "架盾！" });
+      }
+      actor.rogueliteBossState = bossState;
+    }
+
+    if (actor.rogueliteBossId === "boss_god_berserker" && outcome.damage > 0) {
+      const missingHp = Math.max(0, actor.maxHp - actor.hp);
+      outcome.damage += missingHp;
+      outcome.skillMessages.push(`神狂战狂战增伤：已损失生命 +${missingHp}！`);
+      skillHintDrafts.push({ key: "god-berserker-fury", text: "狂战增伤", valueText: `+${missingHp}` });
+      actor.rogueliteBossState = bossState;
+    }
+  }
+
+  // Roguelite boss ability: berserker_blood (stackable)
+  const berserkerLevel = actor.roguelitePerkStacks?.["berserker_blood"] ?? 0;
+  if (berserkerLevel > 0 && outcome.damage > 0) {
+    const missingHp = Math.max(0, actor.maxHp - actor.hp);
+    const baseBonus = Math.floor(missingHp / 2);
+    const extraBonus = (berserkerLevel - 1) * 2;
+    const totalBonus = baseBonus + extraBonus;
+    if (totalBonus > 0) {
+      outcome.damage += totalBonus;
+      outcome.skillMessages.push(`狂怒之血 Lv.${berserkerLevel} 触发，额外伤害 +${totalBonus}`);
+      skillHintDrafts.push({ key: "berserker-blood", text: "狂怒之血", valueText: `+${totalBonus}` });
+    }
+  }
+
+  // Roguelite boss ability: dragon_courage (stackable)
+  const dragonLevel = actor.roguelitePerkStacks?.["dragon_courage"] ?? 0;
+  if (dragonLevel > 0 && outcome.damage > 0) {
+    outcome.ignoresShield = true;
+    const extraDamage = dragonLevel - 1;
+    if (extraDamage > 0) {
+      outcome.damage += extraDamage;
+      outcome.skillMessages.push(`龙胆之力 Lv.${dragonLevel} 触发，额外伤害 +${extraDamage}`);
+    }
+  }
+
+  // Roguelite growth stats — damage bonus
+  const growthBonus = actor.rogueliteDamageBonus ?? 0;
+  if (growthBonus > 0 && outcome.damage > 0) {
+    outcome.damage += growthBonus;
+    outcome.skillMessages.push(`伤害计算：骰点基础 ${outcome.damage - growthBonus} + 成长加成 ${growthBonus} = ${outcome.damage}`);
+  }
+
+  // Roguelite character skills — only via selectable action (outcome.rogueliteSkillId)
+  if (outcome.rogueliteSkillId === "gunner_triple_shot" && outcome.damage > 0) {
+    const gunnerLevel = actor.roguelitePerkStacks?.["gunner_triple_shot"] ?? actor.rogueliteSkillStacks?.["gunner_triple_shot"] ?? 0;
+    const baseWithBonuses = outcome.damage;
+    outcome.damage = baseWithBonuses * 3;
+    if (gunnerLevel >= 2) outcome.damage += 3;
+    outcome.skillMessages.push("枪手技能发动：三倍射击！");
+    outcome.skillMessages.push(`三倍结算：（技能骰基础 ${baseWithBonuses}）×3 = ${outcome.damage}${gunnerLevel >= 2 ? `（含 Lv.${gunnerLevel} 额外 +3）` : ""}`);
+    skillHintDrafts.push({ key: "gunner-triple-shot", text: "三倍射击！", valueText: `-${outcome.damage}` });
+  }
+
+  if (outcome.rogueliteSkillId === "zhaoyun_pierce" && outcome.damage > 0) {
+    const zhaoyunLevel = actor.roguelitePerkStacks?.["zhaoyun_pierce"] ?? actor.rogueliteSkillStacks?.["zhaoyun_pierce"] ?? 0;
+    outcome.ignoresShield = true;
+    const extraDamage = Math.max(0, Math.min(2, zhaoyunLevel - 1));
+    outcome.damage += extraDamage;
+    outcome.skillMessages.push("赵子龙技能发动：破阵！本次攻击无视护盾和护甲。");
+    if (extraDamage > 0) outcome.skillMessages.push(`穿透伤害额外 +${extraDamage}`);
+  }
+
   let finalDamage = 0;
   let hpDamage = 0;
   const invincible = hasInvincible(room);
@@ -848,6 +1039,29 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
       if (actor.characterId === "zhaoZilong" && finalDamage > 0) {
         skillHintDrafts.push({ key: "zhaoZilong-ignore-shield", text: "无视护盾！" });
       }
+      // ── 神狂战生命阈值 ──
+      if (target.rogueliteBossId === "boss_god_berserker" && !target.isDead && finalDamage > 0) {
+        const bs = target.rogueliteBossState ?? {};
+        const hpAfterDamage = target.hp;
+        const thresholds: Array<{ key: string; value: number }> = [
+          { key: "t15", value: 15 }, { key: "t10", value: 10 }, { key: "t5", value: 5 }, { key: "t1", value: 1 }
+        ];
+        for (const t of thresholds) {
+          if (bs[t.key] === true && hpAfterDamage < t.value) {
+            target.hp = t.value;
+            target.isDead = false;
+            const newState = { ...bs, [t.key]: false };
+            if (t.value === 1) {
+              newState.dyingAfterAttack = true;
+              events.push(makeEvent(ctx.now, ctx.makeId, "skill", "神狂战濒死不倒！它将在最后一击后死亡！", target.id, undefined, outcome.dice));
+            }
+            target.rogueliteBossState = newState;
+            events.push(makeEvent(ctx.now, ctx.makeId, "skill", `神狂战触发生命阈值：血量锁定在 ${t.value}！`, target.id, undefined, outcome.dice));
+            break;
+          }
+        }
+      }
+
       if (target.isDead) events.push(makeEvent(ctx.now, ctx.makeId, "death", `${target.nickname} 已死亡`, target.id));
     }
   } else {
@@ -857,6 +1071,14 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
   if (outcome.flameMarksToAdd > 0) {
     target.flameMarks = (target.flameMarks ?? 0) + outcome.flameMarksToAdd;
     events.push(makeEvent(ctx.now, ctx.makeId, "skill", `${target.nickname} 获得 ${outcome.flameMarksToAdd} 层火焰印记，当前 ${target.flameMarks} 层`, actor.id, target.id, outcome.dice));
+  }
+
+  if (room.gameMode === "pve_roguelite" && !actor.isBot && finalDamage > 0) {
+    const flameLordLevel = actor.rogueliteSkillStacks?.["flame_lord_mark"] ?? 0;
+    if (flameLordLevel > 0) {
+      target.flameMarks = (target.flameMarks ?? 0) + flameLordLevel;
+      events.push(makeEvent(ctx.now, ctx.makeId, "skill", `火焰领主技能触发，添加 ${flameLordLevel} 层火焰印记。当前 ${target.flameMarks} 层`, actor.id, target.id, outcome.dice));
+    }
   }
 
   if (outcome.clearsFlameMarks) {
@@ -875,6 +1097,73 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
       const hpGain = applyHpHealing(actor, 2);
       events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 触发【龙胆】，回复 ${hpGain} 点血`, actor.id, undefined, outcome.dice, undefined, hpGain));
       skillHintDrafts.push({ key: "zhaoZilong-dragon-guts", text: "龙胆！", valueText: `+${hpGain}` });
+    }
+  }
+
+  // Roguelite boss ability: vampire_instinct (stackable)
+  const vampireLevel = actor.roguelitePerkStacks?.["vampire_instinct"] ?? 0;
+  if (vampireLevel > 0 && hpDamage > 0) {
+    const healAmount = 2 * vampireLevel;
+    const { hpGain, shieldGain } = applyHealing(actor, healAmount, { overflowToShield: true });
+    const shieldText = shieldGain > 0 ? `，溢出 ${shieldGain} 点转为护盾` : "";
+    events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 吸血本能 Lv.${vampireLevel} 回复 ${hpGain} 点血${shieldText}`, actor.id, undefined, outcome.dice, undefined, hpGain));
+    if (shieldGain > 0) {
+      skillHintDrafts.push({ key: "vampire-instinct", text: "吸血本能", valueText: `+${hpGain}` });
+    }
+  }
+
+  if (room.gameMode === "pve_roguelite" && !actor.isBot) {
+    const vampireSkillLevel = actor.rogueliteSkillStacks?.["vampire_skill"] ?? 0;
+    if (vampireSkillLevel > 0 && hpDamage > 0) {
+      const hpGain = applyHpHealing(actor, vampireSkillLevel);
+      if (hpGain > 0) {
+        events.push(makeEvent(ctx.now, ctx.makeId, "heal", `吸血鬼技能 Lv.${vampireSkillLevel} 触发，回复 ${hpGain} 点生命。`, actor.id, undefined, outcome.dice, undefined, hpGain));
+      } else {
+        events.push(makeEvent(ctx.now, ctx.makeId, "skill", `吸血鬼技能 Lv.${vampireSkillLevel} 触发，但生命已满。`, actor.id, undefined, outcome.dice));
+      }
+    }
+  }
+
+  // Roguelite passive: blood_punch (stackable via perkStacks)
+  const bloodPunchLevel = actor.roguelitePerkStacks?.["blood_punch"] ?? 0;
+  if (bloodPunchLevel > 0 && hpDamage > 0) {
+    const hpGain = applyHpHealing(actor, bloodPunchLevel);
+    if (hpGain > 0) {
+      events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 吸血拳法 Lv.${bloodPunchLevel} 回复 ${hpGain} 点血`, actor.id, undefined, outcome.dice, undefined, hpGain));
+    }
+  }
+
+  // ── Roguelite Boss Skills (post-damage) ──
+  if (room.gameMode === "pve_roguelite" && actor.isBot && actor.rogueliteBossId) {
+    const bossState = actor.rogueliteBossState ?? {};
+
+    if (actor.rogueliteBossId === "boss_blood_demon") {
+      // 吸血攻击: after dealing HP damage → heal 2
+      if (hpDamage > 0) {
+        const bossHeal = applyHpHealing(actor, 2);
+        if (bossHeal > 0) {
+          events.push(makeEvent(ctx.now, ctx.makeId, "heal", `血魔吸取生命，回复 ${bossHeal} 点生命！`, actor.id, undefined, outcome.dice, undefined, bossHeal));
+        }
+      }
+    }
+
+    if (actor.rogueliteBossId === "boss_shield_guard") {
+      // 盾击反击: if guarding and took damage → counter
+      if (bossState.guarding && finalDamage > 0 && !actor.isDead) {
+        const counterDmg = applyDirectDamage(target, 2);
+        events.push(makeEvent(ctx.now, ctx.makeId, "damage", `山盾守卫盾击反击，造成 ${counterDmg} 点伤害！`, actor.id, target.id, outcome.dice, counterDmg));
+        if (target.isDead) events.push(makeEvent(ctx.now, ctx.makeId, "death", `${target.nickname} 已死亡`, target.id));
+        bossState.guarding = false;
+        bossState.guardReduction = 0;
+      }
+      actor.rogueliteBossState = bossState;
+    }
+
+    // ── 神狂战濒死一击后死亡 ──
+    if (actor.rogueliteBossId === "boss_god_berserker" && actor.rogueliteBossState?.dyingAfterAttack === true && !actor.isDead) {
+      actor.hp = 0;
+      actor.isDead = true;
+      events.push(makeEvent(ctx.now, ctx.makeId, "death", "神狂战燃尽最后生命，倒下了！", actor.id));
     }
   }
 
@@ -1326,6 +1615,12 @@ function getArmor(room: Room, target: Player): number {
   if (target.characterId === "mountain_shield") armor += 1;
   if (target.characterId === "mountain_shield" && target.guarding) armor += 1;
   if (hasMountainShieldGroupArmor(room, target)) armor += 2;
+  if (target.rogueliteArmorBonus) armor += target.rogueliteArmorBonus;
+  // Roguelite boss: 山盾守卫 passive armor
+  if (target.rogueliteBossId === "boss_shield_guard") armor += 1;
+  // Roguelite boss: 山盾守卫 架盾额外减伤
+  const guardReduction = target.rogueliteBossState?.guardReduction as number | undefined;
+  if (guardReduction && guardReduction > 0) armor += guardReduction;
   return armor;
 }
 

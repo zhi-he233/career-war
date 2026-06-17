@@ -10,3 +10,5 @@ server/dist/
 .vite/
 coverage/
 *.tsbuildinfo
+*.vue.js
+*.vue.d.ts

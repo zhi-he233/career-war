@@ -19,6 +19,7 @@ const nickname = ref(localStorage.getItem("career-war-nickname") ?? "");
 const roomId = ref("");
 const inviteRoomId = ref("");
 const selectedMode = ref<GameMode | null>(null);
+const submitting = ref(false);
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
 const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
 const isPveMode = computed(() => selectedMode.value === "pve_1v1");
@@ -69,23 +70,31 @@ function rememberName(): void {
   localStorage.setItem("career-war-nickname", nickname.value.trim());
 }
 
+let submittingTimer: number | undefined;
+
 function createRoom(): void {
-  if (!selectedMode.value) return;
+  if (!selectedMode.value || submitting.value) return;
+  submitting.value = true;
   rememberName();
   emit("createRoom", { nickname: nickname.value, gameMode: selectedMode.value });
+  submittingTimer = window.setTimeout(() => { submitting.value = false; }, 3000);
 }
 
 function joinRoom(): void {
-  if (!selectedMode.value) return;
+  if (!selectedMode.value || submitting.value) return;
+  submitting.value = true;
   rememberName();
   emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedMode.value });
+  submittingTimer = window.setTimeout(() => { submitting.value = false; }, 3000);
 }
 
 function selectRoom(room: RoomListItem): void {
-  if (!room.canJoin || !selectedMode.value) return;
+  if (!room.canJoin || !selectedMode.value || submitting.value) return;
+  submitting.value = true;
   roomId.value = room.roomId;
   rememberName();
   emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedMode.value });
+  submittingTimer = window.setTimeout(() => { submitting.value = false; }, 3000);
 }
 
 function isRoomVisibleForSelectedMode(room: RoomListItem): boolean {
@@ -142,7 +151,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <input v-model="nickname" maxlength="12" placeholder="输入你的昵称" />
       </label>
 
-      <button v-if="!isInviteMode" class="primary-btn" type="button" @click="createRoom">{{ isPveMode ? "创建人机练习" : "创建房间" }}</button>
+      <button v-if="!isInviteMode" class="primary-btn" type="button" :disabled="submitting" @click="createRoom">{{ submitting ? "创建中……" : isPveMode ? "创建人机练习" : "创建房间" }}</button>
 
       <div v-if="!isInviteMode && !isPveMode" class="divider">或</div>
 
@@ -151,7 +160,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
           <span>加入房间</span>
           <strong>{{ inviteRoomId }}</strong>
         </div>
-        <button class="secondary-btn" type="button" @click="joinRoom">加入该房间</button>
+        <button class="secondary-btn" type="button" :disabled="submitting" @click="joinRoom">{{ submitting ? "加入中……" : "加入该房间" }}</button>
       </template>
 
       <template v-else-if="!isPveMode">
@@ -173,8 +182,8 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
                 <span>{{ room.playerCount }}/{{ room.maxPlayers }} 人</span>
                 <span>{{ phaseLabel(room.phase) }}</span>
               </div>
-              <button class="secondary-btn small-btn" type="button" :disabled="!room.canJoin" @click="selectRoom(room)">
-                {{ room.canJoin ? "加入" : room.playerCount >= room.maxPlayers ? "已满" : "不可加入" }}
+              <button class="secondary-btn small-btn" type="button" :disabled="!room.canJoin || submitting" @click="selectRoom(room)">
+                {{ submitting ? "加入中……" : room.canJoin ? "加入" : room.playerCount >= room.maxPlayers ? "已满" : "不可加入" }}
               </button>
             </article>
           </div>
@@ -184,7 +193,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
           <span>房间号</span>
           <input v-model="roomId" maxlength="4" placeholder="例如 A8K2" @input="roomId = roomId.toUpperCase()" />
         </label>
-        <button class="secondary-btn" type="button" @click="joinRoom">加入房间</button>
+        <button class="secondary-btn" type="button" :disabled="submitting" @click="joinRoom">{{ submitting ? "加入中……" : "加入房间" }}</button>
       </template>
     </section>
   </section>

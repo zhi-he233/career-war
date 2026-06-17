@@ -45,33 +45,184 @@ const DUO_MAX_CONTROLLERS = 2;
 const PVE_BOT_ID = "bot";
 const PVE_BOT_CLIENT_ID = "bot";
 const PVE_BOT_NICKNAME = "AI";
-const ROGUELITE_MAX_STAGE = 3;
+const ROGUELITE_MAX_STAGE = 5;
 const ROGUELITE_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
   {
-    type: "max_hp_plus_3",
-    name: "生命上限 +3",
-    description: "最大生命增加 3，并恢复 3 点生命。",
-    value: 3
+    type: "heavy_punch_training",
+    name: "重拳训练",
+    description: "伤害 +1，最大生命 +2。",
+    value: 1
   },
   {
-    type: "shield_plus_2",
-    name: "获得 2 护盾",
-    description: "立刻获得 2 点护盾。",
-    value: 2
+    type: "iron_body",
+    name: "铁布衫",
+    description: "护甲 +1，每关开始护盾 +2。",
+    value: 1
   },
   {
-    type: "heal_5",
-    name: "恢复 5 生命",
-    description: "恢复 5 点生命，不会溢出为护盾。",
-    value: 5
+    type: "breathing_recovery",
+    name: "战斗喘息",
+    description: "恢复 40% 最大生命，最低 8 点，最大生命 +3。",
+    value: 40
   },
   {
-    type: "summoner_cooldown_minus_1",
-    name: "召唤师技能冷却 -1",
-    description: "召唤师技能进入冷却时，最终冷却减少 1，最低为 1。",
+    type: "blood_punch",
+    name: "吸血拳法",
+    description: "伤害 +1，造成生命伤害后回复 1 点血。",
+    value: 1
+  },
+  {
+    type: "battle_instinct",
+    name: "战斗本能",
+    description: "伤害 +1，每关胜利后的战后恢复额外 +3，最大生命 +2。",
+    value: 1
+  },
+  {
+    type: "guard_training",
+    name: "防守训练",
+    description: "最大生命 +4，每关开始护盾 +3。",
+    value: 4
+  }
+];
+const ROGUELITE_SKILL_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
+  {
+    type: "gunner_triple_shot",
+    name: "枪手技能",
+    description: "投到 6 时，攻击造成 3 倍伤害。升级后提高触发和额外伤害。",
+    value: 1
+  },
+  {
+    type: "vampire_skill",
+    name: "吸血鬼技能",
+    description: "造成生命伤害后回复生命，每级回复 +1。",
+    value: 1
+  },
+  {
+    type: "zhaoyun_pierce",
+    name: "赵子龙技能",
+    description: "攻击无视护盾和护甲，升级后穿透伤害额外提高。",
+    value: 1
+  },
+  {
+    type: "flame_lord_mark",
+    name: "火焰领主技能",
+    description: "攻击命中后添加火焰印记，每级添加层数 +1。",
     value: 1
   }
 ];
+const ROGUELITE_BOSS_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
+  {
+    type: "berserker_blood",
+    name: "狂怒之血",
+    description: "攻击额外造成已损失生命一半的伤害。",
+    value: 0
+  },
+  {
+    type: "vampire_instinct",
+    name: "吸血本能",
+    description: "造成生命伤害后，回复 2 点生命，溢出可转护盾。",
+    value: 2
+  },
+  {
+    type: "dragon_courage",
+    name: "龙胆之力",
+    description: "你的攻击无视护盾和护甲。",
+    value: 0
+  }
+];
+const ROGUELITE_STARTER_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
+  {
+    type: "starter_heavy_punch",
+    name: "重拳开局",
+    description: "伤害 +2，最大生命 +4。",
+    value: 2
+  },
+  {
+    type: "starter_blood_punch",
+    name: "吸血开局",
+    description: "伤害 +1，造成生命伤害后回复 2 点血。",
+    value: 1
+  },
+  {
+    type: "starter_iron_wall",
+    name: "铁壁开局",
+    description: "护甲 +1，最大生命 +6，每关开始护盾 +3。",
+    value: 1
+  },
+  {
+    type: "starter_recovery",
+    name: "续航开局",
+    description: "最大生命 +4，每关胜利后额外恢复 5 点血。",
+    value: 4
+  }
+];
+const ROGUELITE_BOSS_POOL = ["boss_boxer_king", "boss_blood_demon", "boss_shield_guard", "boss_god_berserker"] as const;
+type RogueliteBossId = (typeof ROGUELITE_BOSS_POOL)[number];
+
+interface RogueliteBossConfig {
+  id: RogueliteBossId;
+  name: string;
+  baseHp: number;
+  baseShield: number;
+  skills: string[];
+}
+
+const ROGUELITE_BOSS_CONFIGS: Record<RogueliteBossId, RogueliteBossConfig> = {
+  boss_boxer_king: {
+    id: "boss_boxer_king",
+    name: "小Boss：拳王",
+    baseHp: 18,
+    baseShield: 2,
+    skills: ["蓄力：投到 1/2 时蓄力，下次攻击额外伤害", "重拳：消耗蓄力造成额外伤害（每层 +3）", "狂暴：半血后伤害 +2"]
+  },
+  boss_blood_demon: {
+    id: "boss_blood_demon",
+    name: "小Boss：血魔",
+    baseHp: 16,
+    baseShield: 0,
+    skills: ["吸血攻击：造成生命伤害后回复 2 点血", "血盾：投到 3 时获得 4 点护盾", "血祭：血量低于 40% 时回复 5 点血并获得 3 点护盾"]
+  },
+  boss_shield_guard: {
+    id: "boss_shield_guard",
+    name: "小Boss：山盾守卫",
+    baseHp: 14,
+    baseShield: 5,
+    skills: ["坚守：天生护甲 +1", "架盾：投到 1/2 时获得 5 点护盾并准备减伤", "盾击反击：架盾后受到攻击时反击 2 点伤害"]
+  },
+  boss_god_berserker: {
+    id: "boss_god_berserker",
+    name: "神狂战",
+    baseHp: 20,
+    baseShield: 0,
+    skills: ["狂战：已损失生命转化为额外伤害", "生命阈值：15 / 10 / 5 / 1（一次伤害只触发一个）", "濒死一击：1 血后完成最后一次攻击才会倒下"]
+  }
+};
+
+function getRogueliteBossForStage(stage: number): RogueliteBossConfig {
+  const bossCycleLength = 3;
+  const bossIndex = Math.floor((stage - 1) / bossCycleLength) % ROGUELITE_BOSS_POOL.length;
+  return ROGUELITE_BOSS_CONFIGS[ROGUELITE_BOSS_POOL[bossIndex]];
+}
+
+const REWARD_TO_PERK: Record<string, { perkId: string; levels: number }> = {
+  heavy_punch_training: { perkId: "heavy_punch", levels: 1 },
+  starter_heavy_punch: { perkId: "heavy_punch", levels: 2 },
+  iron_body: { perkId: "iron_body", levels: 1 },
+  starter_iron_wall: { perkId: "iron_body", levels: 2 },
+  blood_punch: { perkId: "blood_punch", levels: 1 },
+  starter_blood_punch: { perkId: "blood_punch", levels: 2 },
+  breathing_recovery: { perkId: "breathing_recovery", levels: 1 },
+  battle_instinct: { perkId: "battle_instinct", levels: 1 },
+  guard_training: { perkId: "guard_training", levels: 1 },
+  starter_recovery: { perkId: "starter_recovery", levels: 1 },
+  berserker_blood: { perkId: "berserker_blood", levels: 1 },
+  vampire_instinct: { perkId: "vampire_instinct", levels: 1 },
+  dragon_courage: { perkId: "dragon_courage", levels: 1 },
+  gunner_triple_shot: { perkId: "gunner_triple_shot", levels: 1 },
+  vampire_skill: { perkId: "vampire_skill", levels: 1 },
+  zhaoyun_pierce: { perkId: "zhaoyun_pierce", levels: 1 },
+  flame_lord_mark: { perkId: "flame_lord_mark", levels: 1 }
+};
 const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
   allowDuplicateCharacters: true,
@@ -345,6 +496,15 @@ io.on("connection", (socket) => {
         ensurePveBot(room);
         validateStartGame(room);
         const events = startGame(room, serverContext);
+        if (ensureRoomGameMode(room) === "pve_roguelite") {
+          const humanPlayer = room.players.find((player) => !player.isBot);
+          if (humanPlayer) {
+            humanPlayer.summonerSkillId = undefined;
+            humanPlayer.summonerSkillCooldown = 0;
+          }
+          const playerIndex = room.players.findIndex((player) => !player.isBot);
+          if (playerIndex >= 0) room.activePlayerIndex = playerIndex;
+        }
         broadcastRoom(room, events);
         broadcastRoomList();
         scheduleBotTurnIfNeeded(room);
@@ -503,8 +663,58 @@ io.on("connection", (socket) => {
       room.roguelite.appliedRewards = [...(room.roguelite.appliedRewards ?? []), reward];
       room.roguelite.stage += 1;
       room.roguelite.rewardChoices = undefined;
+
+      // Perk gained/upgraded feedback
+      const perkMapping = REWARD_TO_PERK[reward.type];
+      if (perkMapping) {
+        const currentLevel = player.roguelitePerkStacks?.[perkMapping.perkId] ?? 0;
+        const verb = currentLevel > perkMapping.levels ? "升级" : "获得";
+        addEvent(room, "system", `${verb}词条：${reward.name} Lv.${currentLevel}`);
+      }
+
+      if (isRogueliteSkillRewardType(reward.type)) {
+        const currentLevel = player.rogueliteSkillStacks?.[reward.type] ?? 0;
+        const verb = currentLevel > 1 ? "升级" : "获得";
+        addEvent(room, "system", `${verb}角色技能：${reward.name} Lv.${currentLevel}`);
+      }
+
+      if (isBossRewardType(reward.type)) {
+        room.phase = "roguelite_continue";
+        const event = addEvent(room, "system", `${player.nickname} 选择了 Boss 能力：${reward.name}`);
+        broadcastRoom(room, [event]);
+        return { ok: true };
+      }
+
       prepareNextRogueliteStage(room, player);
       const event = addEvent(room, "system", `${player.nickname} 选择奖励：${reward.name}，进入第 ${room.roguelite.stage} 关`);
+      broadcastRoom(room, [event]);
+      scheduleBotTurnIfNeeded(room);
+      return { ok: true };
+    });
+  });
+
+  socket.on("chooseRogueliteContinue", (payload: { choice?: "finish" | "continue" }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (ensureRoomGameMode(room) !== "pve_roguelite") throw new Error("当前房间不是肉鸽挑战");
+      if (room.phase !== "roguelite_continue") throw new Error("当前不能选择结束或继续");
+      const player = room.players.find((item) => item.id === socket.id && !item.isBot);
+      if (!player) throw new Error("玩家不存在");
+      const choice = payload.choice;
+      if (choice !== "finish" && choice !== "continue") throw new Error("请选择结束挑战或继续挑战");
+
+      if (choice === "finish") {
+        room.phase = "gameOver";
+        room.winnerId = player.id;
+        const victoryEvent = addEvent(room, "victory", `${player.nickname} 挑战成功！`);
+        broadcastRoom(room, [victoryEvent]);
+        io.to(room.id).emit("gameOver", { winnerId: player.id, winnerName: player.nickname });
+        return { ok: true };
+      }
+
+      // continue
+      prepareNextRogueliteStage(room, player);
+      const event = addEvent(room, "system", `${player.nickname} 继续挑战，进入第 ${room.roguelite?.stage ?? 1} 关`);
       broadcastRoom(room, [event]);
       scheduleBotTurnIfNeeded(room);
       return { ok: true };
@@ -651,16 +861,70 @@ function handleRogueliteBattleEnd(room: Room, gameOver: { winnerId: string; winn
   if (!winner || winner.isBot) return false;
 
   const roguelite = ensureRogueliteState(room);
-  if (roguelite.stage >= roguelite.maxStage) return false;
+  const stage = roguelite.stage;
+  const isBossStage = stage % 3 === 0;
+  const enemyBot = room.players.find((p) => p.isBot);
+  const enemyName = enemyBot?.nickname ?? "敌人";
+
+  // Stage-specific post-battle heal
+  let actualHeal = 0;
+  if (stage === 1) {
+    actualHeal = winner.maxHp - winner.hp;
+    winner.hp = winner.maxHp;
+    addEvent(room, "heal", `战后恢复至满血（${winner.maxHp} 点）`);
+  } else if (stage === 2) {
+    const healAmount = Math.max(8, Math.floor(winner.maxHp * 0.5));
+    const bonusHeal = winner.roguelitePostBattleHealBonus ?? 0;
+    actualHeal = Math.min(winner.maxHp - winner.hp, healAmount + bonusHeal);
+    if (actualHeal > 0) {
+      winner.hp += actualHeal;
+      addEvent(room, "heal", `战后恢复 ${actualHeal} 点生命`);
+    }
+  } else {
+    const baseHeal = Math.max(5, Math.floor(winner.maxHp * 0.3));
+    const bonusHeal = winner.roguelitePostBattleHealBonus ?? 0;
+    actualHeal = Math.min(winner.maxHp - winner.hp, baseHeal + bonusHeal);
+    if (actualHeal > 0) {
+      winner.hp += actualHeal;
+      addEvent(room, "heal", `战后恢复 ${actualHeal} 点生命`);
+    }
+  }
 
   room.phase = "reward";
   room.winnerId = undefined;
   room.rematchReadyPlayerIds = [];
-  room.roguelite = {
-    ...roguelite,
-    rewardChoices: createRogueliteRewardChoices()
+
+  const stageSummary = {
+    defeatedEnemyName: enemyName,
+    postBattleHeal: actualHeal,
+    hpAfterHeal: winner.hp,
+    maxHp: winner.maxHp,
+    isBoss: isBossStage
   };
-  addEvent(room, "system", `第 ${roguelite.stage} 关胜利，选择 1 个奖励后进入下一关`);
+
+  if (isBossStage) {
+    room.roguelite = {
+      ...roguelite,
+      lastStageSummary: stageSummary,
+      rewardChoices: createRogueliteBossRewardChoices()
+    };
+    addEvent(room, "system", `第 ${stage} 关 Boss 胜利！选择 1 个 Boss 能力`);
+  } else if (stage === 1) {
+    room.roguelite = {
+      ...roguelite,
+      lastStageSummary: stageSummary,
+      rewardChoices: createRogueliteStarterRewardChoices()
+    };
+    addEvent(room, "system", `第 1 关胜利！选择 1 个启动礼包`);
+  } else {
+    room.roguelite = {
+      ...roguelite,
+      lastStageSummary: stageSummary,
+      rewardChoices: createRogueliteRewardChoices()
+    };
+    addEvent(room, "system", `第 ${stage} 关胜利，选择 1 个奖励后进入下一关`);
+  }
+
   emitRoomToParticipants(room);
   return true;
 }
@@ -673,7 +937,7 @@ function ensureRogueliteState(room: Room): NonNullable<Room["roguelite"]> {
 }
 
 function createRogueliteRewardChoices(): RogueliteReward[] {
-  const pool = [...ROGUELITE_REWARD_POOL];
+  const pool = [...ROGUELITE_SKILL_REWARD_POOL, ...ROGUELITE_REWARD_POOL];
   const choices: RogueliteReward[] = [];
   while (choices.length < 3 && pool.length > 0) {
     const index = Math.floor(Math.random() * pool.length);
@@ -684,22 +948,134 @@ function createRogueliteRewardChoices(): RogueliteReward[] {
   return choices;
 }
 
+function isBossRewardType(type: string): boolean {
+  return type === "berserker_blood" || type === "vampire_instinct" || type === "dragon_courage";
+}
+
+function isRogueliteSkillRewardType(type: string): boolean {
+  return type === "gunner_triple_shot" || type === "vampire_skill" || type === "zhaoyun_pierce" || type === "flame_lord_mark";
+}
+
+function createRogueliteBossRewardChoices(): RogueliteReward[] {
+  return ROGUELITE_BOSS_REWARD_POOL.map((draft) => ({ ...draft, id: crypto.randomUUID() }));
+}
+
+function createRogueliteStarterRewardChoices(): RogueliteReward[] {
+  const gunner = ROGUELITE_SKILL_REWARD_POOL.find((reward) => reward.type === "gunner_triple_shot");
+  const otherSkills = ROGUELITE_SKILL_REWARD_POOL.filter((reward) => reward.type !== "gunner_triple_shot");
+  const starterPool = [...ROGUELITE_STARTER_REWARD_POOL];
+  const choices: RogueliteReward[] = [];
+  if (gunner) choices.push({ ...gunner, id: crypto.randomUUID() });
+  const randomSkill = pickOne(otherSkills);
+  if (randomSkill) choices.push({ ...randomSkill, id: crypto.randomUUID() });
+  const starter = pickOne(starterPool);
+  if (starter) choices.push({ ...starter, id: crypto.randomUUID() });
+  return choices;
+}
+
+function pickOne<T>(items: readonly T[]): T | undefined {
+  if (items.length === 0) return undefined;
+  return items[Math.floor(Math.random() * items.length)];
+}
+
 function applyRogueliteReward(player: Room["players"][number], reward: RogueliteReward): void {
-  if (reward.type === "max_hp_plus_3") {
-    player.maxHp += reward.value;
-    player.hp += reward.value;
+  // Increment perk stacks
+  const mapping = REWARD_TO_PERK[reward.type];
+  if (mapping) {
+    player.roguelitePerkStacks ??= {};
+    player.roguelitePerkStacks[mapping.perkId] = (player.roguelitePerkStacks[mapping.perkId] ?? 0) + mapping.levels;
+  }
+
+  if (isRogueliteSkillRewardType(reward.type)) {
+    player.rogueliteSkillStacks ??= {};
+    player.rogueliteSkillStacks[reward.type] = (player.rogueliteSkillStacks[reward.type] ?? 0) + 1;
     return;
   }
-  if (reward.type === "shield_plus_2") {
-    player.shield += reward.value;
+
+  // Starter rewards
+  if (reward.type === "starter_heavy_punch") {
+    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + 2;
+    player.maxHp += 4;
+    player.hp = Math.min(player.maxHp, player.hp + 4);
     return;
   }
-  if (reward.type === "heal_5") {
-    player.hp = Math.min(player.maxHp, player.hp + reward.value);
+  if (reward.type === "starter_blood_punch") {
+    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + 1;
+    player.roguelitePassiveIds ??= [];
+    if (!player.roguelitePassiveIds.includes("starter_blood_punch")) {
+      player.roguelitePassiveIds = [...player.roguelitePassiveIds, "starter_blood_punch"];
+    }
     return;
   }
-  if (reward.type === "summoner_cooldown_minus_1") {
-    player.rogueliteSummonerCooldownReduction = (player.rogueliteSummonerCooldownReduction ?? 0) + reward.value;
+  if (reward.type === "starter_iron_wall") {
+    player.rogueliteArmorBonus = (player.rogueliteArmorBonus ?? 0) + 1;
+    player.maxHp += 6;
+    player.hp = Math.min(player.maxHp, player.hp + 6);
+    player.rogueliteStartShield = (player.rogueliteStartShield ?? 0) + 3;
+    return;
+  }
+  if (reward.type === "starter_recovery") {
+    player.maxHp += 4;
+    player.hp = Math.min(player.maxHp, player.hp + 4);
+    player.roguelitePostBattleHealBonus = (player.roguelitePostBattleHealBonus ?? 0) + 5;
+    return;
+  }
+  // Growth rewards
+  if (reward.type === "heavy_punch_training") {
+    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + 1;
+    player.maxHp += 2;
+    player.hp = Math.min(player.maxHp, player.hp + 2);
+    return;
+  }
+  if (reward.type === "iron_body") {
+    player.rogueliteArmorBonus = (player.rogueliteArmorBonus ?? 0) + 1;
+    player.rogueliteStartShield = (player.rogueliteStartShield ?? 0) + 2;
+    return;
+  }
+  if (reward.type === "breathing_recovery") {
+    player.maxHp += 3;
+    player.hp = Math.min(player.maxHp, player.hp + 3);
+    const healAmount = Math.max(8, Math.floor(player.maxHp * reward.value / 100));
+    player.hp = Math.min(player.maxHp, player.hp + healAmount);
+    return;
+  }
+  if (reward.type === "blood_punch") {
+    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + 1;
+    player.roguelitePassiveIds ??= [];
+    if (!player.roguelitePassiveIds.includes("blood_punch")) {
+      player.roguelitePassiveIds = [...player.roguelitePassiveIds, "blood_punch"];
+    }
+    return;
+  }
+  if (reward.type === "battle_instinct") {
+    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + 1;
+    player.roguelitePostBattleHealBonus = (player.roguelitePostBattleHealBonus ?? 0) + 3;
+    player.maxHp += 2;
+    player.hp = Math.min(player.maxHp, player.hp + 2);
+    return;
+  }
+  if (reward.type === "guard_training") {
+    player.maxHp += 4;
+    player.hp = Math.min(player.maxHp, player.hp + 4);
+    player.rogueliteStartShield = (player.rogueliteStartShield ?? 0) + 3;
+    return;
+  }
+  // Roguelite character skills — stored in both rogueliteSkillStacks and perkStacks
+  if (reward.type === "gunner_triple_shot" || reward.type === "vampire_skill" || reward.type === "zhaoyun_pierce" || reward.type === "flame_lord_mark") {
+    player.rogueliteSkillStacks ??= {};
+    const skillId = reward.type;
+    player.rogueliteSkillStacks[skillId] = (player.rogueliteSkillStacks[skillId] ?? 0) + 1;
+    // Also populate perkStacks for engine access
+    player.roguelitePerkStacks ??= {};
+    player.roguelitePerkStacks[skillId] = (player.roguelitePerkStacks[skillId] ?? 0) + 1;
+    return;
+  }
+  if (reward.type === "berserker_blood" || reward.type === "vampire_instinct" || reward.type === "dragon_courage") {
+    player.rogueliteBossAbilities ??= [];
+    if (!player.rogueliteBossAbilities.includes(reward.type)) {
+      player.rogueliteBossAbilities = [...player.rogueliteBossAbilities, reward.type];
+    }
+    // perkStacks handles stacking above; flat boss abilities list preserved for compatibility
   }
 }
 
@@ -719,6 +1095,13 @@ function prepareNextRogueliteStage(room: Room, player: Room["players"][number]):
   player.isDead = false;
   player.isOnline = true;
   player.selectedTargetId = undefined;
+  player.guarding = false;
+  player.flameMarks = 0;
+  player.zhaoZilongHitCount = 0;
+  player.summonerSkillId = undefined;
+  player.summonerSkillCooldown = 0;
+  player.rogueliteSummonerCooldownReduction = 0;
+  player.shield = player.rogueliteStartShield ?? 0;
   ensurePveBot(room);
   const playerIndex = room.players.findIndex((item) => item.id === player.id);
   room.activePlayerIndex = Math.max(0, playerIndex);
@@ -998,8 +1381,22 @@ function validatePveStartGame(room: Room, actorId: string): void {
   if (!isSinglePlayerPveMode(room)) throw new Error("当前房间不是单人 PVE 模式");
   const player = room.players.find((item) => item.id === actorId && !item.isBot);
   if (!player) throw new Error("玩家不存在");
-  if (!player.characterId) throw new Error("请先选择职业");
-  if (!player.summonerSkillId) throw new Error("请先选择召唤师技能");
+
+  if (ensureRoomGameMode(room) === "pve_roguelite") {
+    player.characterId = "boxer";
+    const boxerCharacter = characterList.find((item) => item.id === "boxer");
+    if (!boxerCharacter) throw new Error("拳手职业配置不存在");
+    player.maxHp = boxerCharacter.maxHp;
+    player.hp = boxerCharacter.maxHp;
+    player.shield = 0;
+    player.summonerSkillId = undefined;
+    player.summonerSkillCooldown = 0;
+    player.rogueliteSummonerCooldownReduction = 0;
+  } else {
+    if (!player.characterId) throw new Error("请先选择职业");
+    if (!player.summonerSkillId) throw new Error("请先选择召唤师技能");
+  }
+
   const humanPlayers = room.players.filter((item) => !item.isBot);
   if (humanPlayers.length !== 1) throw new Error("单人 PVE 只支持 1 名真实玩家");
 }
@@ -1011,9 +1408,102 @@ function ensurePveBot(room: Room): void {
   const character = characterList.find((item) => item.id === "boxer");
   if (!character) throw new Error("AI 职业配置不存在");
   const stage = ensureRoomGameMode(room) === "pve_roguelite" ? ensureRogueliteState(room).stage : 1;
-  const bonusHp = stage === 3 ? 10 : stage === 2 ? 5 : 0;
-  const bonusShield = stage === 3 ? 2 : 0;
-  const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, PVE_BOT_NICKNAME, false);
+
+  // Stages 1-3: fixed beginner-friendly difficulty
+  if (stage === 1) {
+    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, "训练拳手", false);
+    bot.isBot = true;
+    bot.isOnline = true;
+    bot.controllerId = PVE_BOT_ID;
+    bot.characterId = "boxer";
+    bot.summonerSkillId = "first_aid";
+    bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
+    bot.maxHp = 8;
+    bot.hp = 8;
+    bot.shield = 0;
+    bot.rogueliteEnemyInfo = { stageType: "normal", hpBonus: 0, shieldBonus: 0, damageBonus: 0, description: "训练关" };
+    room.players.push(bot);
+    return;
+  }
+  if (stage === 2) {
+    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, "普通拳手", false);
+    bot.isBot = true;
+    bot.isOnline = true;
+    bot.controllerId = PVE_BOT_ID;
+    bot.characterId = "boxer";
+    bot.summonerSkillId = "first_aid";
+    bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
+    bot.maxHp = 12;
+    bot.hp = 12;
+    bot.shield = 0;
+    bot.rogueliteEnemyInfo = { stageType: "normal", hpBonus: 4, shieldBonus: 0, damageBonus: 0, description: "普通关" };
+    room.players.push(bot);
+    return;
+  }
+  if (stage === 3) {
+    const bossConfig = getRogueliteBossForStage(stage);
+    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, bossConfig.name, false);
+    bot.isBot = true;
+    bot.isOnline = true;
+    bot.controllerId = PVE_BOT_ID;
+    bot.characterId = "boxer";
+    bot.summonerSkillId = "first_aid";
+    bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
+    bot.maxHp = bossConfig.baseHp;
+    bot.hp = bossConfig.baseHp;
+    bot.shield = bossConfig.baseShield;
+    bot.rogueliteBossId = bossConfig.id;
+    bot.rogueliteBossState = bossConfig.id === "boss_god_berserker"
+      ? { t15: true, t10: true, t5: true, t1: true, dyingAfterAttack: false }
+      : {};
+    bot.rogueliteEnemyInfo = { stageType: "boss", hpBonus: bossConfig.baseHp - 8, shieldBonus: bossConfig.baseShield, damageBonus: 0, skillNames: bossConfig.skills };
+    room.players.push(bot);
+    addEvent(room, "system", `Boss 出现：${bossConfig.name}！${bossConfig.skills.join("；")}`);
+    return;
+  }
+
+  // Stages 4+: formula-based scaling
+  let bonusHp = 0;
+  let bonusShield = 0;
+
+  if (stage === 4) { bonusHp = 10; bonusShield = 2; }
+  else if (stage === 5) { bonusHp = 15; bonusShield = 4; }
+  else if (stage === 6) { bonusHp = 25; bonusShield = 8; }
+  else {
+    bonusHp = stage * 5;
+    bonusShield = Math.floor(stage / 2) * 2;
+    if (stage % 3 === 0) { bonusHp += 10; bonusShield += 4; }
+    else if (stage % 3 === 2) { bonusHp += 3; bonusShield += 2; }
+  }
+
+  if (stage % 3 === 0) {
+    // Boss stage (6+): use boss config with scaling
+    const bossConfig = getRogueliteBossForStage(stage);
+    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, bossConfig.name, false);
+    bot.isBot = true;
+    bot.isOnline = true;
+    bot.controllerId = PVE_BOT_ID;
+    bot.characterId = "boxer";
+    bot.summonerSkillId = "first_aid";
+    bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
+    bot.maxHp = bossConfig.baseHp + bonusHp;
+    bot.hp = bossConfig.baseHp + bonusHp;
+    bot.shield = bossConfig.baseShield + bonusShield;
+    bot.rogueliteBossId = bossConfig.id;
+    bot.rogueliteBossState = bossConfig.id === "boss_god_berserker"
+      ? { t15: true, t10: true, t5: true, t1: true, dyingAfterAttack: false }
+      : {};
+    bot.rogueliteEnemyInfo = { stageType: "boss", hpBonus: bonusHp, shieldBonus: bonusShield, damageBonus: 0, skillNames: bossConfig.skills };
+    room.players.push(bot);
+    addEvent(room, "system", `Boss 出现：${bossConfig.name}！`);
+    return;
+  }
+
+  let botName = PVE_BOT_NICKNAME;
+  const isElite = stage % 3 === 2 && stage >= 5;
+  if (isElite) botName = "精英拳手";
+
+  const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, botName, false);
   bot.isBot = true;
   bot.isOnline = true;
   bot.controllerId = PVE_BOT_ID;
@@ -1023,6 +1513,7 @@ function ensurePveBot(room: Room): void {
   bot.maxHp = character.maxHp + bonusHp;
   bot.hp = character.maxHp + bonusHp;
   bot.shield = bonusShield;
+  bot.rogueliteEnemyInfo = { stageType: isElite ? "elite" : "normal", hpBonus: bonusHp, shieldBonus: bonusShield, damageBonus: isElite ? 1 : 0 };
   room.players.push(bot);
 }
 
@@ -1033,6 +1524,19 @@ function removePveBotsForLobby(room: Room): void {
     room.roguelite = undefined;
     for (const player of room.players) {
       player.rogueliteSummonerCooldownReduction = undefined;
+      player.rogueliteSkillStacks = undefined;
+      player.rogueliteBossAbilities = undefined;
+      player.roguelitePerkStacks = undefined;
+      player.rogueliteBossId = undefined;
+      player.rogueliteBossState = undefined;
+      player.rogueliteStageStartHeal = undefined;
+      player.rogueliteDamageBonus = undefined;
+      player.rogueliteArmorBonus = undefined;
+      player.rogueliteStartShield = undefined;
+      player.roguelitePostBattleHealBonus = undefined;
+      player.roguelitePassiveIds = undefined;
+      player.summonerSkillId = undefined;
+      player.summonerSkillCooldown = 0;
     }
   }
   const host = room.players[0];
@@ -1136,7 +1640,7 @@ function startDuoGameV0(room: Room): GameEvent[] {
 
 function mapRoomPhase(phase: Room["phase"]): RoomListStatus {
   if (phase === "lobby") return "waiting";
-  if (phase === "battle" || phase === "reward") return "playing";
+  if (phase === "battle" || phase === "reward" || phase === "roguelite_continue") return "playing";
   return "ended";
 }
 

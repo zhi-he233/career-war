@@ -111,6 +111,8 @@ const activeFilter = ref<CharacterFilter>("all");
 const searchKeyword = ref("");
 const selectedCharacter = ref<CharacterCard | null>(null);
 const showRuleGuide = ref(false);
+const copyFeedback = ref(false);
+let copyFeedbackTimer: number | undefined;
 
 const me = computed(() => props.room.players.find((player) => player.id === props.playerId));
 const isHost = computed(() => props.room.hostId === props.playerId);
@@ -129,7 +131,8 @@ const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => ski
 const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => isDuoSlotCharacterReady(slot) && isDuoSlotSummonerSkillReady(slot)) && !hasDuplicateCharacterConflict.value);
 const canStart = computed(() => {
   if (isDuoModeDevelopment.value) return isDuoReadyToStart.value;
-  if (isSinglePlayerPveMode.value) return Boolean(me.value?.characterId && me.value?.summonerSkillId);
+  if (isRogueliteMode.value) return true;
+  if (isPveMode.value) return Boolean(me.value?.characterId && me.value?.summonerSkillId);
   return props.room.players.length >= 2 && props.room.players.every(isClassicPlayerReady) && !hasDuplicateCharacterConflict.value;
 });
 const hasDuplicateCharacterConflict = computed(() => !roomSettings.value.allowDuplicateCharacters && (isDuoModeDevelopment.value ? duoDuplicateCharacterIds.value.size > 0 : duplicateCharacterIds.value.size > 0));
@@ -156,7 +159,7 @@ const startHint = computed(() => {
   if (isDuoModeDevelopment.value) return "将进入 2V2 双角色测试版：每名玩家控制两个角色进行战斗。";
   if (isSinglePlayerPveMode.value && !me.value?.characterId) return "请选择 1 个职业。";
   if (isSinglePlayerPveMode.value && !me.value?.summonerSkillId) return "请选择 1 个召唤师技能。";
-  if (isRogueliteMode.value) return `准备开始肉鸽挑战：连续 3 关，${characterName(me.value?.characterId)} vs AI`;
+  if (isRogueliteMode.value) return `肉鸽挑战：初始拳手，3 关一 Boss，逐步获得能力。选择开始即可进入。`;
   if (isPveMode.value) return `准备开始人机练习：${characterName(me.value?.characterId)} vs AI`;
   if (hasDuplicateCharacterConflict.value) return "当前已有重复职业，请玩家重新选择。";
   if (!canStart.value) return "至少 2 人，且所有玩家都选择职业后可开始。";
@@ -171,6 +174,12 @@ const selectableMaxPlayerOptions = computed(() => (isDuoModeDevelopment.value ? 
 
 async function copyInviteLink(): Promise<void> {
   await navigator.clipboard.writeText(inviteLink.value);
+  copyFeedback.value = true;
+  window.clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = window.setTimeout(() => {
+    copyFeedback.value = false;
+    copyFeedbackTimer = undefined;
+  }, 1500);
 }
 
 function confirmCharacterChoice(): void {
@@ -348,7 +357,7 @@ function fullDescription(character: CharacterCard): string[] {
       </div>
 
       <div class="lobby-quick-actions">
-        <button class="secondary-btn" type="button" @click="copyInviteLink">复制邀请链接</button>
+        <button class="secondary-btn" type="button" :disabled="copyFeedback" @click="copyInviteLink">{{ copyFeedback ? "已复制 ✓" : "复制邀请链接" }}</button>
         <button class="ghost-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
       </div>
 
@@ -407,7 +416,7 @@ function fullDescription(character: CharacterCard): string[] {
         <p v-if="isDuoModeDevelopment" class="settings-warning">2V2 双角色测试版：请完成 4 个角色槽位和召唤师技能选择后开始。</p>
       </section>
 
-      <section v-if="!isDuoModeDevelopment" class="summoner-select-panel">
+      <section v-if="!isDuoModeDevelopment && !isRogueliteMode" class="summoner-select-panel">
         <div class="settings-title">
           <h2>召唤师技能</h2>
           <span class="hint">每人选择 1 个</span>
@@ -434,7 +443,7 @@ function fullDescription(character: CharacterCard): string[] {
           <p class="hint">{{ isHost || isDuoModeDevelopment || isSinglePlayerPveMode ? startHint : `当前选择：${characterName(me?.characterId)}` }}</p>
         </div>
         <button class="primary-btn" type="button" :disabled="!isHost || !canStart" @click="emit('startGame')">
-          {{ isDuoModeDevelopment ? isHost ? canStart ? "开始 2V2" : "2V2 选择未完成" : "等待房主开始" : isRogueliteMode ? canStart ? "开始肉鸽挑战" : "请选择职业和技能" : isPveMode ? canStart ? "开始人机练习" : "请选择职业和技能" : isHost ? "开始游戏" : "等待房主开始" }}
+          {{ isDuoModeDevelopment ? isHost ? canStart ? "开始 2V2" : "2V2 选择未完成" : "等待房主开始" : isRogueliteMode ? "开始肉鸽挑战" : isPveMode ? canStart ? "开始人机练习" : "请选择职业和技能" : isHost ? "开始游戏" : "等待房主开始" }}
         </button>
       </section>
     </section>
@@ -493,6 +502,15 @@ function fullDescription(character: CharacterCard): string[] {
 
           <p v-else class="empty-state">等待玩家加入后生成两个角色槽位。</p>
         </article>
+      </div>
+    </section>
+
+    <section v-else-if="isRogueliteMode" class="character-picker roguelite-intro">
+      <div class="picker-heading">
+        <div>
+          <h2>肉鸽挑战</h2>
+          <p class="hint">固定从拳手开始，通过奖励获得能力。</p>
+        </div>
       </div>
     </section>
 
@@ -589,6 +607,29 @@ function fullDescription(character: CharacterCard): string[] {
 </template>
 
 <style scoped>
+.roguelite-intro-body {
+  padding: 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.roguelite-intro-body p {
+  margin: 4px 0;
+}
+
+.roguelite-intro-body ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.roguelite-intro-body li {
+  font-size: 13px;
+  color: #475569;
+}
+
 .duo-slot-picker {
   gap: 12px;
 }

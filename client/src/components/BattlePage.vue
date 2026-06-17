@@ -3,6 +3,15 @@ import { computed, onUnmounted, ref, watch } from "vue";
 import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
+import EmotePanel from "./battle/EmotePanel.vue";
+import BattleLogDrawer from "./battle/BattleLogDrawer.vue";
+import PlayerDetailDialog from "./battle/PlayerDetailDialog.vue";
+import CombatBoard from "./battle/CombatBoard.vue";
+import type { SeatViewModel } from "./battle/BattleSeat.vue";
+import DicePanel from "./battle/DicePanel.vue";
+import type { DicePanelProps } from "./battle/DicePanel.vue";
+import ActionSlots from "./battle/ActionSlots.vue";
+import type { ActionSlotVM, SelfDestructOption } from "./battle/ActionSlots.vue";
 
 const props = defineProps<{
   room: Room;
@@ -90,7 +99,10 @@ const rollRequestLocked = ref(false);
 const activeEmotes = ref<Record<string, VisibleEmote>>({});
 const activeHighlight = ref<CharacterHighlight | null>(null);
 const activeSkillHints = ref<SkillHint[]>([]);
+const rogueliteAlert = ref<{ text: string; key: string } | null>(null);
+let rogueliteAlertTimer: number | undefined;
 const showRuleGuide = ref(false);
+const showBattleLog = ref(false);
 const emoteLocked = ref(false);
 const detailPlayerId = ref<string | null>(null);
 const selectedActionSlot = ref<RollActionType | null>(null);
@@ -112,6 +124,260 @@ const isBotTurn = computed(() => isSinglePlayerPveMode.value && Boolean(activePl
 const rogueliteState = computed(() => room.value.roguelite);
 const rogueliteRewardChoices = computed(() => rogueliteState.value?.rewardChoices ?? []);
 const rogueliteAppliedRewards = computed(() => rogueliteState.value?.appliedRewards ?? []);
+const currentRogueliteRound = computed(() => Math.floor(((rogueliteState.value?.stage ?? 1) - 1) / 3) + 1);
+const isBossRewardPhase = computed(() => (rogueliteState.value?.stage ?? 0) % 3 === 0 && room.value.phase === "reward");
+const isBossStage = computed(() => (rogueliteState.value?.stage ?? 0) % 3 === 0 && room.value.phase === "battle");
+const isRogueliteContinuePhase = computed(() => isRogueliteMode.value && room.value.phase === "roguelite_continue");
+const isRogueliteSuccess = computed(() => isRogueliteMode.value && room.value.phase === "gameOver" && room.value.winnerId === props.playerId);
+
+/** Unified click handler for any seat click from CombatBoard/BattleSeat.
+ *  Delegates to mode-specific logic in BattlePage. */
+function handleSeatClick(playerId: string): void {
+  const player = room.value.players.find((p) => p.id === playerId);
+  if (!player) return;
+  if (isDuoMode.value) {
+    handleDuoSeatClick(player);
+  } else if (!isSelfDead.value) {
+    selectTargetFromSeat(player);
+  }
+}
+
+/** Pre-computed seat display data for classic (non-duo) battle mode. */
+const classicSeats = computed<SeatViewModel[]>(() =>
+  battlePlayers.value.map((player) => ({
+    playerId: player.id,
+    playerNumber: playerNumber(player),
+    nickname: player.nickname,
+    isDead: player.isDead,
+    isActive: player.id === activePlayer.value?.id,
+    isSelectable: canSelectTarget(player),
+    isSelected: selectedTargetId.value === player.id,
+    isHit: isRecentDamageTarget(player),
+    isHealed: isRecentHealTarget(player),
+    isBlocked: isNoDamageTarget(player),
+    avatarEmoji: playerAvatar(player).emoji,
+    statusText: playerStatus(player),
+    hp: player.hp,
+    maxHp: player.maxHp,
+    shield: player.shield,
+    lastRollText: lastRollText(player) || (zhaoZilongHitText(player) || ""),
+    characterName: characterName(player.characterId),
+    seatTags: buildSeatTags(player),
+    attackableLabel: "可攻击",
+    targetLabel: "目标",
+    isHost: player.id === room.value.hostId,
+    hasInvincible: hasInvincible(player),
+    damageEffect: seatDamageEffect(player),
+    healEffect: seatHealEffect(player),
+    noEffect: seatNoEffect(player),
+    emote: seatEmote(player)
+  }))
+);
+
+/** Pre-computed seat data for each duo team column. */
+const duoTeamSeats = computed<Record<string, SeatViewModel[]>>(() => {
+  const result: Record<string, SeatViewModel[]> = {};
+  for (const team of duoTeams.value) {
+    result[team.id] = team.players.map((player) => {
+      const canActor = canSelectDuoActor(player);
+      const canEnemy = canSelectDuoEnemy(player);
+      return {
+        playerId: player.id,
+        playerNumber: 0,
+        nickname: player.nickname,
+        isDead: player.isDead,
+        isActive: player.controllerId === activeControllerId.value,
+        isSelectable: canActor || canEnemy,
+        isSelected: selectedActor.value?.id === player.id || selectedTargetId.value === player.id,
+        isHit: isRecentDamageTarget(player),
+        isHealed: isRecentHealTarget(player),
+        isBlocked: isNoDamageTarget(player),
+        avatarEmoji: playerAvatar(player).emoji,
+        statusText: playerStatus(player),
+        hp: player.hp,
+        maxHp: player.maxHp,
+        shield: player.shield,
+        lastRollText: lastRollText(player),
+        characterName: characterName(player.characterId),
+        seatTags: buildDuoSeatTags(player),
+        attackableLabel: canActor && selectedActor.value?.id !== player.id ? "可行动" : canEnemy && selectedTargetId.value !== player.id ? "可攻击" : "",
+        targetLabel: selectedActor.value?.id === player.id ? "行动" : selectedTargetId.value === player.id ? "目标" : "",
+        isHost: false,
+        hasInvincible: hasInvincible(player),
+        damageEffect: seatDamageEffect(player),
+        healEffect: seatHealEffect(player),
+        noEffect: seatNoEffect(player),
+        emote: seatEmote(player)
+      };
+    });
+  }
+  return result;
+});
+
+function buildSeatTags(player: Player): string[] {
+  const tags: string[] = [characterName(player.characterId)];
+  if (!isRogueliteMode.value || player.isBot) {
+    tags.push(`${summonerSkillName(player.summonerSkillId)}${player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : ""}`);
+  }
+  tags.push(...guardBadges(player));
+  return tags;
+}
+
+function buildDuoSeatTags(player: Player): string[] {
+  const tags: string[] = [characterName(player.characterId), summonerSkillName(player.summonerSkillId)];
+  tags.push(...guardBadges(player));
+  return tags;
+}
+
+function seatDamageEffect(player: Player): { key: string; value: number } | undefined {
+  const effect = activeFloatingEffects.value.find((e) => e.playerId === player.id && e.type === "damage");
+  return effect ? { key: effect.key, value: effect.value } : undefined;
+}
+function seatHealEffect(player: Player): { key: string; value: number } | undefined {
+  const effect = activeFloatingEffects.value.find((e) => e.playerId === player.id && e.type === "heal");
+  return effect ? { key: effect.key, value: effect.value } : undefined;
+}
+function seatNoEffect(player: Player): { key: string } | undefined {
+  const effect = activeFloatingEffects.value.find((e) => e.playerId === player.id && e.type === "noEffect");
+  return effect ? { key: effect.key } : undefined;
+}
+
+function seatEmote(player: Player) {
+  const e = activeEmotes.value[player.id] ?? (player.controllerId ? activeEmotes.value[player.controllerId] : undefined);
+  if (!e) return undefined;
+  return { key: e.key, emoji: e.emoji };
+}
+
+/** Shared props for DicePanel — mode-agnostic fields. */
+const dicePanelCommon = computed<Omit<DicePanelProps, "isReady" | "canRoll">>(() => ({
+  diceValues: displayedDiceValues.value.map(String),
+  diceKey: rollPhase.value === "idle" ? (visibleRoll.value?.id ?? "empty") : rollPhase.value,
+  rollPhase: rollPhase.value,
+  hasRolled: Boolean(visibleRoll.value),
+  title: dicePanelTitle.value,
+  detail: dicePanelDetail.value,
+  skillText: latestSkill.value.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；"),
+  skillHints: activeSkillHints.value,
+  showRollButton: !pendingGuardCheck.value || isGuardCheckMine.value,
+  rollButtonText: rollButtonText.value
+}));
+
+/** Shared props for ActionSlots — mode-agnostic fields. */
+const actionSlotsCommon = computed(() => ({
+  slots: actionSlots.value.map(
+    (slot): ActionSlotVM => ({
+      id: slot.id,
+      label: slot.label,
+      description: slot.reason ?? slot.description,
+      enabled: slot.enabled,
+      requiresSelfDamage: slot.requiresSelfDamageAmount ?? false,
+      settling: selectedActionSlot.value === slot.id
+    })
+  ),
+  canUseSlots: canUseActionSlots.value,
+  diceValue: pendingRollDecision.value?.currentRoll ?? 0,
+  selfDestructOptions: selfDestructAmounts.map(
+    (amount): SelfDestructOption => ({
+      amount,
+      damage: amount * 2,
+      disabled: !canChooseSelfDestructAmount(amount)
+    })
+  ),
+  showSelfDestruct: shouldShowSelfDestructChoices.value,
+  locked: rollRequestLocked.value
+}));
+
+function onSelectAction(slotId: string): void {
+  const slot = actionSlots.value.find((s) => s.id === slotId);
+  if (slot) confirmActionSlot(slot);
+}
+
+function onSelectSelfDestruct(amount: number): void {
+  confirmSelfDestructAmount(amount);
+}
+
+const rogueliteStageType = computed(() => {
+  const stage = rogueliteState.value?.stage ?? 1;
+  if (stage % 3 === 0) return "boss";
+  if (stage % 3 === 2 && stage >= 5) return "elite";
+  return "normal";
+});
+
+const rogueliteStageTypeLabel = computed(() => {
+  if (rogueliteStageType.value === "boss") return "Boss 战";
+  if (rogueliteStageType.value === "elite") return "精英关";
+  return "普通关";
+});
+
+const rogueliteEnemyInfo = computed(() => {
+  if (!isRogueliteMode.value || room.value.phase !== "battle") return undefined;
+  return room.value.players.find((p) => p.isBot)?.rogueliteEnemyInfo;
+});
+
+const PERK_DISPLAY: Record<string, { name: string; category: "growth" | "boss"; perLevelDesc: string }> = {
+  heavy_punch: { name: "重拳训练", category: "growth", perLevelDesc: "伤害 +1，最大生命 +2" },
+  iron_body: { name: "铁布衫", category: "growth", perLevelDesc: "护甲 +1，每关开始护盾 +2" },
+  blood_punch: { name: "吸血拳法", category: "growth", perLevelDesc: "伤害 +1，造成生命伤害后回复 1" },
+  breathing_recovery: { name: "战斗喘息", category: "growth", perLevelDesc: "最大生命 +3，获得时恢复 40% 最大生命" },
+  battle_instinct: { name: "战斗本能", category: "growth", perLevelDesc: "伤害 +1，战后额外恢复 +2" },
+  guard_training: { name: "防守训练", category: "growth", perLevelDesc: "最大生命 +4，每关开始护盾 +3" },
+  starter_recovery: { name: "续航开局", category: "growth", perLevelDesc: "最大生命 +4，战后额外恢复 +5" },
+  berserker_blood: { name: "狂怒之血", category: "boss", perLevelDesc: "攻击额外造成已损失生命一半的伤害 + 每级额外 +2" },
+  vampire_instinct: { name: "吸血本能", category: "boss", perLevelDesc: "造成生命伤害后回复 2，溢出转护盾" },
+  dragon_courage: { name: "龙胆之力", category: "boss", perLevelDesc: "攻击无视护盾和护甲，每级额外伤害 +1" }
+};
+
+const SKILL_DISPLAY: Record<string, { name: string; perLevelDesc: string }> = {
+  gunner_triple_shot: { name: "枪手技能", perLevelDesc: "Lv.1：6 点三倍伤害；Lv.2：额外 +3；Lv.3：5/6 点触发" },
+  vampire_skill: { name: "吸血鬼技能", perLevelDesc: "造成生命伤害后回复等同等级的生命" },
+  zhaoyun_pierce: { name: "赵子龙技能", perLevelDesc: "攻击无视护盾和护甲，升级后穿透伤害 +1/+2" },
+  flame_lord_mark: { name: "火焰领主技能", perLevelDesc: "攻击命中后添加等同等级的火焰印记" }
+};
+
+const rogueliteGrowthPerks = computed(() => {
+  const stacks = me.value?.roguelitePerkStacks ?? {};
+  return Object.entries(stacks)
+    .filter(([perkId]) => PERK_DISPLAY[perkId]?.category === "growth")
+    .map(([perkId, level]) => ({ perkId, level, def: PERK_DISPLAY[perkId]! }))
+    .filter((p) => p.def)
+    .sort((a, b) => a.def.name.localeCompare(b.def.name));
+});
+
+const rogueliteBossPerks = computed(() => {
+  const stacks = me.value?.roguelitePerkStacks ?? {};
+  return Object.entries(stacks)
+    .filter(([perkId]) => PERK_DISPLAY[perkId]?.category === "boss")
+    .map(([perkId, level]) => ({ perkId, level, def: PERK_DISPLAY[perkId]! }))
+    .filter((p) => p.def)
+    .sort((a, b) => a.def.name.localeCompare(b.def.name));
+});
+
+const rogueliteCharacterSkills = computed(() => {
+  const stacks = me.value?.rogueliteSkillStacks ?? {};
+  return Object.entries(stacks)
+    .filter(([skillId]) => SKILL_DISPLAY[skillId])
+    .map(([skillId, level]) => ({ skillId, level, def: SKILL_DISPLAY[skillId]! }))
+    .sort((a, b) => a.def.name.localeCompare(b.def.name));
+});
+
+const hasAnyRoguelitePerks = computed(() => rogueliteGrowthPerks.value.length > 0 || rogueliteCharacterSkills.value.length > 0 || rogueliteBossPerks.value.length > 0);
+
+const BOSS_SKILL_DISPLAY: Record<string, string[]> = {
+  boss_boxer_king: ["蓄力：投到 1/2 时蓄力，下次攻击额外伤害", "重拳：消耗蓄力造成额外伤害（每层 +3）", "狂暴：半血后伤害 +2"],
+  boss_blood_demon: ["吸血攻击：造成生命伤害后回复 2 点血", "血盾：投到 3 时获得 4 点护盾", "血祭：血量低于 40% 时回复 5 点血并获得 3 点护盾"],
+  boss_shield_guard: ["坚守：天生护甲 +1", "架盾：投到 1/2 时获得 5 点护盾并准备减伤", "盾击反击：架盾后受到攻击时反击 2 点伤害"],
+  boss_god_berserker: ["狂战：已损失生命转化为额外伤害", "生命阈值：15 / 10 / 5 / 1（一次只触发一个）", "濒死一击：1 血后完成最后一次攻击才会倒下"]
+};
+
+const currentBossPlayer = computed(() => {
+  if (!isRogueliteMode.value || room.value.phase !== "battle") return undefined;
+  return room.value.players.find((p) => p.isBot && p.rogueliteBossId);
+});
+
+const currentBossSkills = computed(() => {
+  if (!currentBossPlayer.value?.rogueliteBossId) return [];
+  return BOSS_SKILL_DISPLAY[currentBossPlayer.value.rogueliteBossId] ?? [];
+});
 const activeControllerId = computed(() => room.value.activeControllerId);
 const isMyDuoControllerTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId);
 const selectedActor = computed(() => room.value.players.find((player) => player.id === room.value.selectedActorId));
@@ -224,7 +490,8 @@ const isAllRematchReady = computed(() => rematchParticipants.value.length > 0 &&
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
 const actionStageText = computed(() => {
-  if (room.value.phase === "reward") return "请选择一个奖励";
+  if (room.value.phase === "reward") return isBossRewardPhase.value ? "请选择一个 Boss 能力" : "请选择一个奖励";
+  if (room.value.phase === "roguelite_continue") return "请选择结束挑战或继续挑战";
   if (room.value.phase === "gameOver") return "游戏结束";
   if (me.value?.isDead) return "你已死亡，等待本局结束";
   if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
@@ -246,6 +513,7 @@ const selfActionStateText = computed(() => {
   return "等待行动";
 });
 const selfSummonerText = computed(() => {
+  if (isRogueliteMode.value) return "";
   const player = me.value;
   if (!player) return "召唤师技能：无";
   const name = summonerSkillName(player.summonerSkillId);
@@ -327,7 +595,49 @@ onUnmounted(() => {
   clearEmoteTimers();
   clearHighlightTimer();
   clearSkillHintTimer();
+  window.clearTimeout(rogueliteAlertTimer);
 });
+
+watch(
+  () => props.lastEvent,
+  (event) => {
+    if (!isRogueliteMode.value || !event) return;
+    const alertText = getRogueliteAlertText(event.message);
+    if (alertText) {
+      rogueliteAlert.value = { text: alertText, key: event.id };
+      window.clearTimeout(rogueliteAlertTimer);
+      rogueliteAlertTimer = window.setTimeout(() => {
+        rogueliteAlert.value = null;
+      }, 1500);
+    }
+  }
+);
+
+function getRogueliteAlertText(msg: string): string | null {
+  if (msg.includes("战后恢复至满血")) return `🎉 战后恢复！满血！`;
+  if (msg.includes("战后恢复")) return `💚 战后恢复！`;
+  if (msg.includes("Boss 出现")) return "⚠  Boss 出现！";
+  if (msg.includes("蓄力重拳")) return "💥 蓄力重拳！";
+  if (msg.includes("进入狂暴")) return "🔥 狂暴！";
+  if (msg.includes("凝聚血盾")) return "🛡 血盾！";
+  if (msg.includes("发动血祭")) return "🩸 血祭！";
+  if (msg.includes("吸取生命")) return "🩸 吸血！";
+  if (msg.includes("架起巨盾")) return "🛡 架盾！";
+  if (msg.includes("盾击反击")) return "⚔ 盾击反击！";
+  if (msg.includes("狂怒之血")) return "😡 狂怒之血！";
+  if (msg.includes("龙胆之力")) return "🐉 龙胆之力！";
+  if (msg.includes("枪手") && msg.includes("三倍")) return "💥 三倍射击！";
+  if (msg.includes("血祭回复")) return "🩸 血祭回复！";
+  if (msg.includes("自爆")) return "💣 自爆！";
+  if (msg.includes("处决")) return "⚔ 处决！";
+  if (msg.includes("碾压")) return "🪨 巨岩碾压！";
+  if (msg.includes("开始蓄力")) return "⚡ 蓄力！";
+  if (msg.includes("生命阈值")) return "🛡 生命阈值！";
+  if (msg.includes("濒死不倒")) return "💀 濒死一击！";
+  if (msg.includes("燃尽最后生命")) return "⚰ 神狂战倒下！";
+  if (msg.includes("狂战增伤")) return "💢 狂战增伤！";
+  return null;
+}
 
 const visibleRoll = computed(() => {
   if (rollMode.value === "guard") return undefined;
@@ -419,7 +729,8 @@ const rollButtonText = computed(() => {
 });
 
 const turnGuideText = computed(() => {
-  if (room.value.phase === "reward") return "选择一个奖励后进入下一关";
+  if (room.value.phase === "reward") return isBossRewardPhase.value ? "选择一个 Boss 能力" : "选择一个奖励后进入下一关";
+  if (room.value.phase === "roguelite_continue") return "选择结束挑战或继续挑战";
   if (room.value.phase === "gameOver") return "游戏结束";
   if (me.value?.isDead) return "你已死亡，等待本局结束";
   if (rollRequestLocked.value && !pendingRoom.value) return "正在结算……";
@@ -437,6 +748,7 @@ const turnGuideText = computed(() => {
 
 const turnGuideTone = computed(() => {
   if (room.value.phase === "reward") return "mine";
+  if (room.value.phase === "roguelite_continue") return "mine";
   if (room.value.phase === "gameOver") return "ended";
   if (me.value?.isDead) return "dead";
   if (rollRequestLocked.value || isRolling.value) return "busy";
@@ -572,6 +884,10 @@ function openPlayerDetail(player: Player): void {
   detailPlayerId.value = player.id;
 }
 
+function openPlayerDetailById(playerId: string): void {
+  detailPlayerId.value = playerId;
+}
+
 function closePlayerDetail(): void {
   detailPlayerId.value = null;
 }
@@ -649,6 +965,18 @@ function confirmSelfDestructAmount(amount: number): void {
   confirmDecision("character_skill", undefined, amount);
 }
 
+function isBossRewardType(type: string): boolean {
+  return type === "berserker_blood" || type === "vampire_instinct" || type === "dragon_courage";
+}
+
+function isGrowthRewardType(type: string): boolean {
+  return type === "starter_heavy_punch" || type === "starter_blood_punch" || type === "starter_iron_wall" || type === "starter_recovery" || type === "heavy_punch_training" || type === "iron_body" || type === "breathing_recovery" || type === "blood_punch" || type === "battle_instinct" || type === "guard_training";
+}
+
+function isRogueliteSkillRewardType(type: string): boolean {
+  return type === "gunner_triple_shot" || type === "vampire_skill" || type === "zhaoyun_pierce" || type === "flame_lord_mark";
+}
+
 function isSummonerSkillId(value: unknown): value is SummonerSkillId {
   return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
 }
@@ -682,6 +1010,11 @@ function readyForRematch(): void {
 function chooseRogueliteReward(reward: RogueliteReward): void {
   if (!isRogueliteMode.value || room.value.phase !== "reward") return;
   socket.emit("chooseRogueliteReward", { rewardId: reward.id });
+}
+
+function chooseRogueliteContinue(choice: "finish" | "continue"): void {
+  if (!isRogueliteMode.value || room.value.phase !== "roguelite_continue") return;
+  socket.emit("chooseRogueliteContinue", { choice });
 }
 
 function startRollAnimation(mode: RollMode, shouldEmit: boolean): void {
@@ -912,34 +1245,140 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   <section class="battle-layout">
     <section class="battle-tools">
       <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
+      <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">战斗日志</button>
     </section>
 
-    <section v-if="isRogueliteMode" class="roguelite-status">
+    <section v-if="isRogueliteMode" class="roguelite-status" :class="`stage-${rogueliteStageType}`">
       <div>
-        <strong>第 {{ rogueliteState?.stage ?? 1 }} / {{ rogueliteState?.maxStage ?? 3 }} 关</strong>
-        <span>{{ room.phase === "reward" ? "选择奖励" : room.phase === "gameOver" ? winnerText : "挑战中" }}</span>
-      </div>
-      <div class="reward-chip-list">
-        <span v-if="rogueliteAppliedRewards.length === 0">尚未获得奖励</span>
-        <span v-for="reward in rogueliteAppliedRewards" :key="reward.id">{{ reward.name }}</span>
+        <strong>第 {{ rogueliteState?.stage ?? 1 }} 关</strong>
+        <span v-if="currentRogueliteRound > 0" class="round-badge">第 {{ currentRogueliteRound }} 轮</span>
+        <span class="stage-type-badge" :class="`stage-type-${rogueliteStageType}`">{{ rogueliteStageTypeLabel }}</span>
+        <span>{{ room.phase === "reward" ? (isBossRewardPhase ? "选择Boss能力" : "选择奖励") : room.phase === "roguelite_continue" ? "选择结束或继续" : room.phase === "gameOver" ? winnerText : "挑战中" }}</span>
       </div>
     </section>
 
-    <section v-if="isRogueliteMode && room.phase === 'reward'" class="roguelite-reward-panel">
+    <section v-if="isRogueliteMode && currentBossPlayer" class="roguelite-boss-panel">
       <div class="section-heading">
-        <h2>选择奖励</h2>
-        <span class="hint">选择 1 个奖励后进入下一关</span>
+        <h2>当前 Boss</h2>
+        <span class="boss-badge">Boss</span>
+      </div>
+      <div class="boss-info-body">
+        <strong>{{ currentBossPlayer.nickname }}</strong>
+        <p>{{ currentBossPlayer.characterId ? characterName(currentBossPlayer.characterId) : "" }} · ♥ {{ currentBossPlayer.hp }}/{{ currentBossPlayer.maxHp }} · 盾 {{ currentBossPlayer.shield }}</p>
+        <div class="boss-skills">
+          <span v-for="(skill, i) in currentBossSkills" :key="i" class="boss-skill-chip">{{ skill }}</span>
+        </div>
+        <div v-if="currentBossPlayer.rogueliteBossState" class="boss-state">
+          <span v-if="(currentBossPlayer.rogueliteBossState.charge as number) > 0" class="boss-state-chip">蓄力层数：{{ currentBossPlayer.rogueliteBossState.charge }}</span>
+          <span v-if="currentBossPlayer.rogueliteBossState.enraged" class="boss-state-chip enraged">狂暴中</span>
+          <span v-if="currentBossPlayer.rogueliteBossState.guarding" class="boss-state-chip guarding">架盾中</span>
+          <span v-if="currentBossPlayer.rogueliteBossState.bloodSacrificeUsed" class="boss-state-chip">血祭已触发</span>
+          <template v-if="currentBossPlayer.rogueliteBossId === 'boss_god_berserker'">
+            <span v-if="currentBossPlayer.rogueliteBossState.t15" class="boss-state-chip">阈值 15</span>
+            <span v-else class="boss-state-chip broken">阈值 15 已破</span>
+            <span v-if="currentBossPlayer.rogueliteBossState.t10" class="boss-state-chip">阈值 10</span>
+            <span v-else class="boss-state-chip broken">阈值 10 已破</span>
+            <span v-if="currentBossPlayer.rogueliteBossState.t5" class="boss-state-chip">阈值 5</span>
+            <span v-else class="boss-state-chip broken">阈值 5 已破</span>
+            <span v-if="currentBossPlayer.rogueliteBossState.t1" class="boss-state-chip">阈值 1</span>
+            <span v-else class="boss-state-chip broken">阈值 1 已破</span>
+            <span v-if="currentBossPlayer.rogueliteBossState.dyingAfterAttack" class="boss-state-chip enraged">濒死一击中</span>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="isRogueliteMode && rogueliteEnemyInfo && !currentBossPlayer && room.phase === 'battle'" class="roguelite-enemy-panel">
+      <div class="section-heading">
+        <h2>敌人强化</h2>
+      </div>
+      <div class="enemy-info-body">
+        <span>生命加成 +{{ rogueliteEnemyInfo.hpBonus }}</span>
+        <span v-if="rogueliteEnemyInfo.shieldBonus > 0">护盾加成 +{{ rogueliteEnemyInfo.shieldBonus }}</span>
+        <span v-if="rogueliteEnemyInfo.damageBonus > 0">伤害加成 +{{ rogueliteEnemyInfo.damageBonus }}</span>
+        <span v-if="rogueliteEnemyInfo.description">{{ rogueliteEnemyInfo.description }}</span>
+      </div>
+    </section>
+
+    <section v-if="isRogueliteMode" class="roguelite-perks-panel">
+      <div class="section-heading">
+        <h2>我的词条</h2>
+      </div>
+      <div v-if="rogueliteGrowthPerks.length > 0" class="perk-group">
+        <span class="perk-group-label">基础成长</span>
+        <div class="perk-list">
+          <div v-for="perk in rogueliteGrowthPerks" :key="perk.perkId" class="perk-chip growth-perk">
+            <strong>{{ perk.def.name }} Lv.{{ perk.level }}</strong>
+            <small>{{ perk.def.perLevelDesc }}</small>
+          </div>
+        </div>
+      </div>
+      <div class="perk-group">
+        <span class="perk-group-label">角色技能</span>
+        <div v-if="rogueliteCharacterSkills.length > 0" class="perk-list">
+          <div v-for="skill in rogueliteCharacterSkills" :key="skill.skillId" class="perk-chip skill-perk">
+            <strong>{{ skill.def.name }} Lv.{{ skill.level }}</strong>
+            <small>{{ skill.def.perLevelDesc }}</small>
+          </div>
+        </div>
+        <p v-else class="hint">暂无角色技能，击败敌人后获得。</p>
+      </div>
+      <div v-if="rogueliteBossPerks.length > 0" class="perk-group">
+        <span class="perk-group-label">Boss 能力</span>
+        <div class="perk-list">
+          <div v-for="perk in rogueliteBossPerks" :key="perk.perkId" class="perk-chip boss-perk">
+            <strong>{{ perk.def.name }} Lv.{{ perk.level }}</strong>
+            <small>{{ perk.def.perLevelDesc }}</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="isRogueliteMode && room.phase === 'reward'" class="roguelite-reward-panel" :class="{ 'boss-reward-panel': isBossRewardPhase }">
+      <div class="section-heading">
+        <h2>{{ isBossRewardPhase ? "选择 Boss 能力" : "选择奖励" }}</h2>
+        <span class="hint">{{ isBossRewardPhase ? "选择 1 个 Boss 能力，完成挑战" : "选择 1 个奖励后进入下一关" }}</span>
+      </div>
+      <div v-if="rogueliteState?.lastStageSummary" class="stage-summary">
+        <span class="summary-label">本关结算</span>
+        <div class="summary-chips">
+          <span>击败：{{ rogueliteState.lastStageSummary.defeatedEnemyName }}</span>
+          <span v-if="rogueliteState.lastStageSummary.postBattleHeal > 0" class="summary-heal">战后恢复：+{{ rogueliteState.lastStageSummary.postBattleHeal }} 生命</span>
+          <span>当前生命：{{ rogueliteState.lastStageSummary.hpAfterHeal }} / {{ rogueliteState.lastStageSummary.maxHp }}</span>
+          <span v-if="rogueliteState.lastStageSummary.isBoss" class="summary-boss">Boss 关</span>
+        </div>
       </div>
       <div class="reward-card-grid">
         <button
           v-for="reward in rogueliteRewardChoices"
           :key="reward.id"
           class="reward-card"
+          :class="{ 'boss-reward-card': isBossRewardType(reward.type) }"
           type="button"
           @click="chooseRogueliteReward(reward)"
         >
+          <span class="reward-card-type" :class="isBossRewardType(reward.type) ? 'reward-type-boss' : 'reward-type-growth'">
+            {{ isBossRewardType(reward.type) ? 'Boss 能力' : '基础成长' }}
+          </span>
           <strong>{{ reward.name }}</strong>
           <small>{{ reward.description }}</small>
+        </button>
+      </div>
+    </section>
+
+    <section v-if="isRogueliteContinuePhase" class="roguelite-continue-panel">
+      <div class="section-heading">
+        <h2>挑战继续</h2>
+        <span class="hint">你已击败第 {{ rogueliteState?.stage ?? 1 }} 关 Boss！选择结束挑战或继续前进。</span>
+      </div>
+      <div class="continue-actions">
+        <button class="primary-btn continue-finish-btn" type="button" @click="chooseRogueliteContinue('finish')">
+          <strong>结束挑战</strong>
+          <small>以当前成绩结算，挑战成功</small>
+        </button>
+        <button class="primary-btn continue-go-btn" type="button" @click="chooseRogueliteContinue('continue')">
+          <strong>继续挑战</strong>
+          <small>进入第 {{ (rogueliteState?.stage ?? 1) }} 关，敌人更强</small>
         </button>
       </div>
     </section>
@@ -955,68 +1394,12 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
             <strong>{{ team.label }}</strong>
             <span>{{ team.players[0]?.controllerId === props.playerId ? "你的队伍" : "对方队伍" }}</span>
           </header>
-          <div class="combat-board duo-combat-board">
-            <article
-              v-for="player in team.players"
-              :key="player.id"
-              class="battle-seat duo-actor-seat"
-              :class="{
-                active: player.controllerId === activeControllerId,
-                dead: player.isDead,
-                selectable: canSelectDuoActor(player) || canSelectDuoEnemy(player),
-                selected: selectedActor?.id === player.id || selectedTargetId === player.id,
-                hit: isRecentDamageTarget(player),
-                healed: isRecentHealTarget(player),
-                blocked: isNoDamageTarget(player)
-              }"
-            >
-              <button
-                class="seat-button"
-                type="button"
-                :aria-pressed="selectedActor?.id === player.id || selectedTargetId === player.id"
-                :aria-label="`${team.label} ${player.nickname}，${playerStatus(player)}`"
-                @click="handleDuoSeatClick(player)"
-              >
-                <span v-if="canSelectDuoActor(player) && selectedActor?.id !== player.id" class="attackable-mark">可行动</span>
-                <span v-if="canSelectDuoEnemy(player) && selectedTargetId !== player.id" class="attackable-mark">可攻击</span>
-                <span v-if="selectedActor?.id === player.id" class="target-mark">行动</span>
-                <span v-if="selectedTargetId === player.id" class="target-mark">目标</span>
-                <span v-if="hasInvincible(player)" class="invincible-mark" aria-label="无敌">✨</span>
-                <span class="avatar-ring">
-                  <span class="avatar-emoji">{{ playerAvatar(player).emoji }}</span>
-                </span>
-                <span class="dead-label" v-if="player.isDead">已死亡</span>
-                <transition name="emote-bubble">
-                  <span v-if="emoteFor(player)" :key="emoteFor(player)?.key" class="emote-bubble">{{ emoteFor(player)?.emoji }}</span>
-                </transition>
-                <transition name="float-pop">
-                  <b v-if="floatingEffectFor(player, 'damage')" :key="floatingEffectFor(player, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(player, "damage")?.value }}</b>
-                </transition>
-                <transition name="float-pop">
-                  <b v-if="floatingEffectFor(player, 'heal')" :key="floatingEffectFor(player, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(player, "heal")?.value }}</b>
-                </transition>
-                <transition name="float-pop">
-                  <b v-if="floatingEffectFor(player, 'noEffect')" :key="floatingEffectFor(player, 'noEffect')?.key" class="float-number no-pop">无效</b>
-                </transition>
-              </button>
-
-              <div class="seat-name-row">
-                <strong>{{ player.nickname }}</strong>
-                <button class="seat-info-btn" type="button" aria-label="查看角色详情" @click.stop="openPlayerDetail(player)">i</button>
-              </div>
-              <div class="seat-tags">
-                <span>{{ characterName(player.characterId) }}</span>
-                <span>{{ summonerSkillName(player.summonerSkillId) }}</span>
-                <span v-for="badge in guardBadges(player)" :key="`${player.id}-${badge}`" class="guard-badge">{{ badge }}</span>
-              </div>
-              <div class="seat-stats">
-                <span>♥ {{ player.hp }}/{{ player.maxHp }}</span>
-                <span v-if="player.shield > 0">盾 {{ player.shield }}</span>
-              </div>
-              <div class="seat-roll">{{ lastRollText(player) }}</div>
-              <span class="seat-status">{{ playerStatus(player) }}</span>
-            </article>
-          </div>
+          <CombatBoard
+            :seats="duoTeamSeats[team.id] ?? []"
+            inline-class="duo-combat-board"
+            @seat-click="handleSeatClick"
+            @info-click="openPlayerDetailById"
+          />
         </article>
       </div>
     </section>
@@ -1036,67 +1419,20 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         <small v-else-if="selectedActor && !selectedActor.selectedTargetId">点击敌方角色头像选择目标。</small>
         <small v-else-if="selectedActor && selectedActor.selectedTargetId">点击投骰按钮进行骰子投掷。</small>
       </div>
-      <div class="dice-panel action-arena" :class="{ ready: isMyDuoControllerTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
-        <div class="dice-visual">
-          <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
-            <span v-for="(dice, index) in displayedDiceValues" :key="`${visibleRoll?.id ?? pendingRollDecision?.id ?? 'empty'}-${index}`">{{ dice }}</span>
-          </div>
-          <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
-            <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
-              <span>{{ hint.text }}</span>
-              <b v-if="hint.valueText">{{ hint.valueText }}</b>
-            </span>
-          </transition-group>
-        </div>
-        <div class="action-summary">
-          <strong>{{ dicePanelTitle }}</strong>
-          <p v-if="dicePanelDetail">{{ dicePanelDetail }}</p>
-          <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
-        </div>
-        <div v-if="shouldShowActionSlots" class="dice-action-slots">
-          <div v-if="shouldShowSelfDestructChoices" class="self-destruct-panel">
-            <div class="self-destruct-title">
-              <strong>选择自爆扣血量</strong>
-              <span>造成双倍普通伤害</span>
-            </div>
-            <div class="self-destruct-grid">
-              <button
-                v-for="amount in selfDestructAmounts"
-                :key="`duo-self-destruct-${amount}`"
-                class="self-destruct-btn"
-                type="button"
-                :disabled="!canChooseSelfDestructAmount(amount) || rollRequestLocked"
-                :title="canChooseSelfDestructAmount(amount) ? `扣 ${amount} 血，造成 ${amount * 2} 伤害` : '血量不足'"
-                @click="confirmSelfDestructAmount(amount)"
-              >
-                <strong>{{ amount }}</strong>
-                <small>扣 {{ amount }} / 伤 {{ amount * 2 }}</small>
-              </button>
-            </div>
-          </div>
-          <div class="slot-heading">
-            <strong>行动卡槽 · 🎲 {{ pendingRollDecision?.currentRoll }}</strong>
-          </div>
-          <div class="slot-grid">
-            <button
-              v-for="slot in actionSlots"
-              :key="slot.id"
-              class="dice-action-slot"
-              type="button"
-              :class="{ enabled: slot.enabled && !slot.requiresSelfDamageAmount, disabled: !slot.enabled || slot.requiresSelfDamageAmount, settling: selectedActionSlot === slot.id && rollRequestLocked }"
-              :disabled="!canUseActionSlots || !slot.enabled || slot.requiresSelfDamageAmount"
-              @click="confirmActionSlot(slot)"
-            >
-              <span class="slot-dice">🎲 {{ pendingRollDecision?.currentRoll }}</span>
-              <strong>{{ selectedActionSlot === slot.id && rollRequestLocked ? "结算中……" : slot.label }}</strong>
-              <small>{{ slot.requiresSelfDamageAmount ? "请在上方选择扣血量" : slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
-            </button>
-          </div>
-        </div>
-        <button v-if="!pendingGuardCheck || isGuardCheckMine" class="roll-btn" type="button" :disabled="pendingGuardCheck ? !canRollGuardCheck : !canRollForDuo" @click="rollMainDice">
-          {{ rollButtonText }}
-        </button>
-      </div>
+      <DicePanel
+        v-bind="dicePanelCommon"
+        :is-ready="isMyDuoControllerTurn"
+        :can-roll="pendingGuardCheck ? canRollGuardCheck : canRollForDuo"
+        @roll="rollMainDice"
+      >
+        <template #action-slots>
+          <ActionSlots
+            v-bind="actionSlotsCommon"
+            @select-action="onSelectAction"
+            @select-self-destruct="onSelectSelfDestruct"
+          />
+        </template>
+      </DicePanel>
     </section>
 
     <section v-if="!isDuoMode" class="battle-zone">
@@ -1104,73 +1440,11 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         <strong>其他玩家</strong>
         <span>点击头像选择攻击目标</span>
       </div>
-      <div class="combat-board" :class="`turn-guide-${turnGuideTone}`" aria-label="玩家头像战场">
-        <article
-          v-for="player in battlePlayers"
-          :key="player.id"
-          class="battle-seat"
-          :class="{
-            active: player.id === activePlayer?.id,
-            dead: player.isDead,
-            selectable: canSelectTarget(player),
-            selected: selectedTargetId === player.id,
-            hit: isRecentDamageTarget(player),
-            healed: isRecentHealTarget(player),
-            blocked: isNoDamageTarget(player)
-          }"
-        >
-          <button
-            class="seat-button"
-            type="button"
-            :aria-pressed="selectedTargetId === player.id"
-            :aria-label="`${playerNumber(player)}号 ${player.nickname}，${playerStatus(player)}`"
-            @click="selectTargetFromSeat(player)"
-          >
-            <span v-if="canSelectTarget(player) && selectedTargetId !== player.id" class="attackable-mark">可攻击</span>
-            <span v-if="selectedTargetId === player.id" class="target-mark">目标</span>
-            <span v-if="hasInvincible(player)" class="invincible-mark" aria-label="无敌">✨</span>
-            <span v-if="player.id === room.hostId" class="seat-host-mark">房</span>
-
-            <span class="avatar-ring">
-              <span class="avatar-emoji">{{ playerAvatar(player).emoji }}</span>
-            </span>
-
-            <span class="dead-label" v-if="player.isDead">已死亡</span>
-
-            <transition name="emote-bubble">
-              <span v-if="emoteFor(player)" :key="emoteFor(player)?.key" class="emote-bubble">{{ emoteFor(player)?.emoji }}</span>
-            </transition>
-
-            <transition name="float-pop">
-              <b v-if="floatingEffectFor(player, 'damage')" :key="floatingEffectFor(player, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(player, "damage")?.value }}</b>
-            </transition>
-            <transition name="float-pop">
-              <b v-if="floatingEffectFor(player, 'heal')" :key="floatingEffectFor(player, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(player, "heal")?.value }}</b>
-            </transition>
-            <transition name="float-pop">
-              <b v-if="floatingEffectFor(player, 'noEffect')" :key="floatingEffectFor(player, 'noEffect')?.key" class="float-number no-pop">无效</b>
-            </transition>
-          </button>
-
-          <div class="seat-name-row">
-            <strong>{{ playerNumber(player) }}号 {{ player.nickname }}</strong>
-            <button class="seat-info-btn" type="button" aria-label="查看玩家详情" @click.stop="openPlayerDetail(player)">i</button>
-          </div>
-
-          <div class="seat-tags">
-            <span>{{ characterName(player.characterId) }}</span>
-            <span>{{ summonerSkillName(player.summonerSkillId) }}{{ player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : "" }}</span>
-            <span v-for="badge in guardBadges(player)" :key="`${player.id}-${badge}`" class="guard-badge">{{ badge }}</span>
-          </div>
-          <div class="seat-stats">
-            <span>♥ {{ player.hp }}</span>
-            <span v-if="player.shield > 0">🛡 {{ player.shield }}</span>
-          </div>
-          <div class="seat-roll">{{ lastRollText(player) }}</div>
-          <div v-if="zhaoZilongHitText(player)" class="seat-roll">{{ zhaoZilongHitText(player) }}</div>
-          <span class="seat-status">{{ playerStatus(player) }}</span>
-        </article>
-      </div>
+      <CombatBoard
+        :seats="classicSeats"
+        @seat-click="handleSeatClick"
+        @info-click="openPlayerDetailById"
+      />
     </section>
 
     <section v-if="!isDuoMode" class="action-center" :class="`turn-guide-${turnGuideTone}`">
@@ -1180,67 +1454,20 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         <small v-for="line in currentActionLines" :key="line">{{ line }}</small>
       </div>
 
-      <div class="dice-panel action-arena" :class="{ ready: isMyTurn, rolling: rollPhase === 'fast', slowing: rollPhase === 'slow', paused: rollPhase === 'pause', reveal: rollPhase === 'reveal', rolled: visibleRoll }">
-        <div class="dice-visual">
-          <div class="dice-box" :key="rollPhase === 'idle' ? visibleRoll?.id : rollPhase">
-            <span v-for="(dice, index) in displayedDiceValues" :key="`${visibleRoll?.id ?? pendingRollDecision?.id ?? 'empty'}-${index}`">{{ dice }}</span>
-          </div>
-          <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
-            <span v-for="hint in activeSkillHints" :key="hint.id" class="skill-hint-badge">
-              <span>{{ hint.text }}</span>
-              <b v-if="hint.valueText">{{ hint.valueText }}</b>
-            </span>
-          </transition-group>
-        </div>
-        <div class="action-summary">
-          <strong>{{ dicePanelTitle }}</strong>
-          <p v-if="dicePanelDetail">{{ dicePanelDetail }}</p>
-          <p v-if="latestSkill.length">技能：{{ latestSkill.map((event) => event.message.replace(/^.*触发技能：/, "")).join("；") }}</p>
-        </div>
-        <div v-if="shouldShowActionSlots" class="dice-action-slots">
-          <div v-if="shouldShowSelfDestructChoices" class="self-destruct-panel">
-            <div class="self-destruct-title">
-              <strong>选择自爆扣血量</strong>
-              <span>造成双倍普通伤害</span>
-            </div>
-            <div class="self-destruct-grid">
-              <button
-                v-for="amount in selfDestructAmounts"
-                :key="`classic-self-destruct-${amount}`"
-                class="self-destruct-btn"
-                type="button"
-                :disabled="!canChooseSelfDestructAmount(amount) || rollRequestLocked"
-                :title="canChooseSelfDestructAmount(amount) ? `扣 ${amount} 血，造成 ${amount * 2} 伤害` : '血量不足'"
-                @click="confirmSelfDestructAmount(amount)"
-              >
-                <strong>{{ amount }}</strong>
-                <small>扣 {{ amount }} / 伤 {{ amount * 2 }}</small>
-              </button>
-            </div>
-          </div>
-          <div class="slot-heading">
-            <strong>行动卡槽 · 🎲 {{ pendingRollDecision?.currentRoll }}</strong>
-          </div>
-          <div class="slot-grid">
-            <button
-              v-for="slot in actionSlots"
-              :key="slot.id"
-              class="dice-action-slot"
-              type="button"
-              :class="{ enabled: slot.enabled && !slot.requiresSelfDamageAmount, disabled: !slot.enabled || slot.requiresSelfDamageAmount, settling: selectedActionSlot === slot.id && rollRequestLocked }"
-              :disabled="!canUseActionSlots || !slot.enabled || slot.requiresSelfDamageAmount"
-              @click="confirmActionSlot(slot)"
-            >
-              <span class="slot-dice">🎲 {{ pendingRollDecision?.currentRoll }}</span>
-              <strong>{{ selectedActionSlot === slot.id && rollRequestLocked ? "结算中……" : slot.label }}</strong>
-              <small>{{ slot.requiresSelfDamageAmount ? "请在上方选择扣血量" : slot.enabled ? slot.description : slot.reason ?? slot.description }}</small>
-            </button>
-          </div>
-        </div>
-        <button v-if="!pendingGuardCheck || isGuardCheckMine" class="roll-btn" type="button" :disabled="pendingGuardCheck ? !canRollGuardCheck : !canRoll" @click="rollMainDice">
-          {{ rollButtonText }}
-        </button>
-      </div>
+      <DicePanel
+        v-bind="dicePanelCommon"
+        :is-ready="isMyTurn"
+        :can-roll="pendingGuardCheck ? canRollGuardCheck : canRoll"
+        @roll="rollMainDice"
+      >
+        <template #action-slots>
+          <ActionSlots
+            v-bind="actionSlotsCommon"
+            @select-action="onSelectAction"
+            @select-self-destruct="onSelectSelfDestruct"
+          />
+        </template>
+      </DicePanel>
     </section>
 
     <section v-if="!isDuoMode && me" class="self-panel" :class="{ active: me.id === activePlayer?.id, dead: me.isDead }">
@@ -1268,7 +1495,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           <span>♥ {{ me.hp }}/{{ me.maxHp }}</span>
           <span v-if="me.shield > 0">🛡 {{ me.shield }}</span>
           <span>{{ playerStatus(me) }} · {{ selfActionStateText }}</span>
-          <span>{{ selfSummonerText }}</span>
+          <span v-if="!isRogueliteMode">{{ selfSummonerText }}</span>
           <span v-for="badge in guardBadges(me)" :key="`self-${badge}`" class="guard-badge">{{ badge }}</span>
           <span v-if="lastRollText(me)">{{ lastRollText(me) }}</span>
         </div>
@@ -1279,12 +1506,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       <button class="seat-info-btn self-info-btn" type="button" aria-label="查看自己详情" @click="openPlayerDetail(me)">i</button>
     </section>
 
-    <section class="emote-panel" aria-label="固定表情">
-      <button v-for="emote in EMOTE_OPTIONS" :key="emote.id" class="emote-btn" type="button" :disabled="emoteLocked" :title="emote.label" @click="sendEmote(emote.id)">
-        <span>{{ emote.emoji }}</span>
-        <small>{{ emote.label }}</small>
-      </button>
-    </section>
+    <EmotePanel :locked="emoteLocked" @send-emote="sendEmote" />
 
     <section v-if="room.phase === 'gameOver'" class="log-panel rematch-panel">
       <p class="winner">{{ winnerText }}</p>
@@ -1309,50 +1531,29 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </div>
     </div>
 
-    <div v-if="detailPlayer" class="player-detail-backdrop" role="presentation" @click.self="closePlayerDetail">
-      <section class="player-detail-panel" role="dialog" aria-modal="true" :aria-label="`${detailPlayer.nickname} 状态详情`">
-        <header class="player-detail-header">
-          <div>
-            <span class="detail-avatar">{{ playerAvatar(detailPlayer).emoji }}</span>
-            <h2>{{ detailPlayer.nickname }}</h2>
-            <p>{{ characterName(detailPlayer.characterId) }}</p>
-          </div>
-          <button class="detail-close-btn" type="button" aria-label="关闭详情" @click="closePlayerDetail">×</button>
-        </header>
-        <dl class="player-detail-list">
-          <div>
-            <dt>血量</dt>
-            <dd>{{ detailPlayer.hp }} / {{ detailPlayer.maxHp }}</dd>
-          </div>
-          <div>
-            <dt>护盾</dt>
-            <dd>{{ detailPlayer.shield }}</dd>
-          </div>
-          <div>
-            <dt>状态</dt>
-            <dd>{{ playerStatus(detailPlayer) }}</dd>
-          </div>
-          <div>
-            <dt>是否死亡</dt>
-            <dd>{{ detailPlayer.isDead ? "已死亡" : "存活" }}</dd>
-          </div>
-          <div>
-            <dt>最近骰点</dt>
-            <dd>{{ lastRollText(detailPlayer) || "暂无" }}</dd>
-          </div>
-          <div v-if="zhaoZilongHitText(detailPlayer)">
-            <dt>龙胆</dt>
-            <dd>{{ zhaoZilongHitText(detailPlayer) }}</dd>
-          </div>
-          <div v-if="characterFor(detailPlayer.characterId)?.description?.length">
-            <dt>职业技能</dt>
-            <dd>{{ characterFor(detailPlayer.characterId)?.description.join("；") }}</dd>
-          </div>
-        </dl>
-      </section>
-    </div>
+    <PlayerDetailDialog
+      v-if="detailPlayer"
+      :player="detailPlayer"
+      :characters="characters"
+      :player-avatar-emoji="playerAvatar(detailPlayer).emoji"
+      :last-roll-text="lastRollText(detailPlayer)"
+      @close="closePlayerDetail"
+    />
 
     <RuleGuideDialog v-if="showRuleGuide" :characters="characters" @close="showRuleGuide = false" />
+
+    <BattleLogDrawer
+      :visible="showBattleLog"
+      :log="room.battleLog"
+      :newest-event-id="lastEvent?.id ?? ''"
+      @close="showBattleLog = false"
+    />
+
+    <transition name="alert-pop">
+      <div v-if="rogueliteAlert" :key="rogueliteAlert.key" class="roguelite-alert-overlay">
+        <span>{{ rogueliteAlert.text }}</span>
+      </div>
+    </transition>
   </section>
 </template>
 
@@ -1397,19 +1598,394 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   font-weight: 800;
 }
 
-.reward-chip-list {
+.boss-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.stage-type-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.stage-type-normal {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.stage-type-elite {
+  background: #ede9fe;
+  color: #6b21a8;
+}
+
+.stage-type-boss {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.stage-normal { border-color: #bfdbfe; }
+.stage-elite { border-color: #c4b5fd; }
+.stage-boss { border-color: #fecaca; }
+
+.round-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.boss-reward-panel {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.boss-reward-card {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.boss-reward-card:hover {
+  background: #fef3c7;
+}
+
+.roguelite-continue-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #2563eb;
+  border-radius: 8px;
+  padding: 10px;
+  background: #eff6ff;
+}
+
+.continue-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.continue-actions .primary-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.continue-finish-btn {
+  border: 1px solid #16a34a;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.continue-finish-btn:hover {
+  background: #dcfce7;
+}
+
+.continue-go-btn {
+  border: 1px solid #dc2626;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.continue-go-btn:hover {
+  background: #fee2e2;
+}
+
+.continue-actions .primary-btn strong {
+  font-size: 16px;
+}
+
+.continue-actions .primary-btn small {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.roguelite-boss-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dc2626;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fef2f2;
+}
+
+.boss-info-body {
+  display: grid;
+  gap: 6px;
+}
+
+.boss-info-body strong {
+  color: #991b1b;
+  font-size: 16px;
+}
+
+.boss-info-body p {
+  margin: 0;
+  color: #7f1d1d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.boss-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.boss-skill-chip {
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid #fecaca;
+}
+
+.boss-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.boss-state-chip {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 900;
+  border: 1px solid #fcd34d;
+}
+
+.boss-state-chip.enraged {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.boss-state-chip.guarding {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.boss-state-chip.broken {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  text-decoration: line-through;
+}
+
+.roguelite-enemy-panel {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+
+.enemy-info-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.enemy-info-body span {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.roguelite-alert-overlay {
+  position: fixed;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.roguelite-alert-overlay span {
+  display: inline-block;
+  padding: 14px 28px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  font-size: 22px;
+  font-weight: 900;
+  border-radius: 12px;
+  border: 2px solid #f59e0b;
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.alert-pop-enter-active {
+  transition: all 0.2s ease-out;
+}
+.alert-pop-leave-active {
+  transition: all 0.3s ease-in;
+}
+.alert-pop-enter-from {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.7);
+}
+.alert-pop-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.stage-summary {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+}
+
+.summary-label {
+  color: #166534;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.summary-chips span {
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.summary-chips span.summary-heal {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.summary-chips span.summary-boss {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.reward-card-type {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 900;
+  margin-bottom: 2px;
+}
+
+.reward-type-growth {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.reward-type-boss {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.roguelite-perks-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #2563eb;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.perk-group {
+  display: grid;
+  gap: 4px;
+}
+
+.perk-group-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.perk-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.reward-chip-list span {
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: #eef2ff;
-  color: #475569;
-  font-size: 11px;
-  font-weight: 900;
+.perk-chip {
+  display: grid;
+  gap: 2px;
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-width: 140px;
+}
+
+.perk-chip strong {
+  font-size: 13px;
+}
+
+.perk-chip small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.growth-perk {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.skill-perk {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.boss-perk {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+@media (max-width: 480px) {
+  .continue-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .reward-card-grid {
@@ -1433,6 +2009,15 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
 .reward-card:hover {
   background: #eff6ff;
+}
+
+.skill-reward-card {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.skill-reward-card:hover {
+  background: #dcfce7;
 }
 
 .reward-card strong {
@@ -1634,69 +2219,6 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   border: 1px solid #fecaca;
   border-radius: 8px;
   background: #fff7ed;
-}
-
-.self-destruct-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  color: #7f1d1d;
-}
-
-.self-destruct-title strong {
-  font-size: 13px;
-}
-
-.self-destruct-title span {
-  color: #b45309;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.self-destruct-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.self-destruct-btn {
-  min-height: 46px;
-  border: 1px solid #fb923c;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #9a3412;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 900;
-}
-
-.self-destruct-btn strong,
-.self-destruct-btn small {
-  display: block;
-}
-
-.self-destruct-btn strong {
-  font-size: 18px;
-  line-height: 1.1;
-}
-
-.self-destruct-btn small {
-  margin-top: 2px;
-  font-size: 10px;
-  line-height: 1.2;
-}
-
-.self-destruct-btn:not(:disabled):hover {
-  border-color: #ea580c;
-  background: #ffedd5;
-}
-
-.self-destruct-btn:disabled {
-  border-color: #e2e8f0;
-  background: #f8fafc;
-  color: #94a3b8;
-  cursor: not-allowed;
 }
 
 .slot-grid {

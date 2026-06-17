@@ -26,6 +26,7 @@ const modePageInitialMode = ref<GameMode | null>(null);
 const query = new URLSearchParams(window.location.search);
 const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
 const inviteJoinStarted = ref(false);
+const showLeaveConfirm = ref(false);
 let clientId = getClientId();
 let pingTimer: number | undefined;
 let transportEngine: SocketEngineLike | undefined;
@@ -347,7 +348,7 @@ function getTransportName(transport: unknown): string {
         <p class="eyebrow">H5 联机桌游 MVP</p>
         <h1>职业互怼</h1>
       </div>
-      <button v-if="room" class="ghost-btn" type="button" @click="leaveRoom">离开</button>
+      <button v-if="room" class="ghost-btn" type="button" @click="showLeaveConfirm = true">离开</button>
     </header>
 
     <p v-if="errorMessage" class="toast">{{ errorMessage }}</p>
@@ -398,6 +399,17 @@ function getTransportName(transport: unknown): string {
       @roll-dice="rollDice"
       @confirm-roll-decision="confirmRollDecision"
     />
+
+    <div v-if="showLeaveConfirm" class="leave-confirm-backdrop" @click.self="showLeaveConfirm = false">
+      <div class="leave-confirm-dialog">
+        <p><strong>确定要离开房间吗？</strong></p>
+        <p class="hint">离开后将无法恢复当前对局</p>
+        <div class="leave-confirm-actions">
+          <button class="secondary-btn" type="button" @click="showLeaveConfirm = false">取消</button>
+          <button class="ghost-btn" type="button" @click="showLeaveConfirm = false; leaveRoom()">确认离开</button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -430,5 +442,37 @@ function getTransportName(transport: unknown): string {
     padding: 3px 5px;
     font-size: 9px;
   }
+}
+
+.leave-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.leave-confirm-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 360px);
+  padding: 20px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-dialog);
+  text-align: center;
+}
+
+.leave-confirm-dialog strong {
+  color: var(--color-text-primary);
+  font-size: 17px;
+}
+
+.leave-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 </style>

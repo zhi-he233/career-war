@@ -1,5 +1,5 @@
 export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin" | "self_destructor" | "war_knight" | "crescent_moon" | "fire_lord" | "mountain_shield";
-export type RoomPhase = "lobby" | "battle" | "reward" | "gameOver";
+export type RoomPhase = "lobby" | "battle" | "reward" | "roguelite_continue" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
 export type GameMode = "classic" | "duo_2v2" | "pve_1v1" | "pve_roguelite";
 export type TeamId = "A" | "B";
@@ -42,6 +42,25 @@ export interface Player {
     maxHp: number;
     shield: number;
     rogueliteSummonerCooldownReduction?: number;
+    rogueliteSkillStacks?: Record<string, number>;
+    rogueliteBossAbilities?: RogueliteRewardType[];
+    roguelitePerkStacks?: Record<string, number>;
+    rogueliteBossId?: string;
+    rogueliteBossState?: Record<string, number | boolean>;
+    rogueliteEnemyInfo?: {
+        stageType: "normal" | "elite" | "boss";
+        hpBonus: number;
+        shieldBonus: number;
+        damageBonus: number;
+        skillNames?: string[];
+        description?: string;
+    };
+    rogueliteStageStartHeal?: number;
+    rogueliteDamageBonus?: number;
+    rogueliteArmorBonus?: number;
+    rogueliteStartShield?: number;
+    roguelitePostBattleHealBonus?: number;
+    roguelitePassiveIds?: string[];
     zhaoZilongHitCount?: number;
     flameMarks?: number;
     guarding?: boolean;
@@ -98,7 +117,7 @@ export interface RoomSettings {
     allowDuplicateCharacters: boolean;
     gameMode?: GameMode;
 }
-export type RogueliteRewardType = "max_hp_plus_3" | "shield_plus_2" | "heal_5" | "summoner_cooldown_minus_1";
+export type RogueliteRewardType = "starter_heavy_punch" | "starter_blood_punch" | "starter_iron_wall" | "starter_recovery" | "heavy_punch_training" | "iron_body" | "breathing_recovery" | "blood_punch" | "battle_instinct" | "guard_training" | "gunner_triple_shot" | "vampire_skill" | "zhaoyun_pierce" | "flame_lord_mark" | "berserker_blood" | "vampire_instinct" | "dragon_courage";
 export interface RogueliteReward {
     id: string;
     name: string;
@@ -111,10 +130,17 @@ export interface RogueliteRunState {
     maxStage: number;
     rewardChoices?: RogueliteReward[];
     appliedRewards?: RogueliteReward[];
+    lastStageSummary?: {
+        defeatedEnemyName: string;
+        postBattleHeal: number;
+        hpAfterHeal: number;
+        maxHp: number;
+        isBoss: boolean;
+    };
 }
 export type CharacterReactionSkillId = "gunslinger_copy_damage" | "gunslinger_barrage" | "vampire_life_steal" | "vampire_blood_rite" | "zhao_zilong_hold" | "paladin_invincible" | "self_destruct" | "war_knight_heal" | "crescent_moon_strike" | "fire_lord_spark" | "fire_lord_burst" | "stone_titan_crush" | "mountain_shield_guard";
 export type SummonerSkillId = "lucky_plus_one" | "first_aid" | "iron_wall" | "fate_reroll" | "last_stand";
-export type RollActionType = "normal_attack" | "character_skill" | "summoner_skill";
+export type RollActionType = "normal_attack" | "character_skill" | "summoner_skill" | "roguelite_skill";
 export type RollDecisionChoice = RollActionType | "settle";
 export interface RollDecisionAvailableAction {
     id: RollActionType;

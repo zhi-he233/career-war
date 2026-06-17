@@ -44,7 +44,7 @@ onMounted(() => {
 watch(
   () => props.initialMode,
   (mode) => {
-    if (mode) selectedMode.value = mode;
+    selectedMode.value = mode ?? null;
   }
 );
 

@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { createClientId } from "./utils/id";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import type { Character, CharacterId, GameEvent, GameMode, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import { getClientId, resetClientId, socket, type Ack } from "./socket";
+
+const route = useRoute();
+const router = useRouter();
 import HomePage from "./components/HomePage.vue";
 import PvpModePage from "./components/PvpModePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
@@ -22,12 +26,12 @@ const lastEmote = ref<PlayerEmoteEvent | null>(null);
 const isSocketConnected = ref(socket.connected);
 const roundTripMs = ref<number | null>(null);
 const transportName = ref("");
-const frontPage = ref<"home" | "pvpMode">("home");
-const modePageInitialMode = ref<GameMode | null>(null);
-const query = new URLSearchParams(window.location.search);
-const inviteRoomId = (query.get("room") ?? query.get("roomId") ?? "").toUpperCase().slice(0, 4);
-const inviteJoinStarted = ref(false);
 const showLeaveConfirm = ref(false);
+/** Invite room ID from BOTH old format (?room=XXXX) and new format (/room/XXXX). */
+const _qs = new URLSearchParams(window.location.search);
+const _pathRoom = (window.location.pathname.match(/^\/room\/([A-Z0-9]{4})/) ?? [])[1] ?? "";
+const inviteRoomId = (_qs.get("room") ?? _qs.get("roomId") ?? _pathRoom).toUpperCase().slice(0, 4);
+const inviteJoinStarted = ref(false);
 let clientId = getClientId();
 let pingTimer: number | undefined;
 let transportEngine: SocketEngineLike | undefined;
@@ -49,14 +53,16 @@ if (inviteRoomId) {
   clientId = resetClientId();
 }
 
-const page = computed(() => {
-  if (!room.value) return frontPage.value;
-  if (room.value.phase === "lobby") return "lobby";
-  return "battle";
-});
 const connectionStatusText = computed(() => (isSocketConnected.value ? "已连接" : "断开"));
 const latencyText = computed(() => (roundTripMs.value === null ? "-- ms" : `${roundTripMs.value} ms`));
 const transportText = computed(() => transportName.value || "--");
+
+/** Extract initial game mode from route query (?mode=pve_1v1). */
+const modeFromQuery = computed<GameMode | null>(() => {
+  const m = route.query.mode;
+  if (m === "pve_1v1" || m === "pve_roguelite" || m === "duo_2v2" || m === "classic") return m;
+  return null;
+});
 
 onMounted(() => {
   socket.on("connect", enterFromCurrentUrl);
@@ -109,11 +115,57 @@ onUnmounted(() => {
   detachTransportListeners();
 });
 
+/** Sync URL when room phase changes (lobby ↔ battle). */
+watch(
+  () => room.value?.phase,
+  (phase, _old) => {
+    if (!room.value || !phase) return;
+    const target = phase === "lobby"
+      ? `/room/${room.value.id}`
+      : `/room/${room.value.id}/battle`;
+    if (route.path !== target) {
+      router.replace(target);
+    }
+  }
+);
+
+/** Router guard: when on a /room/ URL without a room, try resume/join or fallback. */
+watch(
+  () => route.path,
+  (path) => {
+    const match = path.match(/^\/room\/([A-Z0-9]{4})(\/battle)?$/);
+    if (!match) return; // not a room URL — nothing to do
+    if (room.value) return; // already have a room — phase watcher handles URL sync
+
+    const urlRoomId = match[1]!;
+
+    // Try invite join (old ?room= or new /room/ format)
+    if (inviteRoomId === urlRoomId) {
+      joinInviteRoom();
+      return;
+    }
+
+    // Try resume from session storage
+    const savedId = sessionStorage.getItem(ROOM_ID_KEY);
+    if (savedId === urlRoomId) {
+      tryResumeRoom();
+      return;
+    }
+
+    // No way to recover — show error and go back to modes
+    showError("房间不存在或已失效");
+    router.replace("/modes");
+  },
+  { immediate: true }
+);
+
 function enterFromCurrentUrl(): void {
   if (inviteRoomId) {
     joinInviteRoom();
     return;
   }
+  // If URL already has a room path, let the route watcher handle it
+  if (route.path.startsWith("/room/")) return;
   tryResumeRoom();
 }
 
@@ -129,7 +181,7 @@ function joinInviteRoom(): void {
     roomId.value = response.roomId;
     room.value = response.room;
     sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
-    window.history.replaceState({}, "", window.location.pathname);
+    router.replace(`/room/${response.roomId}`);
   });
 }
 
@@ -145,6 +197,9 @@ function tryResumeRoom(): void {
     playerId.value = response.playerId;
     roomId.value = response.roomId;
     room.value = response.room;
+    if (route.path !== `/room/${response.roomId}` && route.path !== `/room/${response.roomId}/battle`) {
+      router.replace(`/room/${response.roomId}`);
+    }
   });
 }
 
@@ -154,6 +209,7 @@ function createRoom(payload: { nickname: string; gameMode?: GameMode }): void {
     roomId.value = response.roomId;
     room.value = response.room;
     sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+    router.replace(`/room/${response.roomId}`);
   });
 }
 
@@ -163,6 +219,7 @@ function joinRoom(payload: { nickname: string; roomId: string; gameMode?: GameMo
     roomId.value = response.roomId;
     room.value = response.room;
     sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+    router.replace(`/room/${response.roomId}`);
   });
 }
 
@@ -173,13 +230,11 @@ function requestRoomList(): void {
 }
 
 function openPvpMode(): void {
-  modePageInitialMode.value = null;
-  frontPage.value = "pvpMode";
+  router.push("/modes");
 }
 
 function openPveMode(): void {
-  modePageInitialMode.value = "pve_1v1";
-  frontPage.value = "pvpMode";
+  router.push({ path: "/modes", query: { mode: "pve_1v1" } });
 }
 
 function openRogueliteMode(): void {
@@ -190,8 +245,7 @@ function openRogueliteMode(): void {
 }
 
 function backToHome(): void {
-  modePageInitialMode.value = null;
-  frontPage.value = "home";
+  router.push("/");
 }
 
 function chooseCharacter(characterId: string): void {
@@ -238,8 +292,8 @@ function leaveRoom(): void {
   emitWithAck("leaveRoom", {}, () => {
     room.value = null;
     roomId.value = "";
-    frontPage.value = "pvpMode";
     sessionStorage.removeItem(ROOM_ID_KEY);
+    router.replace("/modes");
   });
 }
 
@@ -360,23 +414,23 @@ function getTransportName(transport: unknown): string {
     </aside>
 
     <HomePage
-      v-if="page === 'home'"
+      v-if="route.name === 'home'"
       @select-pvp="openPvpMode"
       @select-pve="openPveMode"
       @select-roguelite="openRogueliteMode"
     />
     <PvpModePage
-      v-else-if="page === 'pvpMode'"
+      v-else-if="route.name === 'modes'"
       :invite-room-id="inviteRoomId"
       :room-list="roomList"
-      :initial-mode="modePageInitialMode"
+      :initial-mode="modeFromQuery"
       @back-home="backToHome"
       @create-room="createRoom"
       @join-room="joinRoom"
       @refresh-room-list="requestRoomList"
     />
     <LobbyPage
-      v-else-if="page === 'lobby' && room"
+      v-else-if="room && room.phase === 'lobby'"
       :room="room"
       :player-id="playerId"
       :characters="characters"
@@ -399,6 +453,10 @@ function getTransportName(transport: unknown): string {
       @roll-dice="rollDice"
       @confirm-roll-decision="confirmRollDecision"
     />
+    <div v-else class="page-panel">
+      <p class="empty-state">页面未找到</p>
+      <button class="primary-btn" type="button" @click="router.push('/')">返回首页</button>
+    </div>
 
     <div v-if="showLeaveConfirm" class="leave-confirm-backdrop" @click.self="showLeaveConfirm = false">
       <div class="leave-confirm-dialog">

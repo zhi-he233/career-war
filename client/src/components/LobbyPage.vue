@@ -165,7 +165,7 @@ const startHint = computed(() => {
   if (!canStart.value) return "至少 2 人，且所有玩家都选择职业后可开始。";
   return `当前选择：${characterName(me.value?.characterId)}`;
 });
-const inviteLink = computed(() => `${window.location.origin}${window.location.pathname}?room=${props.room.id}`);
+const inviteLink = computed(() => `${window.location.origin}/room/${props.room.id}`);
 const visibleCharacters = computed<CharacterCard[]>(() => [...props.characters, ...LOCKED_CHARACTERS].filter((character) => !character.isHidden));
 const filteredCharacters = computed(() => visibleCharacters.value.filter((character) => matchesFilter(character) && matchesSearch(character)));
 const randomCandidates = computed(() => filteredCharacters.value.filter(isSelectableCharacter));

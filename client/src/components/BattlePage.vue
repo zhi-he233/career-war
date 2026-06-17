@@ -2,16 +2,19 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
+import { useDiceAnimation } from "../composables/useDiceAnimation";
+import type { RollPhase, RollMode } from "../composables/useDiceAnimation";
+import { useEmote } from "../composables/useEmote";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 import EmotePanel from "./battle/EmotePanel.vue";
 import BattleLogDrawer from "./battle/BattleLogDrawer.vue";
 import PlayerDetailDialog from "./battle/PlayerDetailDialog.vue";
 import CombatBoard from "./battle/CombatBoard.vue";
-import type { SeatViewModel } from "./battle/BattleSeat.vue";
 import DicePanel from "./battle/DicePanel.vue";
-import type { DicePanelProps } from "./battle/DicePanel.vue";
 import ActionSlots from "./battle/ActionSlots.vue";
-import type { ActionSlotVM, SelfDestructOption } from "./battle/ActionSlots.vue";
+import SelfPanel from "./battle/SelfPanel.vue";
+import RoguelitePanel from "./battle/RoguelitePanel.vue";
+import type { SeatViewModel, DicePanelProps, ActionSlotVM, SelfDestructOption, SelfPanelVM, RoguelitePanelVM, RoguelitePerkVM, RogueliteRewardOptionVM, RogueliteBossStateChip } from "./battle/types";
 
 const props = defineProps<{
   room: Room;
@@ -28,8 +31,6 @@ const emit = defineEmits<{
   confirmRollDecision: [payload: { roomId: string; pendingDecisionId: string; actionType: RollActionType; skillId?: string; decisionId: string; choice: RollDecisionChoice; summonerSkillId?: SummonerSkillId; selfDamageAmount?: number }];
 }>();
 
-type RollPhase = "idle" | "fast" | "slow" | "pause" | "reveal";
-type RollMode = "normal" | "guard";
 type CurrentDiceMode = "guard_check" | "action_roll" | null;
 type RematchParticipant = {
   id: string;
@@ -48,17 +49,13 @@ type EmoteOption = {
   label: string;
   emoji: string;
 };
-type VisibleEmote = PlayerEmoteEvent & {
-  key: string;
-  emoji: string;
-};
+type VisibleEmote = { key: string; emoji: string };
 type AvatarOption = {
   id: string;
   emoji: string;
 };
 
 const MAX_RENDERED_LOG = 50;
-const EMOTE_DISPLAY_MS = 1500;
 const HIGHLIGHT_DISPLAY_MS = 1500;
 const SKILL_HINT_DISPLAY_MS = 1300;
 const EMOTE_OPTIONS: EmoteOption[] = [
@@ -85,9 +82,10 @@ const PLAYER_AVATARS: AvatarOption[] = [
 const displayedRoom = ref<Room>(cloneRoomForDisplay(props.room));
 const pendingRoom = ref<Room | null>(null);
 const room = computed(() => displayedRoom.value);
-const rollPhase = ref<RollPhase>("idle");
-const rollMode = ref<RollMode>("normal");
-const rollingDice = ref(1);
+
+const { rollPhase, rollMode, rollingDice, isRolling, startAnimation, reveal, finishReveal, clearAllTimers } = useDiceAnimation();
+const { activeEmotes, locked: emoteLocked, lock: lockEmote, showEmote, getEmote: lookupEmote, clearAll: clearEmotes } = useEmote();
+
 const visibleRollId = ref<string | undefined>(getLatestRoll(props.room)?.id);
 const visibleGuardCheckId = ref<string | undefined>(getLatestGuardCheck(props.room)?.id);
 const pendingRevealRollId = ref<string | undefined>();
@@ -95,23 +93,18 @@ const pendingRevealGuardCheckId = ref<string | undefined>();
 const activeEffectRollId = ref<string | undefined>();
 const activeFloatingEffects = ref<FloatingEffect[]>([]);
 const animatedRollIds = new Set<string>();
+const effectTimers: number[] = [];
 const rollRequestLocked = ref(false);
-const activeEmotes = ref<Record<string, VisibleEmote>>({});
 const activeHighlight = ref<CharacterHighlight | null>(null);
 const activeSkillHints = ref<SkillHint[]>([]);
 const rogueliteAlert = ref<{ text: string; key: string } | null>(null);
 let rogueliteAlertTimer: number | undefined;
 const showRuleGuide = ref(false);
 const showBattleLog = ref(false);
-const emoteLocked = ref(false);
 const detailPlayerId = ref<string | null>(null);
 const selectedActionSlot = ref<RollActionType | null>(null);
-let rollingTimer: number | undefined;
-let emoteUnlockTimer: number | undefined;
 let highlightTimer: number | undefined;
 let skillHintTimer: number | undefined;
-const timers: number[] = [];
-const emoteTimers = new Map<string, number>();
 const playedHighlightKeys = new Set<string>();
 const playedSkillHintIds = new Set<string>();
 
@@ -243,9 +236,8 @@ function seatNoEffect(player: Player): { key: string } | undefined {
 }
 
 function seatEmote(player: Player) {
-  const e = activeEmotes.value[player.id] ?? (player.controllerId ? activeEmotes.value[player.controllerId] : undefined);
-  if (!e) return undefined;
-  return { key: e.key, emoji: e.emoji };
+  const e = lookupEmote(player.id, player.controllerId);
+  return e ? { key: e.key, emoji: e.emoji } : undefined;
 }
 
 /** Shared props for DicePanel — mode-agnostic fields. */
@@ -294,6 +286,159 @@ function onSelectAction(slotId: string): void {
 
 function onSelectSelfDestruct(amount: number): void {
   confirmSelfDestructAmount(amount);
+}
+
+/** Display data for the player's own status panel. */
+const selfPanelVM = computed<SelfPanelVM | null>(() => {
+  if (!me.value) return null;
+  return {
+    avatarEmoji: playerAvatar(me.value).emoji,
+    nickname: me.value.nickname,
+    characterName: characterName(me.value.characterId),
+    hp: me.value.hp,
+    maxHp: me.value.maxHp,
+    hpPercent: hpPercent(me.value),
+    shield: me.value.shield,
+    isDead: me.value.isDead,
+    isCurrentTurn: me.value.id === activePlayer.value?.id,
+    statusTags: buildSelfStatusTags(me.value),
+    skillHintText: !isRogueliteMode.value ? selfSummonerText.value : "",
+    lastRollText: lastRollText(me.value),
+    damageEffect: selfDamageEffect(),
+    healEffect: selfHealEffect(),
+    noEffect: selfNoEffect(),
+    emote: selfEmote()
+  };
+});
+
+function buildSelfStatusTags(player: Player): string[] {
+  const tags: string[] = [];
+  tags.push(`${playerStatus(player)} · ${selfActionStateText.value}`);
+  tags.push(...guardBadges(player));
+  return tags;
+}
+
+function selfDamageEffect() {
+  const e = activeFloatingEffects.value.find((ef) => ef.playerId === me.value?.id && ef.type === "damage");
+  return e ? { key: e.key, value: e.value } : undefined;
+}
+function selfHealEffect() {
+  const e = activeFloatingEffects.value.find((ef) => ef.playerId === me.value?.id && ef.type === "heal");
+  return e ? { key: e.key, value: e.value } : undefined;
+}
+function selfNoEffect() {
+  const e = activeFloatingEffects.value.find((ef) => ef.playerId === me.value?.id && ef.type === "noEffect");
+  return e ? { key: e.key } : undefined;
+}
+function selfEmote() {
+  const e = lookupEmote(me.value?.id ?? "");
+  return e ? { key: e.key, emoji: e.emoji } : undefined;
+}
+
+/** Pre-computed display data for all roguelite-mode UI panels. */
+const roguelitePanelVM = computed<RoguelitePanelVM>(() => ({
+  enabled: isRogueliteMode.value,
+  stage: rogueliteState.value?.stage ?? 1,
+  round: currentRogueliteRound.value,
+  stageType: rogueliteStageType.value,
+  stageTypeLabel: rogueliteStageTypeLabel.value,
+  phaseText: roguelitePhaseText(),
+
+  boss: buildRogueliteBossVM(),
+  enemy: buildRogueliteEnemyVM(),
+  perks: buildRoguelitePerksVM(),
+
+  rewardPhase: room.value.phase === "reward" ? buildRogueliteRewardPhaseVM() : undefined,
+  continuePhase: isRogueliteContinuePhase.value ? buildRogueliteContinuePhaseVM() : undefined
+}));
+
+function roguelitePhaseText(): string {
+  if (room.value.phase === "reward") return isBossRewardPhase.value ? "选择Boss能力" : "选择奖励";
+  if (room.value.phase === "roguelite_continue") return "选择结束或继续";
+  if (room.value.phase === "gameOver") return winnerText.value;
+  return "挑战中";
+}
+
+function buildRogueliteBossVM(): RoguelitePanelVM["boss"] {
+  if (!currentBossPlayer.value) return undefined;
+  const chips: RogueliteBossStateChip[] = [];
+  const state = currentBossPlayer.value.rogueliteBossState;
+  if (state) {
+    if ((state.charge as number) > 0) chips.push({ text: `蓄力层数：${state.charge}`, kind: "normal" });
+    if (state.enraged) chips.push({ text: "狂暴中", kind: "enraged" });
+    if (state.guarding) chips.push({ text: "架盾中", kind: "guarding" });
+    if (state.bloodSacrificeUsed) chips.push({ text: "血祭已触发", kind: "normal" });
+    if (currentBossPlayer.value.rogueliteBossId === "boss_god_berserker") {
+      chips.push({ text: state.t15 ? "阈值 15" : "阈值 15 已破", kind: state.t15 ? "normal" : "broken" });
+      chips.push({ text: state.t10 ? "阈值 10" : "阈值 10 已破", kind: state.t10 ? "normal" : "broken" });
+      chips.push({ text: state.t5 ? "阈值 5" : "阈值 5 已破", kind: state.t5 ? "normal" : "broken" });
+      chips.push({ text: state.t1 ? "阈值 1" : "阈值 1 已破", kind: state.t1 ? "normal" : "broken" });
+      if (state.dyingAfterAttack) chips.push({ text: "濒死一击中", kind: "enraged" });
+    }
+  }
+  return {
+    name: currentBossPlayer.value.nickname,
+    characterName: characterName(currentBossPlayer.value.characterId),
+    hp: currentBossPlayer.value.hp,
+    maxHp: currentBossPlayer.value.maxHp,
+    shield: currentBossPlayer.value.shield,
+    skills: currentBossSkills.value,
+    stateChips: chips
+  };
+}
+
+function buildRogueliteEnemyVM(): RoguelitePanelVM["enemy"] {
+  const info = rogueliteEnemyInfo.value;
+  if (!info || currentBossPlayer.value || room.value.phase !== "battle") return undefined;
+  return {
+    hpBonus: info.hpBonus,
+    shieldBonus: info.shieldBonus ?? 0,
+    damageBonus: info.damageBonus ?? 0,
+    description: info.description
+  };
+}
+
+function buildRoguelitePerksVM(): RoguelitePanelVM["perks"] {
+  return {
+    growth: rogueliteGrowthPerks.value.map((p) => ({
+      id: p.perkId, name: p.def.name, level: p.level, description: p.def.perLevelDesc, category: "growth" as const
+    })),
+    skills: rogueliteCharacterSkills.value.map((s) => ({
+      id: s.skillId, name: s.def.name, level: s.level, description: s.def.perLevelDesc, category: "skill" as const
+    })),
+    boss: rogueliteBossPerks.value.map((p) => ({
+      id: p.perkId, name: p.def.name, level: p.level, description: p.def.perLevelDesc, category: "boss" as const
+    }))
+  };
+}
+
+function buildRogueliteRewardPhaseVM(): NonNullable<RoguelitePanelVM["rewardPhase"]> {
+  const summary = rogueliteState.value?.lastStageSummary;
+  return {
+    isBoss: isBossRewardPhase.value,
+    title: isBossRewardPhase.value ? "选择 Boss 能力" : "选择奖励",
+    hint: isBossRewardPhase.value ? "选择 1 个 Boss 能力，完成挑战" : "选择 1 个奖励后进入下一关",
+    summary: summary ? {
+      defeatedName: summary.defeatedEnemyName,
+      postBattleHeal: summary.postBattleHeal ?? 0,
+      hpAfterHeal: summary.hpAfterHeal,
+      maxHp: summary.maxHp,
+      isBoss: summary.isBoss ?? false
+    } : undefined,
+    options: rogueliteRewardChoices.value.map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      isBoss: isBossRewardType(r.type)
+    }))
+  };
+}
+
+function buildRogueliteContinuePhaseVM(): NonNullable<RoguelitePanelVM["continuePhase"]> {
+  return {
+    hint: `你已击败第 ${rogueliteState.value?.stage ?? 1} 关 Boss！选择结束挑战或继续前进。`,
+    nextStage: rogueliteState.value?.stage ?? 1
+  };
 }
 
 const rogueliteStageType = computed(() => {
@@ -448,7 +593,6 @@ const isDecisionMine = computed(() => {
   }
   return decision.actorId === props.playerId;
 });
-const isRolling = computed(() => rollPhase.value !== "idle" && rollPhase.value !== "reveal");
 const isSelfDead = computed(() => Boolean(me.value?.isDead));
 const canUseActionSlots = computed(() => Boolean(pendingRollDecision.value && isDecisionMine.value && !pendingGuardCheck.value && !isRolling.value && !rollRequestLocked.value));
 const shouldShowActionSlots = computed(() => Boolean(canUseActionSlots.value && !isSelfDead.value));
@@ -591,7 +735,8 @@ watch(
 );
 
 onUnmounted(() => {
-  clearRollTimers();
+  clearAllTimers();
+  while (effectTimers.length) window.clearTimeout(effectTimers.pop());
   clearEmoteTimers();
   clearHighlightTimer();
   clearSkillHintTimer();
@@ -983,17 +1128,12 @@ function isSummonerSkillId(value: unknown): value is SummonerSkillId {
 
 function sendEmote(emoteId: EmoteId): void {
   if (emoteLocked.value) return;
-  emoteLocked.value = true;
+  lockEmote();
   socket.emit("sendEmote", { emoteId });
-  window.clearTimeout(emoteUnlockTimer);
-  emoteUnlockTimer = window.setTimeout(() => {
-    emoteLocked.value = false;
-    emoteUnlockTimer = undefined;
-  }, EMOTE_DISPLAY_MS);
 }
 
 function emoteFor(player: Player): VisibleEmote | undefined {
-  return activeEmotes.value[player.id] ?? (player.controllerId ? activeEmotes.value[player.controllerId] : undefined);
+  return lookupEmote(player.id, player.controllerId);
 }
 
 function controllerNickname(player: Player): string {
@@ -1012,47 +1152,31 @@ function chooseRogueliteReward(reward: RogueliteReward): void {
   socket.emit("chooseRogueliteReward", { rewardId: reward.id });
 }
 
+function onChooseRogueliteReward(rewardId: string): void {
+  const reward = rogueliteRewardChoices.value.find((r) => r.id === rewardId);
+  if (reward) chooseRogueliteReward(reward);
+}
+
 function chooseRogueliteContinue(choice: "finish" | "continue"): void {
   if (!isRogueliteMode.value || room.value.phase !== "roguelite_continue") return;
   socket.emit("chooseRogueliteContinue", { choice });
 }
 
-function startRollAnimation(mode: RollMode, shouldEmit: boolean): void {
-  if (isRolling.value) return;
-  clearRollTimers();
-  rollMode.value = mode;
+/** Kick off the roll animation, then delegate reveal to composable callback. */
+function startRollAnimation(mode: RollMode, _shouldEmit: boolean): void {
+  // Reset game-side effects before starting animation
   activeEffectRollId.value = undefined;
   activeFloatingEffects.value = [];
   activeSkillHints.value = [];
   clearSkillHintTimer();
-  rollPhase.value = "fast";
-  rollingDice.value = randomDice();
-  startDiceTicker(55);
 
-  timers.push(window.setTimeout(() => {
-    rollPhase.value = "slow";
-    startDiceTicker(110);
-  }, 240));
-
-  timers.push(window.setTimeout(() => {
-    rollPhase.value = "pause";
-    window.clearInterval(rollingTimer);
-    rollingTimer = undefined;
-  }, 500));
-
-  timers.push(window.setTimeout(revealServerRoll, shouldEmit ? 680 : 560));
-  timers.push(window.setTimeout(revealServerRoll, 820));
-  timers.push(window.setTimeout(() => {
-    if (rollPhase.value !== "idle" && !pendingRoom.value) {
-      rollPhase.value = "idle";
-      rollMode.value = "normal";
-      rollRequestLocked.value = false;
-      window.clearInterval(rollingTimer);
-      rollingTimer = undefined;
-    }
-  }, 1200));
+  startAnimation(mode, () => {
+    // Called by composable at reveal time (~680 ms)
+    revealServerRoll();
+  });
 }
 
+/** Apply the server's roll result to displayedRoom and related state. */
 function revealServerRoll(): void {
   const revealRoom = pendingRoom.value ?? cloneRoomForDisplay(props.room);
   if (rollMode.value === "guard") {
@@ -1064,15 +1188,8 @@ function revealServerRoll(): void {
     pendingRoom.value = null;
     pendingRevealGuardCheckId.value = undefined;
     rollRequestLocked.value = false;
-    rollPhase.value = "reveal";
-    window.clearInterval(rollingTimer);
-    rollingTimer = undefined;
-    timers.push(window.setTimeout(() => {
-      rollPhase.value = "idle";
-      visibleRollId.value = undefined;
-      pendingRevealRollId.value = undefined;
-      rollMode.value = "normal";
-    }, 420));
+    reveal();
+    finishReveal();
     return;
   }
 
@@ -1087,54 +1204,17 @@ function revealServerRoll(): void {
   pendingRoom.value = null;
   pendingRevealRollId.value = undefined;
   rollRequestLocked.value = false;
-  rollPhase.value = "reveal";
-  window.clearInterval(rollingTimer);
-  rollingTimer = undefined;
-  timers.push(window.setTimeout(() => {
-    rollPhase.value = "idle";
-    rollMode.value = "normal";
-  }, 220));
-}
-
-function startDiceTicker(interval: number): void {
-  window.clearInterval(rollingTimer);
-  rollingTimer = window.setInterval(() => {
-    rollingDice.value = randomDice();
-  }, interval);
-}
-
-function clearRollTimers(): void {
-  window.clearInterval(rollingTimer);
-  while (timers.length) window.clearTimeout(timers.pop());
-  rollingTimer = undefined;
+  reveal();
+  finishReveal();
 }
 
 function showPlayerEmote(event: PlayerEmoteEvent): void {
-  window.clearTimeout(emoteTimers.get(event.playerId));
-  activeEmotes.value = {
-    ...activeEmotes.value,
-    [event.playerId]: {
-      ...event,
-      key: `${event.playerId}-${event.createdAt}-${event.emoteId}`,
-      emoji: EMOTE_OPTIONS.find((emote) => emote.id === event.emoteId)?.emoji ?? ""
-    }
-  };
-
-  const timer = window.setTimeout(() => {
-    const current = activeEmotes.value[event.playerId];
-    if (current?.createdAt !== event.createdAt) return;
-    const nextEmotes = { ...activeEmotes.value };
-    delete nextEmotes[event.playerId];
-    activeEmotes.value = nextEmotes;
-    emoteTimers.delete(event.playerId);
-  }, EMOTE_DISPLAY_MS);
-  emoteTimers.set(event.playerId, timer);
+  const emoji = EMOTE_OPTIONS.find((e) => e.id === event.emoteId)?.emoji ?? "";
+  showEmote(event, emoji);
 }
 
 function clearEmoteTimers(): void {
-  window.clearTimeout(emoteUnlockTimer);
-  for (const timer of emoteTimers.values()) window.clearTimeout(timer);
-  emoteTimers.clear();
+  clearEmotes();
 }
 
 function showHighlight(highlight: CharacterHighlight | undefined): void {
@@ -1171,10 +1251,6 @@ function clearSkillHintTimer(): void {
   window.clearTimeout(skillHintTimer);
 }
 
-function randomDice(): number {
-  return Math.floor(Math.random() * 6) + 1;
-}
-
 function getLatestRoll(targetRoom: Room): GameEvent | undefined {
   return targetRoom.battleLog.find((event) => event.type === "roll");
 }
@@ -1190,7 +1266,7 @@ function startEffectWindow(rollId: string): void {
   animatedRollIds.add(rollId);
   activeFloatingEffects.value = effects;
   activeEffectRollId.value = rollId;
-  timers.push(window.setTimeout(() => {
+  effectTimers.push(window.setTimeout(() => {
     if (activeEffectRollId.value === rollId) {
       activeEffectRollId.value = undefined;
       activeFloatingEffects.value = [];
@@ -1248,140 +1324,11 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">战斗日志</button>
     </section>
 
-    <section v-if="isRogueliteMode" class="roguelite-status" :class="`stage-${rogueliteStageType}`">
-      <div>
-        <strong>第 {{ rogueliteState?.stage ?? 1 }} 关</strong>
-        <span v-if="currentRogueliteRound > 0" class="round-badge">第 {{ currentRogueliteRound }} 轮</span>
-        <span class="stage-type-badge" :class="`stage-type-${rogueliteStageType}`">{{ rogueliteStageTypeLabel }}</span>
-        <span>{{ room.phase === "reward" ? (isBossRewardPhase ? "选择Boss能力" : "选择奖励") : room.phase === "roguelite_continue" ? "选择结束或继续" : room.phase === "gameOver" ? winnerText : "挑战中" }}</span>
-      </div>
-    </section>
-
-    <section v-if="isRogueliteMode && currentBossPlayer" class="roguelite-boss-panel">
-      <div class="section-heading">
-        <h2>当前 Boss</h2>
-        <span class="boss-badge">Boss</span>
-      </div>
-      <div class="boss-info-body">
-        <strong>{{ currentBossPlayer.nickname }}</strong>
-        <p>{{ currentBossPlayer.characterId ? characterName(currentBossPlayer.characterId) : "" }} · ♥ {{ currentBossPlayer.hp }}/{{ currentBossPlayer.maxHp }} · 盾 {{ currentBossPlayer.shield }}</p>
-        <div class="boss-skills">
-          <span v-for="(skill, i) in currentBossSkills" :key="i" class="boss-skill-chip">{{ skill }}</span>
-        </div>
-        <div v-if="currentBossPlayer.rogueliteBossState" class="boss-state">
-          <span v-if="(currentBossPlayer.rogueliteBossState.charge as number) > 0" class="boss-state-chip">蓄力层数：{{ currentBossPlayer.rogueliteBossState.charge }}</span>
-          <span v-if="currentBossPlayer.rogueliteBossState.enraged" class="boss-state-chip enraged">狂暴中</span>
-          <span v-if="currentBossPlayer.rogueliteBossState.guarding" class="boss-state-chip guarding">架盾中</span>
-          <span v-if="currentBossPlayer.rogueliteBossState.bloodSacrificeUsed" class="boss-state-chip">血祭已触发</span>
-          <template v-if="currentBossPlayer.rogueliteBossId === 'boss_god_berserker'">
-            <span v-if="currentBossPlayer.rogueliteBossState.t15" class="boss-state-chip">阈值 15</span>
-            <span v-else class="boss-state-chip broken">阈值 15 已破</span>
-            <span v-if="currentBossPlayer.rogueliteBossState.t10" class="boss-state-chip">阈值 10</span>
-            <span v-else class="boss-state-chip broken">阈值 10 已破</span>
-            <span v-if="currentBossPlayer.rogueliteBossState.t5" class="boss-state-chip">阈值 5</span>
-            <span v-else class="boss-state-chip broken">阈值 5 已破</span>
-            <span v-if="currentBossPlayer.rogueliteBossState.t1" class="boss-state-chip">阈值 1</span>
-            <span v-else class="boss-state-chip broken">阈值 1 已破</span>
-            <span v-if="currentBossPlayer.rogueliteBossState.dyingAfterAttack" class="boss-state-chip enraged">濒死一击中</span>
-          </template>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="isRogueliteMode && rogueliteEnemyInfo && !currentBossPlayer && room.phase === 'battle'" class="roguelite-enemy-panel">
-      <div class="section-heading">
-        <h2>敌人强化</h2>
-      </div>
-      <div class="enemy-info-body">
-        <span>生命加成 +{{ rogueliteEnemyInfo.hpBonus }}</span>
-        <span v-if="rogueliteEnemyInfo.shieldBonus > 0">护盾加成 +{{ rogueliteEnemyInfo.shieldBonus }}</span>
-        <span v-if="rogueliteEnemyInfo.damageBonus > 0">伤害加成 +{{ rogueliteEnemyInfo.damageBonus }}</span>
-        <span v-if="rogueliteEnemyInfo.description">{{ rogueliteEnemyInfo.description }}</span>
-      </div>
-    </section>
-
-    <section v-if="isRogueliteMode" class="roguelite-perks-panel">
-      <div class="section-heading">
-        <h2>我的词条</h2>
-      </div>
-      <div v-if="rogueliteGrowthPerks.length > 0" class="perk-group">
-        <span class="perk-group-label">基础成长</span>
-        <div class="perk-list">
-          <div v-for="perk in rogueliteGrowthPerks" :key="perk.perkId" class="perk-chip growth-perk">
-            <strong>{{ perk.def.name }} Lv.{{ perk.level }}</strong>
-            <small>{{ perk.def.perLevelDesc }}</small>
-          </div>
-        </div>
-      </div>
-      <div class="perk-group">
-        <span class="perk-group-label">角色技能</span>
-        <div v-if="rogueliteCharacterSkills.length > 0" class="perk-list">
-          <div v-for="skill in rogueliteCharacterSkills" :key="skill.skillId" class="perk-chip skill-perk">
-            <strong>{{ skill.def.name }} Lv.{{ skill.level }}</strong>
-            <small>{{ skill.def.perLevelDesc }}</small>
-          </div>
-        </div>
-        <p v-else class="hint">暂无角色技能，击败敌人后获得。</p>
-      </div>
-      <div v-if="rogueliteBossPerks.length > 0" class="perk-group">
-        <span class="perk-group-label">Boss 能力</span>
-        <div class="perk-list">
-          <div v-for="perk in rogueliteBossPerks" :key="perk.perkId" class="perk-chip boss-perk">
-            <strong>{{ perk.def.name }} Lv.{{ perk.level }}</strong>
-            <small>{{ perk.def.perLevelDesc }}</small>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="isRogueliteMode && room.phase === 'reward'" class="roguelite-reward-panel" :class="{ 'boss-reward-panel': isBossRewardPhase }">
-      <div class="section-heading">
-        <h2>{{ isBossRewardPhase ? "选择 Boss 能力" : "选择奖励" }}</h2>
-        <span class="hint">{{ isBossRewardPhase ? "选择 1 个 Boss 能力，完成挑战" : "选择 1 个奖励后进入下一关" }}</span>
-      </div>
-      <div v-if="rogueliteState?.lastStageSummary" class="stage-summary">
-        <span class="summary-label">本关结算</span>
-        <div class="summary-chips">
-          <span>击败：{{ rogueliteState.lastStageSummary.defeatedEnemyName }}</span>
-          <span v-if="rogueliteState.lastStageSummary.postBattleHeal > 0" class="summary-heal">战后恢复：+{{ rogueliteState.lastStageSummary.postBattleHeal }} 生命</span>
-          <span>当前生命：{{ rogueliteState.lastStageSummary.hpAfterHeal }} / {{ rogueliteState.lastStageSummary.maxHp }}</span>
-          <span v-if="rogueliteState.lastStageSummary.isBoss" class="summary-boss">Boss 关</span>
-        </div>
-      </div>
-      <div class="reward-card-grid">
-        <button
-          v-for="reward in rogueliteRewardChoices"
-          :key="reward.id"
-          class="reward-card"
-          :class="{ 'boss-reward-card': isBossRewardType(reward.type) }"
-          type="button"
-          @click="chooseRogueliteReward(reward)"
-        >
-          <span class="reward-card-type" :class="isBossRewardType(reward.type) ? 'reward-type-boss' : 'reward-type-growth'">
-            {{ isBossRewardType(reward.type) ? 'Boss 能力' : '基础成长' }}
-          </span>
-          <strong>{{ reward.name }}</strong>
-          <small>{{ reward.description }}</small>
-        </button>
-      </div>
-    </section>
-
-    <section v-if="isRogueliteContinuePhase" class="roguelite-continue-panel">
-      <div class="section-heading">
-        <h2>挑战继续</h2>
-        <span class="hint">你已击败第 {{ rogueliteState?.stage ?? 1 }} 关 Boss！选择结束挑战或继续前进。</span>
-      </div>
-      <div class="continue-actions">
-        <button class="primary-btn continue-finish-btn" type="button" @click="chooseRogueliteContinue('finish')">
-          <strong>结束挑战</strong>
-          <small>以当前成绩结算，挑战成功</small>
-        </button>
-        <button class="primary-btn continue-go-btn" type="button" @click="chooseRogueliteContinue('continue')">
-          <strong>继续挑战</strong>
-          <small>进入第 {{ (rogueliteState?.stage ?? 1) }} 关，敌人更强</small>
-        </button>
-      </div>
-    </section>
+    <RoguelitePanel
+      :data="roguelitePanelVM"
+      @choose-reward="onChooseRogueliteReward"
+      @choose-continue="chooseRogueliteContinue"
+    />
 
     <section v-if="isDuoMode" class="battle-zone duo-battle-zone">
       <div class="zone-heading">
@@ -1470,41 +1417,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       </DicePanel>
     </section>
 
-    <section v-if="!isDuoMode && me" class="self-panel" :class="{ active: me.id === activePlayer?.id, dead: me.isDead }">
-      <button class="self-avatar" type="button" aria-label="查看自己详情" @click="openPlayerDetail(me)">
-        <span>{{ playerAvatar(me).emoji }}</span>
-        <transition name="emote-bubble">
-          <span v-if="emoteFor(me)" :key="emoteFor(me)?.key" class="emote-bubble">{{ emoteFor(me)?.emoji }}</span>
-        </transition>
-        <transition name="float-pop">
-          <b v-if="floatingEffectFor(me, 'damage')" :key="floatingEffectFor(me, 'damage')?.key" class="float-number damage-pop">-{{ floatingEffectFor(me, "damage")?.value }}</b>
-        </transition>
-        <transition name="float-pop">
-          <b v-if="floatingEffectFor(me, 'heal')" :key="floatingEffectFor(me, 'heal')?.key" class="float-number heal-pop">+{{ floatingEffectFor(me, "heal")?.value }}</b>
-        </transition>
-        <transition name="float-pop">
-          <b v-if="floatingEffectFor(me, 'noEffect')" :key="floatingEffectFor(me, 'noEffect')?.key" class="float-number no-pop">无效</b>
-        </transition>
-      </button>
-      <div class="self-main">
-        <div class="self-title">
-          <strong>{{ me.nickname }}</strong>
-          <span>{{ characterName(me.characterId) }}</span>
-        </div>
-        <div class="self-meta">
-          <span>♥ {{ me.hp }}/{{ me.maxHp }}</span>
-          <span v-if="me.shield > 0">🛡 {{ me.shield }}</span>
-          <span>{{ playerStatus(me) }} · {{ selfActionStateText }}</span>
-          <span v-if="!isRogueliteMode">{{ selfSummonerText }}</span>
-          <span v-for="badge in guardBadges(me)" :key="`self-${badge}`" class="guard-badge">{{ badge }}</span>
-          <span v-if="lastRollText(me)">{{ lastRollText(me) }}</span>
-        </div>
-        <div class="self-hp-bar" aria-label="自己的血量">
-          <i :style="{ width: `${hpPercent(me)}%` }"></i>
-        </div>
-      </div>
-      <button class="seat-info-btn self-info-btn" type="button" aria-label="查看自己详情" @click="openPlayerDetail(me)">i</button>
-    </section>
+    <SelfPanel v-if="!isDuoMode && selfPanelVM" :data="selfPanelVM" @show-detail="openPlayerDetail(me!)" />
 
     <EmotePanel :locked="emoteLocked" @send-emote="sendEmote" />
 
@@ -1557,817 +1470,3 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
   </section>
 </template>
 
-<style scoped>
-.battle-layout {
-  gap: 7px;
-  padding-bottom: 8px;
-}
-
-.battle-tools {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.roguelite-status,
-.roguelite-reward-panel {
-  display: grid;
-  gap: 10px;
-  border: 1px solid #d7dee8;
-  border-radius: 8px;
-  padding: 10px;
-  background: #ffffff;
-}
-
-.roguelite-status > div:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: #172033;
-}
-
-.roguelite-status strong {
-  font-size: 16px;
-}
-
-.roguelite-status span,
-.reward-card small {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.boss-badge {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: #dc2626;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 900;
-  line-height: 1.25;
-}
-
-.stage-type-badge {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 900;
-  line-height: 1.25;
-}
-
-.stage-type-normal {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.stage-type-elite {
-  background: #ede9fe;
-  color: #6b21a8;
-}
-
-.stage-type-boss {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.stage-normal { border-color: #bfdbfe; }
-.stage-elite { border-color: #c4b5fd; }
-.stage-boss { border-color: #fecaca; }
-
-.round-badge {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: #dbeafe;
-  color: #1e40af;
-  font-size: 11px;
-  font-weight: 900;
-  line-height: 1.25;
-}
-
-.boss-reward-panel {
-  border-color: #f59e0b;
-  background: #fffbeb;
-}
-
-.boss-reward-card {
-  border-color: #f59e0b;
-  background: #fffbeb;
-}
-
-.boss-reward-card:hover {
-  background: #fef3c7;
-}
-
-.roguelite-continue-panel {
-  display: grid;
-  gap: 10px;
-  border: 1px solid #2563eb;
-  border-radius: 8px;
-  padding: 10px;
-  background: #eff6ff;
-}
-
-.continue-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.continue-actions .primary-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  min-height: 72px;
-  padding: 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font: inherit;
-}
-
-.continue-finish-btn {
-  border: 1px solid #16a34a;
-  background: #f0fdf4;
-  color: #166534;
-}
-
-.continue-finish-btn:hover {
-  background: #dcfce7;
-}
-
-.continue-go-btn {
-  border: 1px solid #dc2626;
-  background: #fef2f2;
-  color: #991b1b;
-}
-
-.continue-go-btn:hover {
-  background: #fee2e2;
-}
-
-.continue-actions .primary-btn strong {
-  font-size: 16px;
-}
-
-.continue-actions .primary-btn small {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.roguelite-boss-panel {
-  display: grid;
-  gap: 8px;
-  border: 1px solid #dc2626;
-  border-radius: 8px;
-  padding: 10px;
-  background: #fef2f2;
-}
-
-.boss-info-body {
-  display: grid;
-  gap: 6px;
-}
-
-.boss-info-body strong {
-  color: #991b1b;
-  font-size: 16px;
-}
-
-.boss-info-body p {
-  margin: 0;
-  color: #7f1d1d;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.boss-skills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.boss-skill-chip {
-  border-radius: 999px;
-  padding: 3px 8px;
-  background: #fee2e2;
-  color: #991b1b;
-  font-size: 11px;
-  font-weight: 800;
-  border: 1px solid #fecaca;
-}
-
-.boss-state {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 4px;
-}
-
-.boss-state-chip {
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 11px;
-  font-weight: 900;
-  border: 1px solid #fcd34d;
-}
-
-.boss-state-chip.enraged {
-  background: #fee2e2;
-  color: #dc2626;
-  border-color: #fca5a5;
-}
-
-.boss-state-chip.guarding {
-  background: #dbeafe;
-  color: #1d4ed8;
-  border-color: #93c5fd;
-}
-
-.boss-state-chip.broken {
-  background: #f1f5f9;
-  color: #94a3b8;
-  border-color: #e2e8f0;
-  text-decoration: line-through;
-}
-
-.roguelite-enemy-panel {
-  display: grid;
-  gap: 6px;
-  border: 1px solid #d7dee8;
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: #f8fafc;
-}
-
-.enemy-info-body {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.enemy-info-body span {
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: #e2e8f0;
-  color: #475569;
-}
-
-.roguelite-alert-overlay {
-  position: fixed;
-  top: 30%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 100;
-  pointer-events: none;
-}
-
-.roguelite-alert-overlay span {
-  display: inline-block;
-  padding: 14px 28px;
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  color: #92400e;
-  font-size: 22px;
-  font-weight: 900;
-  border-radius: 12px;
-  border: 2px solid #f59e0b;
-  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
-  text-align: center;
-  white-space: nowrap;
-}
-
-.alert-pop-enter-active {
-  transition: all 0.2s ease-out;
-}
-.alert-pop-leave-active {
-  transition: all 0.3s ease-in;
-}
-.alert-pop-enter-from {
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.7);
-}
-.alert-pop-leave-to {
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(1.1);
-}
-
-.stage-summary {
-  display: grid;
-  gap: 5px;
-  padding: 8px 10px;
-  border: 1px solid #bbf7d0;
-  border-radius: 8px;
-  background: #f0fdf4;
-}
-
-.summary-label {
-  color: #166534;
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.summary-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.summary-chips span {
-  border-radius: 999px;
-  padding: 3px 8px;
-  background: #dcfce7;
-  color: #166534;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.summary-chips span.summary-heal {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.summary-chips span.summary-boss {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.reward-card-type {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 900;
-  margin-bottom: 2px;
-}
-
-.reward-type-growth {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.reward-type-boss {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.roguelite-perks-panel {
-  display: grid;
-  gap: 8px;
-  border: 1px solid #2563eb;
-  border-radius: 8px;
-  padding: 10px;
-  background: #f8fafc;
-}
-
-.perk-group {
-  display: grid;
-  gap: 4px;
-}
-
-.perk-group-label {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.perk-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.perk-chip {
-  display: grid;
-  gap: 2px;
-  border-radius: 6px;
-  padding: 5px 8px;
-  min-width: 140px;
-}
-
-.perk-chip strong {
-  font-size: 13px;
-}
-
-.perk-chip small {
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.growth-perk {
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1e40af;
-}
-
-.skill-perk {
-  border: 1px solid #bbf7d0;
-  background: #f0fdf4;
-  color: #166534;
-}
-
-.boss-perk {
-  border: 1px solid #fcd34d;
-  background: #fffbeb;
-  color: #92400e;
-}
-
-@media (max-width: 480px) {
-  .continue-actions {
-    grid-template-columns: 1fr;
-  }
-}
-
-.reward-card-grid {
-  display: grid;
-  gap: 8px;
-}
-
-.reward-card {
-  display: grid;
-  gap: 5px;
-  min-height: 84px;
-  border: 1px solid #2563eb;
-  border-radius: 8px;
-  padding: 10px;
-  background: #ffffff;
-  color: #172033;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-
-.reward-card:hover {
-  background: #eff6ff;
-}
-
-.skill-reward-card {
-  border-color: #22c55e;
-  background: #f0fdf4;
-}
-
-.skill-reward-card:hover {
-  background: #dcfce7;
-}
-
-.reward-card strong {
-  font-size: 16px;
-}
-
-.battle-zone,
-.action-center {
-  border: 1px solid #d7dee8;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.zone-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 9px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.zone-heading strong {
-  color: #172033;
-  font-size: 14px;
-}
-
-.zone-heading span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.battle-zone .combat-board {
-  border: 0;
-  border-radius: 0 0 8px 8px;
-  padding: 8px;
-}
-
-.duo-battle-board {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 8px;
-}
-
-.duo-team-column {
-  overflow: hidden;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.duo-team-column header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 9px;
-  border-bottom: 1px solid #e2e8f0;
-  color: #172033;
-}
-
-.duo-team-column header span {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.duo-combat-board {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.duo-actor-seat.selected .seat-button {
-  border-color: #f59e0b;
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
-}
-
-.duo-action-center .action-summary {
-  text-align: center;
-}
-
-.battle-seat {
-  gap: 4px;
-}
-
-.seat-button {
-  min-height: 68px;
-  padding: 6px;
-}
-
-.avatar-ring {
-  width: 48px;
-  height: 48px;
-}
-
-.avatar-emoji {
-  font-size: 28px;
-}
-
-.seat-name-row {
-  gap: 4px;
-}
-
-.seat-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 3px;
-  min-width: 0;
-}
-
-.seat-tags span {
-  max-width: 100%;
-  overflow: hidden;
-  border-radius: 999px;
-  padding: 1px 5px;
-  background: #eef2ff;
-  color: #475569;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.seat-tags .guard-badge,
-.self-meta .guard-badge {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.action-center {
-  display: grid;
-  gap: 0;
-  overflow: hidden;
-}
-
-.action-phase {
-  display: grid;
-  gap: 2px;
-  padding: 7px 10px;
-  background: #172033;
-  color: #ffffff;
-}
-
-.action-phase span {
-  color: #cbd5e1;
-  font-size: 11px;
-}
-
-.action-phase strong {
-  font-size: 16px;
-  line-height: 1.25;
-}
-
-.action-phase small {
-  color: #bfdbfe;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.action-center .dice-panel {
-  border: 0;
-  border-radius: 0;
-  gap: 7px;
-  padding: 8px 10px;
-  box-shadow: none;
-}
-
-.action-center .dice-visual {
-  gap: 6px;
-}
-
-.action-center .dice-box span {
-  width: 48px;
-  height: 48px;
-  font-size: 28px;
-}
-
-.action-summary {
-  gap: 3px;
-}
-
-.action-summary p {
-  margin: 0;
-  line-height: 1.3;
-}
-
-.dice-action-slots {
-  margin-top: 4px;
-}
-
-.self-destruct-panel {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 8px;
-  padding: 8px;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  background: #fff7ed;
-}
-
-.slot-grid {
-  gap: 6px;
-}
-
-.slot-heading {
-  align-items: start;
-}
-
-.dice-action-slot {
-  min-height: 72px;
-  padding: 7px;
-}
-
-.dice-action-slot small {
-  min-height: 0;
-}
-
-.self-panel {
-  position: relative;
-  padding: 8px 10px;
-  gap: 8px;
-}
-
-.self-avatar {
-  width: 52px;
-  height: 52px;
-}
-
-.self-title span {
-  flex: 0 0 auto;
-}
-
-.self-meta {
-  gap: 4px;
-}
-
-.emote-panel {
-  gap: 5px;
-  padding: 6px;
-}
-
-.emote-btn {
-  min-height: 38px;
-  padding: 4px 6px;
-}
-
-.emote-btn small {
-  font-size: 10px;
-}
-
-@media (max-width: 480px) {
-  .battle-tools {
-    justify-content: stretch;
-  }
-
-  .battle-tools .small-btn {
-    flex: 1;
-    min-height: 34px;
-  }
-
-  .zone-heading {
-    padding: 5px 8px;
-  }
-
-  .zone-heading span {
-    display: none;
-  }
-
-  .battle-zone .combat-board {
-    padding: 6px;
-  }
-
-  .duo-battle-board {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    padding: 6px;
-  }
-
-  .duo-combat-board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .seat-button {
-    min-height: 58px;
-    padding: 5px;
-  }
-
-  .avatar-ring {
-    width: 42px;
-    height: 42px;
-  }
-
-  .avatar-emoji {
-    font-size: 25px;
-  }
-
-  .seat-tags,
-  .seat-roll {
-    display: none;
-  }
-
-  .action-phase strong {
-    font-size: 16px;
-  }
-
-  .slot-grid {
-    padding-bottom: 4px;
-  }
-
-  .self-destruct-title {
-    display: grid;
-  }
-
-  .self-destruct-btn {
-    min-height: 44px;
-  }
-
-  .dice-action-slot {
-    min-height: 64px;
-  }
-
-  .self-panel {
-    grid-template-columns: auto minmax(0, 1fr);
-    padding: 7px 8px;
-  }
-
-  .self-avatar {
-    width: 46px;
-    height: 46px;
-  }
-
-  .emote-panel {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .emote-btn {
-    min-height: 34px;
-  }
-
-  .emote-btn small {
-    display: none;
-  }
-
-  .self-info-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-  }
-}
-</style>

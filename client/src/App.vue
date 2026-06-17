@@ -9,6 +9,7 @@ import LobbyPage from "./components/LobbyPage.vue";
 import BattlePage from "./components/BattlePage.vue";
 
 const ROOM_ID_KEY = "career-war-room-id";
+const isDev = import.meta.env.DEV;
 
 const room = ref<Room | null>(null);
 const characters = ref<Character[]>([]);
@@ -345,7 +346,6 @@ function getTransportName(transport: unknown): string {
   <main class="app-shell">
     <header class="top-bar">
       <div>
-        <p class="eyebrow">H5 联机桌游 MVP</p>
         <h1>职业互怼</h1>
       </div>
       <button v-if="room" class="ghost-btn" type="button" @click="showLeaveConfirm = true">离开</button>
@@ -353,7 +353,7 @@ function getTransportName(transport: unknown): string {
 
     <p v-if="errorMessage" class="toast">{{ errorMessage }}</p>
 
-    <aside class="net-diagnostics" aria-live="polite" title="联机延迟诊断">
+    <aside v-if="isDev" class="net-diagnostics" aria-live="polite" title="联机延迟诊断">
       <span>连接：{{ connectionStatusText }}</span>
       <span>延迟：{{ latencyText }}</span>
       <span>transport：{{ transportText }}</span>

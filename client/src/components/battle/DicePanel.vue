@@ -1,28 +1,6 @@
 <script setup lang="ts">
-export interface DicePanelProps {
-  /** Current dice display values (e.g. ["3"] or ["?"]) */
-  diceValues: string[];
-  /** Key for Vue transition tracking */
-  diceKey: string;
-  /** Current animation phase */
-  rollPhase: "idle" | "fast" | "slow" | "pause" | "reveal";
-  /** Whether this player's turn — enables glow */
-  isReady: boolean;
-  /** Whether the roll result is visible */
-  hasRolled: boolean;
-  /** Main title text above dice (e.g. "架盾判定" / "投出了 5 点") */
-  title: string;
-  /** Optional subtitle / detail text */
-  detail?: string;
-  /** Skill trigger texts joined with ； */
-  skillText: string;
-  /** Floating skill hint badges */
-  skillHints: Array<{ id: string; text: string; valueText?: string }>;
-  /** Roll button */
-  showRollButton: boolean;
-  canRoll: boolean;
-  rollButtonText: string;
-}
+import type { DicePanelProps } from "./types";
+export type { DicePanelProps };
 
 defineProps<DicePanelProps>();
 

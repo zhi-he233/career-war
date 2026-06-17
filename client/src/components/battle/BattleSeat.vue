@@ -1,37 +1,6 @@
 <script setup lang="ts">
-/** Display-ready data for a single seat on the combat board.
- *  All complex logic lives in BattlePage; this is a pure render contract. */
-export interface SeatViewModel {
-  playerId: string;
-  playerNumber: number;
-  nickname: string;
-  isDead: boolean;
-  isActive: boolean;
-  isSelectable: boolean;
-  isSelected: boolean;
-  isHit: boolean;
-  isHealed: boolean;
-  isBlocked: boolean;
-  avatarEmoji: string;
-  statusText: string;
-  hp: number;
-  maxHp: number;
-  shield: number;
-  lastRollText: string;
-  characterName: string;
-  seatTags: string[];
-  /** Label shown above avatar when seat is a valid click target (e.g. "可攻击" / "可行动") */
-  attackableLabel: string;
-  /** Label shown when this seat is the current selection (e.g. "目标" / "行动") */
-  targetLabel: string;
-  isHost: boolean;
-  hasInvincible: boolean;
-  /** Short-lived animation effects rendered inside the seat button */
-  damageEffect?: { key: string; value: number };
-  healEffect?: { key: string; value: number };
-  noEffect?: { key: string };
-  emote?: { key: string; emoji: string };
-}
+import type { SeatViewModel } from "./types";
+export type { SeatViewModel };
 
 defineProps<{
   seat: SeatViewModel;

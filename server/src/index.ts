@@ -1702,7 +1702,7 @@ function isCharacterId(value: unknown): value is CharacterId {
 }
 
 function isRollDecisionChoice(value: unknown): value is RollDecisionChoice {
-  return value === "normal_attack" || value === "settle" || value === "character_skill" || value === "summoner_skill";
+  return value === "normal_attack" || value === "settle" || value === "character_skill" || value === "summoner_skill" || value === "roguelite_skill";
 }
 
 function isGameMode(value: unknown): value is GameMode {

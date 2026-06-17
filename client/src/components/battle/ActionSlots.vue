@@ -1,20 +1,6 @@
 <script setup lang="ts">
-/** A single action slot rendered in the grid */
-export interface ActionSlotVM {
-  id: string;
-  label: string;
-  description: string;
-  enabled: boolean;
-  requiresSelfDamage: boolean;
-  settling: boolean;
-}
-
-/** A self-destruct HP deduction option */
-export interface SelfDestructOption {
-  amount: number;
-  damage: number;
-  disabled: boolean;
-}
+import type { ActionSlotVM, SelfDestructOption } from "./types";
+export type { ActionSlotVM, SelfDestructOption };
 
 const props = defineProps<{
   slots: ActionSlotVM[];

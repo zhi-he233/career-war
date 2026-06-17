@@ -9,9 +9,8 @@ const emit = defineEmits<{
 <template>
   <section class="home-page">
     <div class="home-hero">
-      <p class="eyebrow">H5 联机桌游 MVP</p>
-      <h2>职业互怼 / 职业战争</h2>
-      <p>选择玩法入口，后续 PVE、肉鸽、阵营大战都会从这里进入。</p>
+      <h2>职业互怼</h2>
+      <p>选择玩法入口 — 玩家对战、人机练习、肉鸽挑战。</p>
     </div>
 
     <div class="mode-entry-list">

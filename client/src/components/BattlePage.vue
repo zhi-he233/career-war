@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import { useDiceAnimation } from "../composables/useDiceAnimation";
@@ -14,6 +14,7 @@ import DicePanel from "./battle/DicePanel.vue";
 import ActionSlots from "./battle/ActionSlots.vue";
 import SelfPanel from "./battle/SelfPanel.vue";
 import RoguelitePanel from "./battle/RoguelitePanel.vue";
+import RogueliteStatusCompact from "./battle/RogueliteStatusCompact.vue";
 import type { SeatViewModel, DicePanelProps, ActionSlotVM, SelfDestructOption, SelfPanelVM, RoguelitePanelVM, RoguelitePerkVM, RogueliteRewardOptionVM, RogueliteBossStateChip } from "./battle/types";
 
 const props = defineProps<{
@@ -43,6 +44,13 @@ type FloatingEffect = {
   playerId: string;
   value: number;
   key: string;
+};
+type BattleFeedbackItem = {
+  key: string;
+  text: string;
+  kind: "damage" | "heal" | "noEffect" | "emote";
+  lane: "top" | "middle" | "bottom";
+  side: "left" | "center" | "right";
 };
 type EmoteOption = {
   id: EmoteId;
@@ -101,6 +109,7 @@ const rogueliteAlert = ref<{ text: string; key: string } | null>(null);
 let rogueliteAlertTimer: number | undefined;
 const showRuleGuide = ref(false);
 const showBattleLog = ref(false);
+const showRogueliteDetails = ref(false);
 const detailPlayerId = ref<string | null>(null);
 const selectedActionSlot = ref<RollActionType | null>(null);
 let highlightTimer: number | undefined;
@@ -118,8 +127,8 @@ const rogueliteState = computed(() => room.value.roguelite);
 const rogueliteRewardChoices = computed(() => rogueliteState.value?.rewardChoices ?? []);
 const rogueliteAppliedRewards = computed(() => rogueliteState.value?.appliedRewards ?? []);
 const currentRogueliteRound = computed(() => Math.floor(((rogueliteState.value?.stage ?? 1) - 1) / 3) + 1);
-const isBossRewardPhase = computed(() => (rogueliteState.value?.stage ?? 0) % 3 === 0 && room.value.phase === "reward");
-const isBossStage = computed(() => (rogueliteState.value?.stage ?? 0) % 3 === 0 && room.value.phase === "battle");
+const isBossRewardPhase = computed(() => room.value.phase === "reward" && rogueliteRewardChoices.value.length > 0 && rogueliteRewardChoices.value.every((reward) => isBossRewardType(reward.type)));
+const isBossStage = computed(() => room.value.phase === "battle" && rogueliteEnemyInfo.value?.stageType === "boss");
 const isRogueliteContinuePhase = computed(() => isRogueliteMode.value && room.value.phase === "roguelite_continue");
 const isRogueliteSuccess = computed(() => isRogueliteMode.value && room.value.phase === "gameOver" && room.value.winnerId === props.playerId);
 
@@ -143,8 +152,8 @@ const classicSeats = computed<SeatViewModel[]>(() =>
     nickname: player.nickname,
     isDead: player.isDead,
     isActive: player.id === activePlayer.value?.id,
-    isSelectable: canSelectTarget(player),
-    isSelected: selectedTargetId.value === player.id,
+    isSelectable: canSelectTarget(player) && !shouldShowSelectedTarget(player),
+    isSelected: shouldShowSelectedTarget(player),
     isHit: isRecentDamageTarget(player),
     isHealed: isRecentHealTarget(player),
     isBlocked: isNoDamageTarget(player),
@@ -154,7 +163,7 @@ const classicSeats = computed<SeatViewModel[]>(() =>
     maxHp: player.maxHp,
     shield: player.shield,
     lastRollText: lastRollText(player) || (zhaoZilongHitText(player) || ""),
-    characterName: characterName(player.characterId),
+    characterName: displayCharacterName(player),
     seatTags: buildSeatTags(player),
     attackableLabel: "可攻击",
     targetLabel: "目标",
@@ -174,14 +183,16 @@ const duoTeamSeats = computed<Record<string, SeatViewModel[]>>(() => {
     result[team.id] = team.players.map((player) => {
       const canActor = canSelectDuoActor(player);
       const canEnemy = canSelectDuoEnemy(player);
+      const actorSelected = selectedActor.value?.id === player.id && isMyDuoControllerTurn.value && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value;
+      const targetSelected = shouldShowSelectedTarget(player);
       return {
         playerId: player.id,
         playerNumber: 0,
         nickname: player.nickname,
         isDead: player.isDead,
         isActive: player.controllerId === activeControllerId.value,
-        isSelectable: canActor || canEnemy,
-        isSelected: selectedActor.value?.id === player.id || selectedTargetId.value === player.id,
+        isSelectable: canActor || (canEnemy && !targetSelected),
+        isSelected: actorSelected || targetSelected,
         isHit: isRecentDamageTarget(player),
         isHealed: isRecentHealTarget(player),
         isBlocked: isNoDamageTarget(player),
@@ -208,6 +219,11 @@ const duoTeamSeats = computed<Record<string, SeatViewModel[]>>(() => {
 });
 
 function buildSeatTags(player: Player): string[] {
+  if (isRogueliteMode.value && player.isBot && player.rogueliteEnemyInfo) {
+    const tags = [rogueliteEnemyTypeLabel(player)];
+    if (player.rogueliteEnemyInfo.skillNames?.[0]) tags.push(player.rogueliteEnemyInfo.skillNames[0]);
+    return tags;
+  }
   const tags: string[] = [characterName(player.characterId)];
   if (!isRogueliteMode.value || player.isBot) {
     tags.push(`${summonerSkillName(player.summonerSkillId)}${player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : ""}`);
@@ -311,6 +327,31 @@ const selfPanelVM = computed<SelfPanelVM | null>(() => {
   };
 });
 
+const battleFeedbackItems = computed<BattleFeedbackItem[]>(() => {
+  const items: BattleFeedbackItem[] = activeFloatingEffects.value.map((effect) => ({
+    key: effect.key,
+    text: effect.type === "damage" ? `-${effect.value}` : effect.type === "heal" ? `+${effect.value}` : "无效",
+    kind: effect.type,
+    lane: feedbackLaneForPlayer(effect.playerId),
+    side: feedbackSideForPlayer(effect.playerId)
+  }));
+
+  for (const [playerId, emote] of Object.entries(activeEmotes.value)) {
+    items.push({
+      key: emote.key,
+      text: emote.emoji,
+      kind: "emote",
+      lane: feedbackLaneForPlayer(playerId),
+      side: feedbackSideForPlayer(playerId)
+    });
+  }
+
+  return items;
+});
+
+const showRogueliteRewardCenterPrompt = computed(() => Boolean(roguelitePanelVM.value.enabled && roguelitePanelVM.value.rewardPhase && !showRogueliteDetails.value));
+const showRogueliteCompactStatus = computed(() => Boolean(roguelitePanelVM.value.enabled && !roguelitePanelVM.value.rewardPhase));
+
 function buildSelfStatusTags(player: Player): string[] {
   const tags: string[] = [];
   tags.push(`${playerStatus(player)} · ${selfActionStateText.value}`);
@@ -343,6 +384,10 @@ const roguelitePanelVM = computed<RoguelitePanelVM>(() => ({
   stageType: rogueliteStageType.value,
   stageTypeLabel: rogueliteStageTypeLabel.value,
   phaseText: roguelitePhaseText(),
+  fatigue: room.value.phase === "battle" ? {
+    battleRound: rogueliteState.value?.battleRound ?? 1,
+    bonus: rogueliteState.value?.fatigueBonus ?? 0
+  } : undefined,
 
   boss: buildRogueliteBossVM(),
   enemy: buildRogueliteEnemyVM(),
@@ -380,7 +425,7 @@ function buildRogueliteBossVM(): RoguelitePanelVM["boss"] {
   }
   return {
     name: currentBossPlayer.value.nickname,
-    characterName: characterName(currentBossPlayer.value.characterId),
+    typeLabel: rogueliteEnemyTypeLabel(currentBossPlayer.value),
     hp: currentBossPlayer.value.hp,
     maxHp: currentBossPlayer.value.maxHp,
     shield: currentBossPlayer.value.shield,
@@ -392,11 +437,15 @@ function buildRogueliteBossVM(): RoguelitePanelVM["boss"] {
 function buildRogueliteEnemyVM(): RoguelitePanelVM["enemy"] {
   const info = rogueliteEnemyInfo.value;
   if (!info || currentBossPlayer.value || room.value.phase !== "battle") return undefined;
+  const bot = room.value.players.find((p) => p.isBot);
   return {
+    name: bot?.nickname ?? "敌人",
+    typeLabel: rogueliteEnemyTypeLabel(bot),
     hpBonus: info.hpBonus,
     shieldBonus: info.shieldBonus ?? 0,
     damageBonus: info.damageBonus ?? 0,
-    description: info.description
+    description: info.description,
+    skills: info.skillNames ?? []
   };
 }
 
@@ -472,6 +521,8 @@ function buildRogueliteContinuePhaseVM(): NonNullable<RoguelitePanelVM["continue
 }
 
 const rogueliteStageType = computed(() => {
+  const liveStageType = rogueliteEnemyInfo.value?.stageType;
+  if (liveStageType) return liveStageType;
   const stage = rogueliteState.value?.stage ?? 1;
   if (stage % 3 === 0) return "boss";
   if (stage % 3 === 2 && stage >= 5) return "elite";
@@ -505,7 +556,16 @@ const PERK_DISPLAY: Record<string, { name: string; category: "growth" | "boss"; 
   first_strike: { name: "先手优势", category: "growth", perLevelDesc: "每关首次攻击伤害 +3" },
   low_hp_armor: { name: "绝境护甲", category: "growth", perLevelDesc: "血量低于一半时护甲 +1" },
   kill_heal: { name: "战利品", category: "growth", perLevelDesc: "击败敌人后回复 3 点生命" },
-  comeback: { name: "翻盘之力", category: "growth", perLevelDesc: "血量低于一半时伤害 +3" }
+  drink_blood: { name: "饮血", category: "growth", perLevelDesc: "造成直接攻击生命伤害后回复 1 点生命" },
+  comeback: { name: "翻盘之力", category: "growth", perLevelDesc: "血量低于一半时伤害 +3" },
+  low_roll_defense: { name: "低点防御", category: "growth", perLevelDesc: "投到 1/2 获得护盾" },
+  shield_strike: { name: "盾击", category: "growth", perLevelDesc: "拥有护盾时攻击伤害 +2" },
+  shield_overload: { name: "护盾过载", category: "growth", perLevelDesc: "每关首次带盾攻击消耗护盾增伤" },
+  sturdy_bulwark: { name: "稳固壁垒", category: "growth", perLevelDesc: "拥有护盾时护甲 +1" },
+  fate_tokens: { name: "命运筹码", category: "growth", perLevelDesc: "投到 1 获得筹码，3 个后投骰 +1" },
+  low_roll_charge: { name: "低点蓄力", category: "growth", perLevelDesc: "低点蓄力，高点攻击消耗增伤" },
+  desperate_reroll: { name: "孤注一掷", category: "growth", perLevelDesc: "每关一次重投（后续主动按钮）" },
+  lucky_floor: { name: "幸运保底", category: "growth", perLevelDesc: "连续低点后下一次至少 4" }
 };
 
 const SKILL_DISPLAY: Record<string, { name: string; perLevelDesc: string }> = {
@@ -555,11 +615,13 @@ const BOSS_SKILL_DISPLAY: Record<string, string[]> = {
 
 const currentBossPlayer = computed(() => {
   if (!isRogueliteMode.value || room.value.phase !== "battle") return undefined;
-  return room.value.players.find((p) => p.isBot && p.rogueliteBossId);
+  return room.value.players.find((p) => p.isBot && p.rogueliteEnemyInfo?.stageType === "boss");
 });
 
 const currentBossSkills = computed(() => {
-  if (!currentBossPlayer.value?.rogueliteBossId) return [];
+  if (!currentBossPlayer.value) return [];
+  if (currentBossPlayer.value.rogueliteEnemyInfo?.skillNames?.length) return currentBossPlayer.value.rogueliteEnemyInfo.skillNames;
+  if (!currentBossPlayer.value.rogueliteBossId) return [];
   return BOSS_SKILL_DISPLAY[currentBossPlayer.value.rogueliteBossId] ?? [];
 });
 const activeControllerId = computed(() => room.value.activeControllerId);
@@ -591,6 +653,12 @@ const winnerText = computed(() => {
   if (isPveMode.value) return winner.value?.id === props.playerId ? "胜利" : "失败";
   return `胜者：${winner.value?.nickname ?? "--"}`;
 });
+const opponentPanelTitle = computed(() => {
+  if (isRogueliteMode.value) return "敌人";
+  if (isPveMode.value) return "AI 敌人";
+  return "其他玩家";
+});
+const opponentPanelHint = computed(() => isRogueliteMode.value ? "点击敌人头像选择攻击目标" : "点击头像选择攻击目标");
 const pendingRoll = computed(() => room.value.pendingRoll);
 const pendingRollDecision = computed(() => room.value.pendingRollDecision);
 const pendingGuardCheck = computed(() => room.value.pendingGuardCheck);
@@ -717,6 +785,10 @@ const selfDestructSlot = computed(() => actionSlots.value.find((slot) => slot.re
 const shouldShowSelfDestructChoices = computed(() => Boolean(canUseActionSlots.value && selfDestructSlot.value?.enabled && activeDecisionActor.value?.characterId === "self_destructor"));
 const selfDestructAmounts = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
+onMounted(() => {
+  document.body.classList.add("battle-locked");
+});
+
 watch(
   () => props.room,
   (nextRoom) => {
@@ -774,6 +846,7 @@ watch(
 );
 
 onUnmounted(() => {
+  document.body.classList.remove("battle-locked");
   clearAllTimers();
   while (effectTimers.length) window.clearTimeout(effectTimers.pop());
   clearEmoteTimers();
@@ -943,6 +1016,45 @@ const turnGuideTone = computed(() => {
   return "waiting";
 });
 
+const isActionPanelActive = computed(() => {
+  if (room.value.phase !== "battle") return false;
+  if (isSelfDead.value || isBotTurn.value) return false;
+  if (pendingGuardCheck.value) return isGuardCheckMine.value;
+  if (pendingRollDecision.value) return isDecisionMine.value;
+  if (pendingRoll.value) return isPendingMine.value;
+  return isDuoMode.value ? isMyDuoControllerTurn.value : isMyTurn.value;
+});
+
+const compactActionTitle = computed(() => {
+  if (room.value.phase === "reward") return isBossRewardPhase.value ? "选择 Boss 能力" : "选择奖励";
+  if (room.value.phase === "roguelite_continue") return "挑战继续";
+  if (room.value.phase === "gameOver") return winnerText.value;
+  if (isBotTurn.value) return "AI 行动中";
+  if (pendingGuardCheck.value) return `等待 ${guardCheckActor.value?.nickname ?? "山盾"} 架盾`;
+  if (pendingRollDecision.value) return `等待 ${activePlayer.value?.nickname ?? "玩家"} 选择行动`;
+  if (isDuoMode.value && activeControllerId.value && !isMyDuoControllerTurn.value) return "等待对方行动";
+  if (!isDuoMode.value && activePlayer.value?.id !== props.playerId) return `等待 ${activePlayer.value?.nickname ?? "玩家"} 行动`;
+  return actionStageText.value;
+});
+
+const compactDiceText = computed(() => {
+  if (isRolling.value) return "骰子滚动中";
+  if (pendingGuardCheck.value || currentDiceMode.value === "guard_check") return `架盾骰 ${displayedGuardDice.value}`;
+  if (pendingRollDecision.value) return `骰点 ${pendingRollDecision.value.currentRoll}`;
+  const dice = visibleRoll.value?.dice ?? [];
+  if (dice.length > 0) return `骰点 ${dice.join("、")}`;
+  return "未投骰";
+});
+
+const compactActorText = computed(() => {
+  if (isDuoMode.value) {
+    if (selectedActor.value) return selectedActor.value.nickname;
+    const activeUnit = room.value.players.find((player) => player.controllerId === activeControllerId.value);
+    return activeUnit ? controllerNickname(activeUnit) : "对方";
+  }
+  return activePlayer.value?.nickname ?? "玩家";
+});
+
 const canRoll = computed(() => {
   if (room.value.phase === "gameOver" || rollRequestLocked.value || isRolling.value || pendingRollDecision.value || pendingGuardCheck.value || !isMyTurn.value) return false;
   if (pendingRoll.value) return isPendingMine.value;
@@ -960,6 +1072,37 @@ const canRollForDuo = computed(() => {
 
 function characterName(id: string | undefined): string {
   return props.characters.find((character) => character.id === id)?.name ?? "未知职业";
+}
+
+function displayCharacterName(player: Player): string {
+  if (isRogueliteMode.value && player.isBot && player.rogueliteEnemyInfo) return rogueliteEnemyTypeLabel(player);
+  return characterName(player.characterId);
+}
+
+function rogueliteEnemyTypeLabel(player: Player | undefined): string {
+  const stageType = player?.rogueliteEnemyInfo?.stageType;
+  if (stageType === "boss") return "Boss";
+  if (stageType === "elite") return "精英";
+  if (stageType === "normal") return "小怪";
+  return "敌人";
+}
+
+function feedbackPlayer(playerId: string): Player | undefined {
+  return room.value.players.find((player) => player.id === playerId || player.controllerId === playerId);
+}
+
+function feedbackLaneForPlayer(playerId: string): BattleFeedbackItem["lane"] {
+  const player = feedbackPlayer(playerId);
+  if (!player) return "middle";
+  if (player.id === props.playerId || player.controllerId === props.playerId) return "bottom";
+  return player.isBot || !isDuoMode.value ? "top" : "middle";
+}
+
+function feedbackSideForPlayer(playerId: string): BattleFeedbackItem["side"] {
+  const player = feedbackPlayer(playerId);
+  if (!player || !isDuoMode.value) return "center";
+  if (player.id === props.playerId || player.controllerId === props.playerId) return "left";
+  return player.teamId === "A" ? "left" : "right";
 }
 
 function characterFor(id: string | undefined): Character | undefined {
@@ -1036,6 +1179,15 @@ function zhaoZilongHitText(player: Player): string {
 
 function canSelectTarget(player: Player): boolean {
   return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.id !== props.playerId && !player.isDead;
+}
+
+function shouldShowSelectedTarget(player: Player): boolean {
+  if (selectedTargetId.value !== player.id) return false;
+  if (pendingRoll.value || pendingRollDecision.value || pendingGuardCheck.value) return false;
+  if (isDuoMode.value) {
+    return isMyDuoActionTurn.value && Boolean(selectedActor.value) && player.teamId !== selectedActor.value?.teamId && player.controllerId !== props.playerId && !player.isDead;
+  }
+  return isMyTurn.value && player.id !== props.playerId && !player.isDead;
 }
 
 function selectTargetFromSeat(player: Player): void {
@@ -1154,7 +1306,7 @@ function isBossRewardType(type: string): boolean {
 }
 
 function isGrowthRewardType(type: string): boolean {
-  return type === "starter_heavy_punch" || type === "starter_blood_punch" || type === "starter_iron_wall" || type === "starter_recovery" || type === "heavy_punch_training" || type === "iron_body" || type === "breathing_recovery" || type === "blood_punch" || type === "battle_instinct" || type === "guard_training";
+  return type === "starter_heavy_punch" || type === "starter_blood_punch" || type === "starter_iron_wall" || type === "starter_recovery" || type === "heavy_punch_training" || type === "iron_body" || type === "breathing_recovery" || type === "blood_punch" || type === "battle_instinct" || type === "guard_training" || type === "vitality_boost" || type === "shield_wall" || type === "first_strike" || type === "low_hp_armor" || type === "kill_heal" || type === "drink_blood" || type === "comeback" || type === "low_roll_defense" || type === "shield_strike" || type === "shield_overload" || type === "sturdy_bulwark" || type === "fate_tokens" || type === "low_roll_charge" || type === "desperate_reroll" || type === "lucky_floor";
 }
 
 function isRogueliteSkillRewardType(type: string): boolean {
@@ -1193,7 +1345,17 @@ function chooseRogueliteReward(reward: RogueliteReward): void {
 
 function onChooseRogueliteReward(rewardId: string): void {
   const reward = rogueliteRewardChoices.value.find((r) => r.id === rewardId);
-  if (reward) chooseRogueliteReward(reward);
+  if (!reward) return;
+  chooseRogueliteReward(reward);
+  closeRogueliteDetails();
+}
+
+function openRogueliteDetails(): void {
+  showRogueliteDetails.value = true;
+}
+
+function closeRogueliteDetails(): void {
+  showRogueliteDetails.value = false;
 }
 
 function chooseRogueliteContinue(choice: "finish" | "continue"): void {
@@ -1357,124 +1519,190 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 </script>
 
 <template>
-  <section class="battle-layout">
-    <section class="battle-tools">
-      <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
-      <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">战斗日志</button>
-    </section>
+  <section class="battle-page">
+    <div class="battle-phone-shell">
+      <section class="battle-layout battle-layout-fixed">
+        <section class="battle-tools">
+          <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
+          <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">战斗日志</button>
+        </section>
 
-    <RoguelitePanel
-      :data="roguelitePanelVM"
-      @choose-reward="onChooseRogueliteReward"
-      @choose-continue="chooseRogueliteContinue"
-    />
+        <RogueliteStatusCompact
+          v-if="showRogueliteCompactStatus"
+          :data="roguelitePanelVM"
+          @open-details="openRogueliteDetails"
+        />
 
-    <section v-if="isDuoMode" class="battle-zone duo-battle-zone">
-      <div class="zone-heading">
-        <strong>2V2 双角色模式</strong>
-        <span>{{ selectedActor ? `当前行动角色：${selectedActor.nickname}` : isMyDuoControllerTurn ? "请选择你的一个角色行动" : "等待对方选择行动角色" }}</span>
-      </div>
-            <div class="duo-battle-board" aria-label="2V2 阵营战场">
-        <article v-for="team in duoTeams" :key="team.id" class="duo-team-column" :class="`team-${team.id.toLowerCase()}`">
-          <header>
-            <strong>{{ team.label }}</strong>
-            <span>{{ team.players[0]?.controllerId === props.playerId ? "你的队伍" : "对方队伍" }}</span>
-          </header>
+        <section v-if="isDuoMode" class="battle-zone duo-battle-zone">
+          <div class="zone-heading">
+            <strong>2V2 双角色模式</strong>
+            <span>{{ selectedActor ? `当前行动角色：${selectedActor.nickname}` : isMyDuoControllerTurn ? "请选择你的一个角色行动" : "等待对方选择行动角色" }}</span>
+          </div>
+          <div class="duo-battle-board" aria-label="2V2 阵营战场">
+            <article v-for="team in duoTeams" :key="team.id" class="duo-team-column" :class="`team-${team.id.toLowerCase()}`">
+              <header>
+                <strong>{{ team.label }}</strong>
+                <span>{{ team.players[0]?.controllerId === props.playerId ? "你的队伍" : "对方队伍" }}</span>
+              </header>
+              <CombatBoard
+                :seats="duoTeamSeats[team.id] ?? []"
+                inline-class="duo-combat-board"
+                @seat-click="handleSeatClick"
+                @info-click="openPlayerDetailById"
+              />
+            </article>
+          </div>
+        </section>
+
+        <section v-if="isDuoMode" class="action-center duo-action-center" :class="{ 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive }">
+          <div v-if="!isActionPanelActive" class="action-wait-strip">
+            <span>当前阶段</span>
+            <strong>{{ compactActionTitle }}</strong>
+            <small>{{ compactActorText }} · {{ compactDiceText }}</small>
+          </div>
+
+          <template v-else>
+          <div class="action-phase">
+            <span>当前阶段</span>
+            <strong v-if="pendingGuardCheck && isGuardCheckMine">架盾判定</strong>
+            <strong v-else-if="pendingGuardCheck">对方正在进行架盾判定</strong>
+            <strong v-else-if="selectedActor && !selectedActor.selectedTargetId">已选角色：{{ selectedActor.nickname }}，请选择攻击目标</strong>
+            <strong v-else-if="selectedActor && selectedActor.selectedTargetId">已选目标，可以投骰</strong>
+            <strong v-else-if="isMyDuoControllerTurn">请选择你的一个角色行动</strong>
+            <strong v-else>等待对方选择行动角色</strong>
+            <small v-if="pendingGuardCheck && isGuardCheckMine">1-4 架盾继续，5-6 架盾结束。</small>
+            <small v-else-if="pendingGuardCheck">等待判定完成。</small>
+            <small v-else-if="isMyDuoControllerTurn && !selectedActor">只能选择自己队伍中存活的角色。</small>
+            <small v-else-if="selectedActor && !selectedActor.selectedTargetId">点击敌方角色头像选择目标。</small>
+            <small v-else-if="selectedActor && selectedActor.selectedTargetId">点击投骰按钮进行骰子投掷。</small>
+          </div>
+            <DicePanel
+              v-bind="dicePanelCommon"
+              :is-ready="isMyDuoControllerTurn"
+              :can-roll="pendingGuardCheck ? canRollGuardCheck : canRollForDuo"
+              @roll="rollMainDice"
+            >
+              <template #action-slots>
+                <ActionSlots
+                  v-bind="actionSlotsCommon"
+                  @select-action="onSelectAction"
+                  @select-self-destruct="onSelectSelfDestruct"
+                />
+              </template>
+            </DicePanel>
+          </template>
+        </section>
+
+        <section v-if="!isDuoMode" class="battle-zone">
+          <div class="zone-heading">
+            <strong>{{ opponentPanelTitle }}</strong>
+            <span>{{ opponentPanelHint }}</span>
+          </div>
           <CombatBoard
-            :seats="duoTeamSeats[team.id] ?? []"
-            inline-class="duo-combat-board"
+            :seats="classicSeats"
             @seat-click="handleSeatClick"
             @info-click="openPlayerDetailById"
           />
-        </article>
-      </div>
-    </section>
+        </section>
 
-    <section v-if="isDuoMode" class="action-center duo-action-center">
-      <div class="action-phase">
-        <span>当前阶段</span>
-        <strong v-if="pendingGuardCheck && isGuardCheckMine">架盾判定</strong>
-        <strong v-else-if="pendingGuardCheck">对方正在进行架盾判定</strong>
-        <strong v-else-if="selectedActor && !selectedActor.selectedTargetId">已选角色：{{ selectedActor.nickname }}，请选择攻击目标</strong>
-        <strong v-else-if="selectedActor && selectedActor.selectedTargetId">已选目标，可以投骰</strong>
-        <strong v-else-if="isMyDuoControllerTurn">请选择你的一个角色行动</strong>
-        <strong v-else>等待对方选择行动角色</strong>
-        <small v-if="pendingGuardCheck && isGuardCheckMine">1-4 架盾继续，5-6 架盾结束。</small>
-        <small v-else-if="pendingGuardCheck">等待判定完成。</small>
-        <small v-else-if="isMyDuoControllerTurn && !selectedActor">只能选择自己队伍中存活的角色。</small>
-        <small v-else-if="selectedActor && !selectedActor.selectedTargetId">点击敌方角色头像选择目标。</small>
-        <small v-else-if="selectedActor && selectedActor.selectedTargetId">点击投骰按钮进行骰子投掷。</small>
+        <section v-if="!isDuoMode" class="action-center" :class="[`turn-guide-${turnGuideTone}`, { 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive }]">
+          <div v-if="!isActionPanelActive" class="action-wait-strip">
+            <span>当前阶段</span>
+            <strong>{{ compactActionTitle }}</strong>
+            <small>{{ compactActorText }} · {{ compactDiceText }}</small>
+          </div>
+
+          <template v-else>
+          <div class="action-phase">
+            <span>当前阶段</span>
+            <strong>{{ currentActionTitle }}</strong>
+            <small>{{ selectedTargetText }}</small>
+          </div>
+
+            <DicePanel
+              v-bind="dicePanelCommon"
+              :is-ready="isMyTurn"
+              :can-roll="pendingGuardCheck ? canRollGuardCheck : canRoll"
+              @roll="rollMainDice"
+            >
+              <template #action-slots>
+                <ActionSlots
+                  v-bind="actionSlotsCommon"
+                  @select-action="onSelectAction"
+                  @select-self-destruct="onSelectSelfDestruct"
+                />
+              </template>
+            </DicePanel>
+          </template>
+        </section>
+
+        <section class="battle-bottom-bar" :class="{ 'has-self-panel': !isDuoMode && selfPanelVM }">
+          <SelfPanel v-if="!isDuoMode && selfPanelVM" :data="selfPanelVM" compact @show-detail="openPlayerDetail(me!)" />
+          <EmotePanel :locked="emoteLocked" compact @send-emote="sendEmote" />
+        </section>
+
+        <section v-if="room.phase === 'gameOver'" class="log-panel rematch-panel">
+          <p class="winner">{{ winnerText }}</p>
+          <button class="primary-btn" type="button" :disabled="isRematchReady" @click="readyForRematch">
+            {{ isRematchReady ? "已准备" : "准备再来一局" }}
+          </button>
+          <p class="hint">{{ isAllRematchReady ? "即将返回选职业阶段" : `等待其他玩家准备（${rematchReadyCount}/${rematchParticipants.length}）` }}</p>
+          <div class="player-list">
+            <article v-for="(participant, index) in rematchParticipants" :key="`rematch-${participant.id}`" class="player-card">
+              <strong>{{ index + 1 }}号 {{ participant.nickname }}</strong>
+              <span class="badge" :class="{ 'host-badge': participant.isHost }">
+                {{ rematchReadyIds.includes(participant.id) ? "已准备" : "未准备" }}
+              </span>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <div class="battle-feedback-layer" aria-hidden="true">
+        <span
+          v-for="item in battleFeedbackItems"
+          :key="item.key"
+          class="battle-feedback-pop"
+          :class="[`feedback-${item.kind}`, `feedback-lane-${item.lane}`, `feedback-side-${item.side}`]"
+        >
+          {{ item.text }}
+        </span>
       </div>
-      <DicePanel
-        v-bind="dicePanelCommon"
-        :is-ready="isMyDuoControllerTurn"
-        :can-roll="pendingGuardCheck ? canRollGuardCheck : canRollForDuo"
-        @roll="rollMainDice"
-      >
-        <template #action-slots>
-          <ActionSlots
-            v-bind="actionSlotsCommon"
-            @select-action="onSelectAction"
-            @select-self-destruct="onSelectSelfDestruct"
+
+      <div v-if="showRogueliteRewardCenterPrompt" class="roguelite-reward-center-layer">
+        <section class="roguelite-reward-center-card">
+          <span class="reward-center-icon">★</span>
+          <div>
+            <strong>获得奖励</strong>
+            <p>选择一个奖励继续</p>
+          </div>
+          <button class="primary-btn" type="button" @click="openRogueliteDetails">选择奖励</button>
+        </section>
+      </div>
+    </div>
+
+    <div
+      v-if="showRogueliteDetails && roguelitePanelVM.enabled"
+      class="roguelite-detail-backdrop"
+      @click.self="closeRogueliteDetails"
+    >
+      <section class="roguelite-detail-drawer" aria-label="肉鸽详情">
+        <header class="roguelite-detail-header">
+          <div>
+            <span class="eyebrow">肉鸽详情</span>
+            <strong>第 {{ roguelitePanelVM.stage }} 关 · {{ roguelitePanelVM.stageTypeLabel }}</strong>
+          </div>
+          <button class="ghost-btn small-btn" type="button" @click="closeRogueliteDetails">关闭</button>
+        </header>
+        <div class="roguelite-detail-body">
+          <RoguelitePanel
+            :data="roguelitePanelVM"
+            @choose-reward="onChooseRogueliteReward"
+            @choose-continue="chooseRogueliteContinue"
           />
-        </template>
-      </DicePanel>
-    </section>
-
-    <section v-if="!isDuoMode" class="battle-zone">
-      <div class="zone-heading">
-        <strong>其他玩家</strong>
-        <span>点击头像选择攻击目标</span>
-      </div>
-      <CombatBoard
-        :seats="classicSeats"
-        @seat-click="handleSeatClick"
-        @info-click="openPlayerDetailById"
-      />
-    </section>
-
-    <section v-if="!isDuoMode" class="action-center" :class="`turn-guide-${turnGuideTone}`">
-      <div class="action-phase">
-        <span>当前阶段</span>
-        <strong>{{ currentActionTitle }}</strong>
-        <small v-for="line in currentActionLines" :key="line">{{ line }}</small>
-      </div>
-
-      <DicePanel
-        v-bind="dicePanelCommon"
-        :is-ready="isMyTurn"
-        :can-roll="pendingGuardCheck ? canRollGuardCheck : canRoll"
-        @roll="rollMainDice"
-      >
-        <template #action-slots>
-          <ActionSlots
-            v-bind="actionSlotsCommon"
-            @select-action="onSelectAction"
-            @select-self-destruct="onSelectSelfDestruct"
-          />
-        </template>
-      </DicePanel>
-    </section>
-
-    <SelfPanel v-if="!isDuoMode && selfPanelVM" :data="selfPanelVM" @show-detail="openPlayerDetail(me!)" />
-
-    <EmotePanel :locked="emoteLocked" @send-emote="sendEmote" />
-
-    <section v-if="room.phase === 'gameOver'" class="log-panel rematch-panel">
-      <p class="winner">{{ winnerText }}</p>
-      <button class="primary-btn" type="button" :disabled="isRematchReady" @click="readyForRematch">
-        {{ isRematchReady ? "已准备" : "准备再来一局" }}
-      </button>
-      <p class="hint">{{ isAllRematchReady ? "即将返回选职业阶段" : `等待其他玩家准备（${rematchReadyCount}/${rematchParticipants.length}）` }}</p>
-      <div class="player-list">
-        <article v-for="(participant, index) in rematchParticipants" :key="`rematch-${participant.id}`" class="player-card">
-          <strong>{{ index + 1 }}号 {{ participant.nickname }}</strong>
-          <span class="badge" :class="{ 'host-badge': participant.isHost }">
-            {{ rematchReadyIds.includes(participant.id) ? "已准备" : "未准备" }}
-          </span>
-        </article>
-      </div>
-    </section>
+        </div>
+      </section>
+    </div>
 
     <div v-if="activeHighlight" :key="activeHighlight.id" class="character-highlight-overlay" :class="`highlight-${activeHighlight.type}`">
       <div class="character-highlight-card">

@@ -16,6 +16,7 @@ const emit = defineEmits<{
   chooseDuoSlotSummonerSkill: [payload: { slotIndex: 0 | 1; summonerSkillId: SummonerSkillId }];
   updateRoomSettings: [settings: Partial<RoomSettings>];
   startGame: [];
+  kickPlayer: [playerId: string];
 }>();
 
 type CharacterFilter = "all" | "newbie" | "attack" | "defense" | "healing" | "burst" | "special";
@@ -157,9 +158,9 @@ const startHint = computed(() => {
   if (isDuoModeDevelopment.value && props.room.players.length !== 2) return "2V2 需要 2 名玩家后才能开始。";
   if (isDuoModeDevelopment.value && !isDuoReadyToStart.value) return "请完成 4 个角色槽位和召唤师技能选择。";
   if (isDuoModeDevelopment.value) return "将进入 2V2 双角色测试版：每名玩家控制两个角色进行战斗。";
+  if (isRogueliteMode.value) return `肉鸽挑战：初始拳手，不使用召唤师技能，胜利后按阶段获得奖励。`;
   if (isSinglePlayerPveMode.value && !me.value?.characterId) return "请选择 1 个职业。";
   if (isSinglePlayerPveMode.value && !me.value?.summonerSkillId) return "请选择 1 个召唤师技能。";
-  if (isRogueliteMode.value) return `肉鸽挑战：初始拳手，3 关一 Boss，逐步获得能力。选择开始即可进入。`;
   if (isPveMode.value) return `准备开始人机练习：${characterName(me.value?.characterId)} vs AI`;
   if (hasDuplicateCharacterConflict.value) return "当前已有重复职业，请玩家重新选择。";
   if (!canStart.value) return "至少 2 人，且所有玩家都选择职业后可开始。";
@@ -231,6 +232,17 @@ function duoSlotsForTeam(teamId: TeamId): DuoCharacterSlot[] {
 
 function canEditDuoSlot(slot: DuoCharacterSlot): boolean {
   return slot.controllerId === props.playerId;
+}
+
+function canKickPlayer(player: Player): boolean {
+  return isHost.value && props.room.phase === "lobby" && player.id !== props.playerId && !player.isBot;
+}
+
+function requestKickPlayer(player: Player): void {
+  if (!canKickPlayer(player)) return;
+  if (window.confirm(`Kick ${player.nickname}?`)) {
+    emit("kickPlayer", player.id);
+  }
 }
 
 function isClassicPlayerReady(player: Player): boolean {
@@ -369,6 +381,7 @@ function fullDescription(character: CharacterCard): string[] {
               <strong>{{ index + 1 }}号 {{ player.nickname }}</strong>
               <span v-if="player.id === room.hostId || player.isHost" class="badge host-badge">房主</span>
               <span class="badge" :class="{ offline: !player.isOnline }">{{ player.isOnline ? "在线" : "离线" }}</span>
+              <button v-if="canKickPlayer(player)" class="ghost-btn small-btn" type="button" @click="requestKickPlayer(player)">Kick</button>
             </div>
             <p>{{ classicPlayerChoiceText(player) }}</p>
           </article>

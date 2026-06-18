@@ -4,6 +4,7 @@ export type { SelfPanelVM };
 
 defineProps<{
   data: SelfPanelVM;
+  compact?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -14,7 +15,7 @@ const emit = defineEmits<{
 <template>
   <section
     class="self-panel"
-    :class="{ active: data.isCurrentTurn, dead: data.isDead }"
+    :class="{ active: data.isCurrentTurn, dead: data.isDead, compact }"
   >
     <!-- avatar + floating effects -->
     <button

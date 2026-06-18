@@ -33,9 +33,9 @@ const emit = defineEmits<{
       <button class="mode-entry-card available" type="button" @click="emit('selectRoguelite')">
         <span class="mode-status ready">可进入</span>
         <strong>肉鸽挑战</strong>
-        <small>连续挑战 5 关，第 5 关为 Boss 关，通关后获得 Boss 能力奖励。</small>
+        <small>连续挑战 15 关，前期快速成型，第 15 关大 Boss 后获得 Boss 能力奖励。</small>
         <div class="sub-mode-list">
-          <span>5 关挑战</span>
+          <span>15 关挑战</span>
           <span>胜利选奖励</span>
           <span>Boss 能力</span>
         </div>

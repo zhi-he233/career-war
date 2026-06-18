@@ -44,20 +44,6 @@ const emit = defineEmits<{
 
       <!-- death overlay: 💀 icon in addition to grayscale -->
       <span v-if="seat.isDead" class="dead-label">💀 已死亡</span>
-
-      <transition name="emote-bubble">
-        <span v-if="seat.emote" :key="seat.emote.key" class="emote-bubble">{{ seat.emote.emoji }}</span>
-      </transition>
-
-      <transition name="float-pop">
-        <b v-if="seat.damageEffect" :key="seat.damageEffect.key" class="float-number damage-pop">-{{ seat.damageEffect.value }}</b>
-      </transition>
-      <transition name="float-pop">
-        <b v-if="seat.healEffect" :key="seat.healEffect.key" class="float-number heal-pop">+{{ seat.healEffect.value }}</b>
-      </transition>
-      <transition name="float-pop">
-        <b v-if="seat.noEffect" :key="seat.noEffect.key" class="float-number no-pop">无效</b>
-      </transition>
     </button>
 
     <!-- name row with larger info button -->

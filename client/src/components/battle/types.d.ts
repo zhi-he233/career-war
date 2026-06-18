@@ -125,7 +125,7 @@ export interface RoguelitePanelVM {
     phaseText: string;
     boss?: {
         name: string;
-        characterName: string;
+        typeLabel: string;
         hp: number;
         maxHp: number;
         shield: number;
@@ -133,10 +133,17 @@ export interface RoguelitePanelVM {
         stateChips: RogueliteBossStateChip[];
     };
     enemy?: {
+        name: string;
+        typeLabel: string;
         hpBonus: number;
         shieldBonus: number;
         damageBonus: number;
         description?: string;
+        skills: string[];
+    };
+    fatigue?: {
+        battleRound: number;
+        bonus: number;
     };
     perks: {
         growth: RoguelitePerkVM[];

@@ -20,6 +20,26 @@ function characterFor(id: string | undefined): Character | undefined {
   return props.characters.find((c) => c.id === id);
 }
 
+function rogueliteEnemyTypeLabel(player: Player): string {
+  const stageType = player.rogueliteEnemyInfo?.stageType;
+  if (stageType === "boss") return "Boss";
+  if (stageType === "elite") return "精英";
+  if (stageType === "normal") return "小怪";
+  return "敌人";
+}
+
+function detailSubtitle(player: Player): string {
+  if (player.rogueliteEnemyInfo) {
+    const description = player.rogueliteEnemyInfo.description ? ` · ${player.rogueliteEnemyInfo.description}` : "";
+    return `${rogueliteEnemyTypeLabel(player)}${description}`;
+  }
+  return characterName(player.characterId);
+}
+
+function rogueliteEnemySkills(player: Player): string[] {
+  return player.rogueliteEnemyInfo?.skillNames ?? [];
+}
+
 function playerStatus(player: Player): string {
   if (!player.isOnline) return "离线";
   if (player.isDead) return "死亡";
@@ -41,7 +61,7 @@ function zhaoZilongHitText(player: Player): string {
         <div>
           <span class="detail-avatar">{{ playerAvatarEmoji }}</span>
           <h2>{{ player.nickname }}</h2>
-          <p>{{ characterName(player.characterId) }}</p>
+          <p>{{ detailSubtitle(player) }}</p>
         </div>
         <button class="detail-close-btn" type="button" aria-label="关闭详情" @click="emit('close')">×</button>
       </header>
@@ -70,7 +90,11 @@ function zhaoZilongHitText(player: Player): string {
           <dt>龙胆</dt>
           <dd>{{ zhaoZilongHitText(player) }}</dd>
         </div>
-        <div v-if="characterFor(player.characterId)?.description?.length">
+        <div v-if="rogueliteEnemySkills(player).length">
+          <dt>敌人机制</dt>
+          <dd>{{ rogueliteEnemySkills(player).join("；") }}</dd>
+        </div>
+        <div v-else-if="characterFor(player.characterId)?.description?.length">
           <dt>职业技能</dt>
           <dd>{{ characterFor(player.characterId)?.description.join("；") }}</dd>
         </div>

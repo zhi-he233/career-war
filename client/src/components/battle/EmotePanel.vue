@@ -18,6 +18,7 @@ const EMOTE_OPTIONS: EmoteOption[] = [
 
 defineProps<{
   locked: boolean;
+  compact?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -26,7 +27,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section class="emote-panel" aria-label="固定表情">
+  <section class="emote-panel" :class="{ compact }" aria-label="固定表情">
     <button
       v-for="emote in EMOTE_OPTIONS"
       :key="emote.id"

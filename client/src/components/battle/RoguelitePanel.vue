@@ -23,6 +23,9 @@ function hasAnyResource(r: Record<string, unknown>): boolean {
         <strong>第 {{ data.stage }} 关</strong>
         <span v-if="data.round > 0" class="round-badge">第 {{ data.round }} 轮</span>
         <span class="stage-type-badge" :class="`stage-type-${data.stageType}`">{{ data.stageTypeLabel }}</span>
+        <span v-if="data.fatigue" class="fatigue-badge" :class="{ active: data.fatigue.bonus > 0 }">
+          回合 {{ data.fatigue.battleRound }} · 狂化 +{{ data.fatigue.bonus }}
+        </span>
         <span>{{ data.phaseText }}</span>
       </div>
     </section>
@@ -49,7 +52,7 @@ function hasAnyResource(r: Record<string, unknown>): boolean {
       </div>
       <div class="boss-info-body">
         <strong>{{ data.boss.name }}</strong>
-        <p>{{ data.boss.characterName }} · ♥ {{ data.boss.hp }}/{{ data.boss.maxHp }} · 盾 {{ data.boss.shield }}</p>
+        <p>{{ data.boss.typeLabel }} · ♥ {{ data.boss.hp }}/{{ data.boss.maxHp }} · 盾 {{ data.boss.shield }}</p>
         <div v-if="data.boss.skills.length" class="boss-skills">
           <span v-for="(skill, i) in data.boss.skills" :key="i" class="boss-skill-chip">{{ skill }}</span>
         </div>
@@ -67,13 +70,14 @@ function hasAnyResource(r: Record<string, unknown>): boolean {
     <!-- Enemy buffs panel -->
     <section v-if="data.enemy" class="roguelite-enemy-panel">
       <div class="section-heading">
-        <h2>敌人强化</h2>
+        <h2>{{ data.enemy.name }} · {{ data.enemy.typeLabel }}</h2>
       </div>
       <div class="enemy-info-body">
         <span>生命加成 +{{ data.enemy.hpBonus }}</span>
         <span v-if="data.enemy.shieldBonus > 0">护盾加成 +{{ data.enemy.shieldBonus }}</span>
         <span v-if="data.enemy.damageBonus > 0">伤害加成 +{{ data.enemy.damageBonus }}</span>
         <span v-if="data.enemy.description">{{ data.enemy.description }}</span>
+        <span v-for="skill in data.enemy.skills" :key="skill">{{ skill }}</span>
       </div>
     </section>
 

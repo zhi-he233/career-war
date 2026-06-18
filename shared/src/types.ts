@@ -49,6 +49,7 @@ export interface Effect {
 export interface Player {
   id: string;
   clientId: string;
+  userId?: string;
   nickname: string;
   isHost: boolean;
   isOnline: boolean;
@@ -197,7 +198,8 @@ export type RogueliteRewardType =
   | "fate_tokens"
   | "low_roll_charge"
   | "desperate_reroll"
-  | "lucky_floor";
+  | "lucky_floor"
+  | "drink_blood";
 
 export interface RogueliteReward {
   id: string;
@@ -212,6 +214,9 @@ export interface RogueliteReward {
 export interface RogueliteRunState {
   stage: number;
   maxStage: number;
+  battleRound?: number;
+  fatigueBonus?: number;
+  fatigueAnnouncedBonus?: number;
   rewardChoices?: RogueliteReward[];
   appliedRewards?: RogueliteReward[];
   lastStageSummary?: {

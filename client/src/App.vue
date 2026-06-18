@@ -3,7 +3,7 @@ import { createClientId } from "./utils/id";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { Character, CharacterId, GameEvent, GameMode, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
-import { getClientId, resetClientId, socket, type Ack } from "./socket";
+import { getClientId, socket, type Ack } from "./socket";
 
 const route = useRoute();
 const router = useRouter();
@@ -15,6 +15,7 @@ import AuthDialog from "./components/AuthDialog.vue";
 import { useAuth } from "./composables/useAuth";
 
 const ROOM_ID_KEY = "career-war-room-id";
+const PLAYER_ID_KEY = "career-war-player-id";
 const isDev = import.meta.env.DEV;
 
 const room = ref<Room | null>(null);
@@ -54,8 +55,11 @@ type SocketEngineLike = {
 };
 
 if (inviteRoomId) {
-  sessionStorage.removeItem(ROOM_ID_KEY);
-  clientId = resetClientId();
+  const savedRoomId = sessionStorage.getItem(ROOM_ID_KEY);
+  if (savedRoomId && savedRoomId !== inviteRoomId) {
+    sessionStorage.removeItem(ROOM_ID_KEY);
+    sessionStorage.removeItem(PLAYER_ID_KEY);
+  }
 }
 
 const connectionStatusText = computed(() => (isSocketConnected.value ? "已连接" : "断开"));
@@ -100,6 +104,7 @@ onMounted(() => {
     };
   });
   socket.on("errorMessage", showError);
+  socket.on("kickedFromRoom", handleKickedFromRoom);
   handleSocketConnected();
   enterFromCurrentUrl();
 });
@@ -116,6 +121,7 @@ onUnmounted(() => {
   socket.off("playerEmote");
   socket.off("gameOver");
   socket.off("errorMessage");
+  socket.off("kickedFromRoom", handleKickedFromRoom);
   stopClientPing();
   detachTransportListeners();
 });
@@ -181,27 +187,72 @@ function joinInviteRoom(): void {
   const nickname = savedNickname || `玩家${clientId.slice(0, 4)}`;
   localStorage.setItem("career-war-nickname", nickname);
 
-  emitWithAck<{ roomId: string; playerId: string; room: Room }>("joinRoom", { nickname, roomId: inviteRoomId, clientId }, (response) => {
-    playerId.value = response.playerId;
-    roomId.value = response.roomId;
-    room.value = response.room;
-    sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+  emitWithAck<{ roomId: string; playerId: string; room: Room }>("joinRoom", { nickname, roomId: inviteRoomId, clientId, playerId: sessionStorage.getItem(PLAYER_ID_KEY) ?? undefined, userId: currentUser.value?.id }, (response) => {
+    setCurrentRoom(response.roomId, response.playerId, response.room);
     router.replace(`/room/${response.roomId}`);
   });
+}
+
+function setCurrentRoom(nextRoomId: string, nextPlayerId: string, nextRoom: Room): void {
+  playerId.value = nextPlayerId;
+  roomId.value = nextRoomId;
+  room.value = nextRoom;
+  sessionStorage.setItem(ROOM_ID_KEY, nextRoomId);
+  sessionStorage.setItem(PLAYER_ID_KEY, nextPlayerId);
+}
+
+function clearCurrentRoom(): void {
+  room.value = null;
+  roomId.value = "";
+  playerId.value = "";
+  sessionStorage.removeItem(ROOM_ID_KEY);
+  sessionStorage.removeItem(PLAYER_ID_KEY);
+}
+
+function handleKickedFromRoom(): void {
+  clearCurrentRoom();
+  showError("你已被房主移出房间");
+  router.replace("/modes");
+}
+
+function resumePayload(roomIdToResume: string): { roomId: string; clientId: string; playerId?: string; userId?: string } {
+  return {
+    roomId: roomIdToResume,
+    clientId,
+    playerId: sessionStorage.getItem(PLAYER_ID_KEY) ?? undefined,
+    userId: currentUser.value?.id
+  };
+}
+
+function joinPayload(payload: { nickname: string; roomId: string; gameMode?: GameMode }): { nickname: string; roomId: string; gameMode?: GameMode; clientId: string; playerId?: string; userId?: string } {
+  return {
+    ...payload,
+    clientId,
+    playerId: sessionStorage.getItem(PLAYER_ID_KEY) ?? undefined,
+    userId: currentUser.value?.id
+  };
+}
+
+function createPayload(payload: { nickname: string; gameMode?: GameMode }): { nickname: string; gameMode: GameMode; clientId: string; userId?: string } {
+  return {
+    nickname: payload.nickname,
+    clientId,
+    gameMode: payload.gameMode ?? "classic",
+    userId: currentUser.value?.id
+  };
 }
 
 function tryResumeRoom(): void {
   if (inviteRoomId) return;
   const resumableRoomId = sessionStorage.getItem(ROOM_ID_KEY);
   if (!resumableRoomId) return;
-  socket.emit("resumeRoom", { roomId: resumableRoomId, clientId }, (response: Ack<{ roomId: string; playerId: string; room: Room }>) => {
+  socket.emit("resumeRoom", resumePayload(resumableRoomId), (response: Ack<{ roomId: string; playerId: string; room: Room }>) => {
     if (!response.ok) {
       sessionStorage.removeItem(ROOM_ID_KEY);
+      sessionStorage.removeItem(PLAYER_ID_KEY);
       return;
     }
-    playerId.value = response.playerId;
-    roomId.value = response.roomId;
-    room.value = response.room;
+    setCurrentRoom(response.roomId, response.playerId, response.room);
     if (route.path !== `/room/${response.roomId}` && route.path !== `/room/${response.roomId}/battle`) {
       router.replace(`/room/${response.roomId}`);
     }
@@ -209,21 +260,15 @@ function tryResumeRoom(): void {
 }
 
 function createRoom(payload: { nickname: string; gameMode?: GameMode }): void {
-  emitWithAck<{ roomId: string; playerId: string; room: Room }>("createRoom", { nickname: payload.nickname, clientId, gameMode: payload.gameMode ?? "classic" }, (response) => {
-    playerId.value = response.playerId;
-    roomId.value = response.roomId;
-    room.value = response.room;
-    sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+  emitWithAck<{ roomId: string; playerId: string; room: Room }>("createRoom", createPayload(payload), (response) => {
+    setCurrentRoom(response.roomId, response.playerId, response.room);
     router.replace(`/room/${response.roomId}`);
   });
 }
 
 function joinRoom(payload: { nickname: string; roomId: string; gameMode?: GameMode }): void {
-  emitWithAck<{ roomId: string; playerId: string; room: Room }>("joinRoom", { ...payload, clientId }, (response) => {
-    playerId.value = response.playerId;
-    roomId.value = response.roomId;
-    room.value = response.room;
-    sessionStorage.setItem(ROOM_ID_KEY, response.roomId);
+  emitWithAck<{ roomId: string; playerId: string; room: Room }>("joinRoom", joinPayload(payload), (response) => {
+    setCurrentRoom(response.roomId, response.playerId, response.room);
     router.replace(`/room/${response.roomId}`);
   });
 }
@@ -295,11 +340,13 @@ function confirmRollDecision(payload: { roomId?: string; pendingDecisionId?: str
 
 function leaveRoom(): void {
   emitWithAck("leaveRoom", {}, () => {
-    room.value = null;
-    roomId.value = "";
-    sessionStorage.removeItem(ROOM_ID_KEY);
+    clearCurrentRoom();
     router.replace("/modes");
   });
+}
+
+function kickPlayer(targetPlayerId: string): void {
+  emitWithAck("kickPlayer", { playerId: targetPlayerId });
 }
 
 async function handleLogout(): Promise<void> {
@@ -458,6 +505,7 @@ function getTransportName(transport: unknown): string {
       @choose-duo-slot-summoner-skill="chooseDuoSlotSummonerSkill"
       @update-room-settings="updateRoomSettings"
       @start-game="startGame"
+      @kick-player="kickPlayer"
     />
     <BattlePage
       v-else-if="room"

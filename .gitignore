@@ -9,6 +9,7 @@ server/dist/
 .DS_Store
 .vite/
 coverage/
+test-results/
 *.tsbuildinfo
 *.vue.js
 *.vue.d.ts

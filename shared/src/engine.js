@@ -1081,6 +1081,13 @@ function finishAction(room, actor, target, outcome, events, ctx) {
         if (extraDamage > 0)
             outcome.skillMessages.push(`穿透伤害额外 +${extraDamage}`);
     }
+    if (room.gameMode === "pve_roguelite" && outcome.damage > 0) {
+        const fatigueBonus = getRogueliteFatigueBonus(room);
+        if (fatigueBonus > 0) {
+            outcome.damage += fatigueBonus;
+            events.push(makeEvent(ctx.now, ctx.makeId, "skill", `狂化加成：本次攻击伤害 +${fatigueBonus}`, actor.id, target.id, outcome.dice));
+        }
+    }
     let finalDamage = 0;
     let hpDamage = 0;
     const invincible = hasInvincible(room);
@@ -1205,6 +1212,18 @@ function finishAction(room, actor, target, outcome, events, ctx) {
             events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 吸血拳法 Lv.${bloodPunchLevel} 回复 ${hpGain} 点血`, actor.id, undefined, outcome.dice, undefined, hpGain));
         }
     }
+    if (room.gameMode === "pve_roguelite" && !actor.isBot) {
+        const drinkBloodLevel = actor.roguelitePerkStacks?.["drink_blood"] ?? 0;
+        if (drinkBloodLevel > 0 && hpDamage > 0) {
+            const hpGain = applyHpHealing(actor, drinkBloodLevel);
+            if (hpGain > 0) {
+                events.push(makeEvent(ctx.now, ctx.makeId, "heal", `饮血触发，回复 ${hpGain} 生命。`, actor.id, undefined, outcome.dice, undefined, hpGain));
+            }
+            else {
+                events.push(makeEvent(ctx.now, ctx.makeId, "skill", "饮血触发，但生命已满。", actor.id, undefined, outcome.dice));
+            }
+        }
+    }
     // ── Roguelite Boss Skills (post-damage) ──
     if (room.gameMode === "pve_roguelite" && actor.isBot && actor.rogueliteBossId) {
         const bossState = actor.rogueliteBossState ?? {};
@@ -1277,6 +1296,7 @@ function finishAction(room, actor, target, outcome, events, ctx) {
     }
     room.guardCheckCompletedForActorId = undefined;
     advanceTurn(room);
+    advanceRogueliteBattleRound(room, events, ctx);
     if (room.gameMode === "duo_2v2") {
         const controllerId = room.activeControllerId;
         if (controllerId)
@@ -1770,6 +1790,30 @@ function advanceTurn(room) {
             room.activePlayerIndex = nextIndex;
             return;
         }
+    }
+}
+function getRogueliteFatigueBonus(room) {
+    if (room.gameMode !== "pve_roguelite")
+        return 0;
+    const round = room.roguelite?.battleRound ?? 1;
+    return Math.max(0, Math.floor((round - 7) / 2));
+}
+function advanceRogueliteBattleRound(room, events, ctx) {
+    if (room.gameMode !== "pve_roguelite" || room.phase !== "battle")
+        return;
+    const roguelite = room.roguelite;
+    if (!roguelite)
+        return;
+    roguelite.battleRound = (roguelite.battleRound ?? 1) + 1;
+    const fatigueBonus = getRogueliteFatigueBonus(room);
+    const previousAnnouncedBonus = roguelite.fatigueAnnouncedBonus ?? 0;
+    roguelite.fatigueBonus = fatigueBonus;
+    if (roguelite.battleRound === 9 && previousAnnouncedBonus === 0) {
+        events.push(makeEvent(ctx.now, ctx.makeId, "system", "战斗进入狂化，双方伤害提升！"));
+    }
+    if (fatigueBonus > previousAnnouncedBonus) {
+        events.push(makeEvent(ctx.now, ctx.makeId, "system", `狂化加深，双方攻击伤害 +${fatigueBonus}。`));
+        roguelite.fatigueAnnouncedBonus = fatigueBonus;
     }
 }
 function getWinner(room) {

@@ -29,6 +29,7 @@ export interface Effect {
 export interface Player {
     id: string;
     clientId: string;
+    userId?: string;
     nickname: string;
     isHost: boolean;
     isOnline: boolean;
@@ -127,7 +128,7 @@ export interface RoomSettings {
     allowDuplicateCharacters: boolean;
     gameMode?: GameMode;
 }
-export type RogueliteRewardType = "starter_heavy_punch" | "starter_blood_punch" | "starter_iron_wall" | "starter_recovery" | "heavy_punch_training" | "iron_body" | "breathing_recovery" | "blood_punch" | "battle_instinct" | "guard_training" | "gunner_triple_shot" | "vampire_skill" | "zhaoyun_pierce" | "flame_lord_mark" | "berserker_blood" | "vampire_instinct" | "dragon_courage" | "vitality_boost" | "shield_wall" | "first_strike" | "low_hp_armor" | "kill_heal" | "comeback" | "low_roll_defense" | "shield_strike" | "shield_overload" | "sturdy_bulwark" | "fate_tokens" | "low_roll_charge" | "desperate_reroll" | "lucky_floor";
+export type RogueliteRewardType = "starter_heavy_punch" | "starter_blood_punch" | "starter_iron_wall" | "starter_recovery" | "heavy_punch_training" | "iron_body" | "breathing_recovery" | "blood_punch" | "battle_instinct" | "guard_training" | "gunner_triple_shot" | "vampire_skill" | "zhaoyun_pierce" | "flame_lord_mark" | "berserker_blood" | "vampire_instinct" | "dragon_courage" | "vitality_boost" | "shield_wall" | "first_strike" | "low_hp_armor" | "kill_heal" | "comeback" | "low_roll_defense" | "shield_strike" | "shield_overload" | "sturdy_bulwark" | "fate_tokens" | "low_roll_charge" | "desperate_reroll" | "lucky_floor" | "drink_blood";
 export interface RogueliteReward {
     id: string;
     name: string;
@@ -140,6 +141,9 @@ export interface RogueliteReward {
 export interface RogueliteRunState {
     stage: number;
     maxStage: number;
+    battleRound?: number;
+    fatigueBonus?: number;
+    fatigueAnnouncedBonus?: number;
     rewardChoices?: RogueliteReward[];
     appliedRewards?: RogueliteReward[];
     lastStageSummary?: {

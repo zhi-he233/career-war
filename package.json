@@ -11,10 +11,12 @@
     "dev": "concurrently -n server,client -c green,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
     "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client"
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
+    "process:character-art": "node scripts/process-character-art.js"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "sharp": "^0.34.3",
     "typescript": "^5.9.3"
   }
 }

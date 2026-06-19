@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Character, CharacterId, DuoCharacterSlot, GameMode, Player, Room, RoomSettings, SummonerSkillId, TeamId } from "@career-war/shared";
+import { getCharacterArt } from "../assets/art/characters";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
 const props = defineProps<{
@@ -358,6 +359,11 @@ function characterName(characterId: CharacterId | undefined): string {
 function fullDescription(character: CharacterCard): string[] {
   return character.fullDescription?.length ? character.fullDescription : character.description;
 }
+
+function characterSprite(characterId: string): string | undefined {
+  const art = getCharacterArt(characterId);
+  return art?.sprite ?? art?.avatar;
+}
 </script>
 
 <template>
@@ -563,15 +569,21 @@ function fullDescription(character: CharacterCard): string[] {
           @click="openCharacterDetails(character)"
         >
           <span class="character-status">{{ characterStatusLabel(character) }}</span>
-          <strong>{{ character.name }}</strong>
-          <span class="character-hp">最大血量 {{ character.maxHp }}</span>
-          <span class="character-tags">
-            <i>{{ difficultyLabel(character.difficulty) }}</i>
-            <i>{{ roleLabel(character.role) }}</i>
+          <span class="character-art-thumb" :class="{ empty: !characterSprite(character.id) }">
+            <img v-if="characterSprite(character.id)" :src="characterSprite(character.id)" :alt="character.name" draggable="false" />
+            <span v-else>{{ character.name.slice(0, 1) }}</span>
           </span>
-          <small>{{ character.shortDescription ?? character.description[0] }}</small>
-          <span v-if="me?.characterId === character.id" class="chosen-note">你已选择</span>
-          <span v-else-if="selectedNames(character.id).length" class="chosen-note">已选：{{ selectedNames(character.id).join("、") }}</span>
+          <span class="character-card-copy">
+            <strong>{{ character.name }}</strong>
+            <span class="character-hp">最大血量 {{ character.maxHp }}</span>
+            <span class="character-tags">
+              <i>{{ difficultyLabel(character.difficulty) }}</i>
+              <i>{{ roleLabel(character.role) }}</i>
+            </span>
+            <small>{{ character.shortDescription ?? character.description[0] }}</small>
+            <span v-if="me?.characterId === character.id" class="chosen-note">你已选择</span>
+            <span v-else-if="selectedNames(character.id).length" class="chosen-note">已选：{{ selectedNames(character.id).join("、") }}</span>
+          </span>
         </button>
       </div>
 
@@ -581,6 +593,10 @@ function fullDescription(character: CharacterCard): string[] {
     <div v-if="selectedCharacter" class="character-detail-backdrop" @click.self="closeCharacterDetails">
       <section class="character-detail-panel" role="dialog" aria-modal="true" :aria-label="selectedCharacter.name">
         <header class="character-detail-header">
+          <div class="character-detail-art" :class="{ empty: !characterSprite(selectedCharacter.id) }">
+            <img v-if="characterSprite(selectedCharacter.id)" :src="characterSprite(selectedCharacter.id)" :alt="selectedCharacter.name" draggable="false" />
+            <span v-else>{{ selectedCharacter.name.slice(0, 1) }}</span>
+          </div>
           <div>
             <span class="detail-status" :class="{ locked: !isSelectableCharacter(selectedCharacter) }">{{ isSelectableCharacter(selectedCharacter) ? "已开放" : "未开放" }}</span>
             <h2>{{ selectedCharacter.name }}</h2>

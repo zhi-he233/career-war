@@ -5,6 +5,7 @@ const props = defineProps<{
   player: Player;
   characters: Character[];
   playerAvatarEmoji: string;
+  playerAvatarSrc?: string;
   lastRollText: string;
 }>();
 
@@ -59,7 +60,10 @@ function zhaoZilongHitText(player: Player): string {
     <section class="player-detail-panel" role="dialog" aria-modal="true" :aria-label="`${player.nickname} 状态详情`">
       <header class="player-detail-header">
         <div>
-          <span class="detail-avatar">{{ playerAvatarEmoji }}</span>
+          <span class="detail-avatar">
+            <img v-if="playerAvatarSrc" :src="playerAvatarSrc" :alt="detailSubtitle(player)" draggable="false" />
+            <span v-else>{{ playerAvatarEmoji }}</span>
+          </span>
           <h2>{{ player.nickname }}</h2>
           <p>{{ detailSubtitle(player) }}</p>
         </div>

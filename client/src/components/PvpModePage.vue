@@ -204,16 +204,20 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 .pvp-heading {
   display: grid;
   gap: 10px;
-  border: 1px solid #d7dee8;
+  border: 2px solid #d7dee8;
   border-radius: 8px;
   padding: 14px;
-  background: #ffffff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
+    linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(245, 158, 11, 0.08));
+  box-shadow: 0 0 0 2px rgba(23, 32, 51, 0.05), 0 8px 0 rgba(23, 32, 51, 0.08);
 }
 
 .pvp-heading h2 {
   margin: 3px 0 0;
   color: #172033;
   font-size: 24px;
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
 }
 
 .pvp-heading .ghost-btn {
@@ -229,20 +233,35 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
   display: grid;
   gap: 8px;
   min-height: 116px;
-  border: 1px solid #d7dee8;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid #d7dee8;
   border-radius: 8px;
   padding: 15px;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   text-align: left;
+  box-shadow: 0 0 0 2px rgba(23, 32, 51, 0.05), 0 8px 0 rgba(23, 32, 51, 0.08);
 }
 
 button.pvp-mode-card {
   cursor: pointer;
 }
 
+.pvp-mode-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -20px -24px auto;
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(245, 158, 11, 0.16));
+  transform: rotate(16deg);
+  pointer-events: none;
+}
+
 .pvp-mode-card.available {
   border-color: #2563eb;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1), 0 10px 0 rgba(37, 99, 235, 0.08), 0 18px 24px rgba(37, 99, 235, 0.1);
 }
 
 .pvp-mode-card.disabled {
@@ -253,6 +272,7 @@ button.pvp-mode-card {
 .pvp-mode-card strong {
   color: #172033;
   font-size: 20px;
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
   line-height: 1.25;
 }
 

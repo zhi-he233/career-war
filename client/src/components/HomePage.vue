@@ -63,19 +63,25 @@ const emit = defineEmits<{
 
 .home-hero,
 .mode-entry-card {
-  border: 1px solid #d7dee8;
+  border: 2px solid #d7dee8;
   border-radius: 8px;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 0 0 2px rgba(23, 32, 51, 0.05), 0 8px 0 rgba(23, 32, 51, 0.08);
 }
 
 .home-hero {
   padding: 18px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
+    linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(245, 158, 11, 0.08));
 }
 
 .home-hero h2 {
   margin: 4px 0 8px;
   color: #172033;
   font-size: 28px;
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0.03em;
   line-height: 1.15;
 }
 
@@ -99,15 +105,28 @@ const emit = defineEmits<{
   min-height: 124px;
   padding: 16px;
   text-align: left;
+  overflow: hidden;
 }
 
 button.mode-entry-card {
   cursor: pointer;
 }
 
+.mode-entry-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -20px -20px auto;
+  width: 92px;
+  height: 92px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(245, 158, 11, 0.16));
+  transform: rotate(16deg);
+  pointer-events: none;
+}
+
 .mode-entry-card.available {
   border-color: #2563eb;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1), 0 10px 0 rgba(37, 99, 235, 0.08), 0 18px 24px rgba(37, 99, 235, 0.1);
 }
 
 .mode-entry-card.disabled {
@@ -118,6 +137,7 @@ button.mode-entry-card {
 .mode-entry-card strong {
   color: #172033;
   font-size: 22px;
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
   line-height: 1.2;
 }
 

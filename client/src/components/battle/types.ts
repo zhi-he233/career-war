@@ -15,6 +15,8 @@ export interface SeatViewModel {
   isHealed: boolean;
   isBlocked: boolean;
   avatarEmoji: string;
+  avatarSrc?: string;
+  spriteSrc?: string;
   statusText: string;
   hp: number;
   maxHp: number;
@@ -70,6 +72,8 @@ export interface SelfDestructOption {
 
 export interface SelfPanelVM {
   avatarEmoji: string;
+  avatarSrc?: string;
+  spriteSrc?: string;
   nickname: string;
   characterName: string;
   hp: number;

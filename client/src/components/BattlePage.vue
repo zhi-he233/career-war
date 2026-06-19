@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
+import { getCharacterArt } from "../assets/art/characters";
 import { useDiceAnimation } from "../composables/useDiceAnimation";
 import type { RollPhase, RollMode } from "../composables/useDiceAnimation";
 import { useEmote } from "../composables/useEmote";
@@ -45,23 +46,12 @@ type FloatingEffect = {
   value: number;
   key: string;
 };
-type BattleFeedbackItem = {
-  key: string;
-  text: string;
-  kind: "damage" | "heal" | "noEffect" | "emote";
-  lane: "top" | "middle" | "bottom";
-  side: "left" | "center" | "right";
-};
 type EmoteOption = {
   id: EmoteId;
   label: string;
   emoji: string;
 };
 type VisibleEmote = { key: string; emoji: string };
-type AvatarOption = {
-  id: string;
-  emoji: string;
-};
 
 const MAX_RENDERED_LOG = 50;
 const HIGHLIGHT_DISPLAY_MS = 1500;
@@ -74,25 +64,12 @@ const EMOTE_OPTIONS: EmoteOption[] = [
   { id: "like", label: "点赞", emoji: "👍" },
   { id: "question", label: "疑惑", emoji: "❓" }
 ];
-const PLAYER_AVATARS: AvatarOption[] = [
-  { id: "wolf", emoji: "🐺" },
-  { id: "fox", emoji: "🦊" },
-  { id: "cat", emoji: "🐱" },
-  { id: "dog", emoji: "🐶" },
-  { id: "panda", emoji: "🐼" },
-  { id: "frog", emoji: "🐸" },
-  { id: "monkey", emoji: "🐵" },
-  { id: "dragon", emoji: "🐲" },
-  { id: "robot", emoji: "🤖" },
-  { id: "ghost", emoji: "👻" }
-];
-
 const displayedRoom = ref<Room>(cloneRoomForDisplay(props.room));
 const pendingRoom = ref<Room | null>(null);
 const room = computed(() => displayedRoom.value);
 
 const { rollPhase, rollMode, rollingDice, isRolling, startAnimation, reveal, finishReveal, clearAllTimers } = useDiceAnimation();
-const { activeEmotes, locked: emoteLocked, lock: lockEmote, showEmote, getEmote: lookupEmote, clearAll: clearEmotes } = useEmote();
+const { locked: emoteLocked, lock: lockEmote, showEmote, getEmote: lookupEmote, clearAll: clearEmotes } = useEmote();
 
 const visibleRollId = ref<string | undefined>(getLatestRoll(props.room)?.id);
 const visibleGuardCheckId = ref<string | undefined>(getLatestGuardCheck(props.room)?.id);
@@ -157,7 +134,9 @@ const classicSeats = computed<SeatViewModel[]>(() =>
     isHit: isRecentDamageTarget(player),
     isHealed: isRecentHealTarget(player),
     isBlocked: isNoDamageTarget(player),
-    avatarEmoji: playerAvatar(player).emoji,
+    avatarEmoji: playerFallbackMark(player),
+    avatarSrc: getCharacterArt(player.characterId)?.avatar,
+    spriteSrc: getCharacterArt(player.characterId)?.sprite,
     statusText: playerStatus(player),
     hp: player.hp,
     maxHp: player.maxHp,
@@ -196,7 +175,9 @@ const duoTeamSeats = computed<Record<string, SeatViewModel[]>>(() => {
         isHit: isRecentDamageTarget(player),
         isHealed: isRecentHealTarget(player),
         isBlocked: isNoDamageTarget(player),
-        avatarEmoji: playerAvatar(player).emoji,
+        avatarEmoji: playerFallbackMark(player),
+        avatarSrc: getCharacterArt(player.characterId)?.avatar,
+        spriteSrc: getCharacterArt(player.characterId)?.sprite,
         statusText: playerStatus(player),
         hp: player.hp,
         maxHp: player.maxHp,
@@ -308,7 +289,9 @@ function onSelectSelfDestruct(amount: number): void {
 const selfPanelVM = computed<SelfPanelVM | null>(() => {
   if (!me.value) return null;
   return {
-    avatarEmoji: playerAvatar(me.value).emoji,
+    avatarEmoji: playerFallbackMark(me.value),
+    avatarSrc: getCharacterArt(me.value.characterId)?.avatar,
+    spriteSrc: getCharacterArt(me.value.characterId)?.sprite,
     nickname: me.value.nickname,
     characterName: characterName(me.value.characterId),
     hp: me.value.hp,
@@ -325,28 +308,6 @@ const selfPanelVM = computed<SelfPanelVM | null>(() => {
     noEffect: selfNoEffect(),
     emote: selfEmote()
   };
-});
-
-const battleFeedbackItems = computed<BattleFeedbackItem[]>(() => {
-  const items: BattleFeedbackItem[] = activeFloatingEffects.value.map((effect) => ({
-    key: effect.key,
-    text: effect.type === "damage" ? `-${effect.value}` : effect.type === "heal" ? `+${effect.value}` : "无效",
-    kind: effect.type,
-    lane: feedbackLaneForPlayer(effect.playerId),
-    side: feedbackSideForPlayer(effect.playerId)
-  }));
-
-  for (const [playerId, emote] of Object.entries(activeEmotes.value)) {
-    items.push({
-      key: emote.key,
-      text: emote.emoji,
-      kind: "emote",
-      lane: feedbackLaneForPlayer(playerId),
-      side: feedbackSideForPlayer(playerId)
-    });
-  }
-
-  return items;
 });
 
 const showRogueliteRewardCenterPrompt = computed(() => Boolean(roguelitePanelVM.value.enabled && roguelitePanelVM.value.rewardPhase && !showRogueliteDetails.value));
@@ -1087,24 +1048,6 @@ function rogueliteEnemyTypeLabel(player: Player | undefined): string {
   return "敌人";
 }
 
-function feedbackPlayer(playerId: string): Player | undefined {
-  return room.value.players.find((player) => player.id === playerId || player.controllerId === playerId);
-}
-
-function feedbackLaneForPlayer(playerId: string): BattleFeedbackItem["lane"] {
-  const player = feedbackPlayer(playerId);
-  if (!player) return "middle";
-  if (player.id === props.playerId || player.controllerId === props.playerId) return "bottom";
-  return player.isBot || !isDuoMode.value ? "top" : "middle";
-}
-
-function feedbackSideForPlayer(playerId: string): BattleFeedbackItem["side"] {
-  const player = feedbackPlayer(playerId);
-  if (!player || !isDuoMode.value) return "center";
-  if (player.id === props.playerId || player.controllerId === props.playerId) return "left";
-  return player.teamId === "A" ? "left" : "right";
-}
-
 function characterFor(id: string | undefined): Character | undefined {
   return props.characters.find((character) => character.id === id);
 }
@@ -1151,13 +1094,9 @@ function hasInvincible(player: Player): boolean {
   return room.value.effects.some((effect) => effect.type === "invincible" && effect.sourcePlayerId === player.id);
 }
 
-function playerAvatar(player: Player): AvatarOption {
-  const avatarId = (player as Player & { avatarId?: string }).avatarId;
-  const assignedAvatar = PLAYER_AVATARS.find((avatar) => avatar.id === avatarId);
-  if (assignedAvatar) return assignedAvatar;
-
-  const hash = Array.from(player.id).reduce((sum, char) => ((sum << 5) - sum + char.charCodeAt(0)) | 0, 0);
-  return PLAYER_AVATARS[Math.abs(hash) % PLAYER_AVATARS.length];
+function playerFallbackMark(player: Player): string {
+  const label = characterName(player.characterId).trim();
+  return Array.from(label)[0] ?? "?";
 }
 
 function playerNumber(player: Player): number {
@@ -1658,17 +1597,6 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         </section>
       </section>
 
-      <div class="battle-feedback-layer" aria-hidden="true">
-        <span
-          v-for="item in battleFeedbackItems"
-          :key="item.key"
-          class="battle-feedback-pop"
-          :class="[`feedback-${item.kind}`, `feedback-lane-${item.lane}`, `feedback-side-${item.side}`]"
-        >
-          {{ item.text }}
-        </span>
-      </div>
-
       <div v-if="showRogueliteRewardCenterPrompt" class="roguelite-reward-center-layer">
         <section class="roguelite-reward-center-card">
           <span class="reward-center-icon">★</span>
@@ -1715,7 +1643,8 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       v-if="detailPlayer"
       :player="detailPlayer"
       :characters="characters"
-      :player-avatar-emoji="playerAvatar(detailPlayer).emoji"
+      :player-avatar-emoji="playerFallbackMark(detailPlayer)"
+      :player-avatar-src="getCharacterArt(detailPlayer.characterId)?.sprite ?? getCharacterArt(detailPlayer.characterId)?.avatar"
       :last-roll-text="lastRollText(detailPlayer)"
       @close="closePlayerDetail"
     />

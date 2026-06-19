@@ -1005,7 +1005,7 @@ io.on("connection", (socket) => {
         emoteId,
         createdAt: now
       };
-      io.to(room.id).emit("playerEmote", event);
+      emitEmoteToRoomPeers(room.id, socket.id, event);
       return { ok: true };
     });
   });
@@ -1060,6 +1060,21 @@ function emitRoomToParticipants(room: Room): void {
 
 function broadcastRoomList(): void {
   io.emit("roomListUpdated", getPublicRoomList());
+}
+
+function emitEmoteToRoomPeers(roomId: string, senderSocketId: string, event: PlayerEmoteEvent): void {
+  const targetSocketIds = new Set<string>();
+  for (const [socketId, mappedRoomId] of Array.from(socketToRoom.entries())) {
+    if (mappedRoomId === roomId) targetSocketIds.add(socketId);
+  }
+  for (const socketId of io.sockets.adapter.rooms.get(roomId) ?? []) {
+    targetSocketIds.add(socketId);
+  }
+  targetSocketIds.delete(senderSocketId);
+
+  for (const socketId of targetSocketIds) {
+    io.sockets.sockets.get(socketId)?.emit("playerEmote", event);
+  }
 }
 
 function scheduleBotTurnIfNeeded(room: Room): void {

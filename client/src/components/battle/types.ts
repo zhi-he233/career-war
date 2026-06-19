@@ -14,6 +14,7 @@ export interface SeatViewModel {
   isHit: boolean;
   isHealed: boolean;
   isBlocked: boolean;
+  isSelf?: boolean;
   avatarEmoji: string;
   avatarSrc?: string;
   spriteSrc?: string;

@@ -24,7 +24,9 @@ const CHARACTER_ID_ALIASES = {
   bomber: "self_destructor",
   flame_lord: "fire_lord",
   crescent: "crescent_moon",
-  zhao_yun: "zhaoZilong"
+  zhao_yun: "zhaoZilong",
+  assassin_fearless: "fearless_assassin",
+  assassin_slash: "execution_assassin"
 };
 
 function normalizeCharacterId(fileBaseName) {

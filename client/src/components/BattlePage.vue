@@ -1295,6 +1295,12 @@ function isSummonerSkillId(value: unknown): value is SummonerSkillId {
 function sendEmote(emoteId: EmoteId): void {
   if (emoteLocked.value) return;
   lockEmote();
+  showPlayerEmote({
+    roomId: room.value.id,
+    playerId: isDuoMode.value ? props.playerId : me.value?.id ?? props.playerId,
+    emoteId,
+    createdAt: Date.now()
+  });
   socket.emit("sendEmote", { emoteId });
 }
 

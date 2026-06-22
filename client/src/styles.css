@@ -2740,7 +2740,7 @@ body:has(.lobby-page) {
   line-height: 1.25 !important;
 }
 
-.lobby-summary > section:not(.lobby-start-bar) {
+.lobby-summary > section:not(.lobby-start-bar):not(.summoner-select-panel) {
   min-height: 0 !important;
   overflow: hidden !important;
 }
@@ -2786,7 +2786,7 @@ body:has(.lobby-page) {
   grid-template-rows: auto minmax(0, 1fr) auto !important;
   gap: 6px !important;
   min-height: 0 !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
 .settings-controls {
@@ -3663,15 +3663,6 @@ body .lobby-page .lobby-summary > .room-code strong {
   overflow: visible !important;
 }
 
-.leave-confirm-backdrop {
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-.leave-confirm-dialog {
-  display: none !important;
-}
-
 @media (max-width: 380px), (max-height: 810px) {
   .game-home {
     grid-template-rows: 34px minmax(165px, 0.54fr) auto minmax(54px, 0.46fr) !important;
@@ -3788,7 +3779,8 @@ body .lobby-page .lobby-summary > .room-code strong {
 }
 
 .lobby-tab-characters .lobby-summary {
-  display: contents !important;
+  display: grid !important;
+  grid-row: 1 / -1;
 }
 
 .lobby-tab-characters .lobby-summary > .room-code {
@@ -3979,7 +3971,7 @@ body .lobby-tab-characters > .room-code {
   line-height: 1 !important;
 }
 
-.lobby-summary > section:not(.lobby-start-bar) {
+.lobby-summary > section:not(.lobby-start-bar):not(.summoner-select-panel) {
   min-height: 0 !important;
   overflow: hidden !important;
 }
@@ -4404,7 +4396,6 @@ body .lobby-tab-characters > .room-code {
   }
 
   .lobby-tab-characters .character-picker,
-  .summoner-select-panel,
   .duo-slot-picker {
     display: block !important;
     min-height: 0 !important;
@@ -4496,13 +4487,13 @@ body .lobby-tab-characters > .room-code {
   .summoner-options {
     min-height: 0 !important;
     overflow-y: auto !important;
-    padding-bottom: 12px !important;
+    padding-bottom: 120px !important;
   }
 
   .summoner-option {
     grid-template-columns: minmax(0, 1fr) !important;
     min-width: 0 !important;
-    max-height: none !important;
+    max-height: 78px !important;
     padding: 9px 44px 10px 10px !important;
   }
 
@@ -6242,9 +6233,9 @@ body .lobby-tab-characters > .room-code {
 }
 
 .battle-layout-fixed .action-center {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  max-height: 42%;
+  max-height: none;
 }
 
 .battle-layout-fixed .action-center.is-compact {
@@ -6253,8 +6244,8 @@ body .lobby-tab-characters > .room-code {
 }
 
 .battle-layout-fixed .action-center.is-active {
-  flex: 0 1 auto;
-  max-height: 42%;
+  flex: 0 0 auto;
+  max-height: none;
 }
 
 .zone-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 9px; border-bottom: 1px solid var(--color-border-divider); }
@@ -6297,10 +6288,10 @@ body .lobby-tab-characters > .room-code {
 .seat-tags .guard-badge, .self-meta .guard-badge { background: #ecfdf5; color: #047857; }
 
 /* ---- action center overrides ---- */
-.action-center { display: grid; gap: 0; overflow: hidden; }
+.action-center { display: flex; flex-direction: column; gap: 0; overflow: visible; }
 
 .battle-layout-fixed .action-center {
-  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
 }
 
 .action-wait-strip {
@@ -6351,8 +6342,11 @@ body .lobby-tab-characters > .room-code {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   justify-items: stretch;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  max-height: min(46vh, 300px);
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
 }
 .battle-layout-fixed .action-center .dice-visual {
@@ -6376,7 +6370,7 @@ body .lobby-tab-characters > .room-code {
 .dice-action-slots { margin-top: 4px; }
 .battle-layout-fixed .dice-action-slots {
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .self-destruct-panel { display: grid; gap: 8px; margin-bottom: 8px; padding: 8px; border: 1px solid #fecaca; border-radius: var(--radius-md); background: #fff7ed; }
@@ -6473,9 +6467,19 @@ body .lobby-tab-characters > .room-code {
   border-radius: var(--radius-md);
 }
 
-.self-panel.compact .float-number,
-.self-panel.compact .emote-bubble {
+.self-panel.compact .float-number {
   display: none;
+}
+
+.battle-bottom-bar .self-panel,
+.battle-bottom-bar .self-avatar {
+  overflow: visible;
+}
+
+.self-panel.compact .emote-bubble {
+  display: flex;
+  z-index: 30;
+  pointer-events: none;
 }
 
 /* ---- emote panel overrides ---- */
@@ -6518,11 +6522,31 @@ body .lobby-tab-characters > .room-code {
   .battle-seat.active .avatar-ring.has-sprite { width: 98px; height: 92px; }
   .avatar-emoji { font-size: 25px; }
   .seat-tags, .seat-roll { display: none; }
-  .action-phase strong { font-size: 16px; }
+  .action-phase { padding: 6px 8px; }
+  .action-phase strong { font-size: 14px; }
+  .action-phase small { font-size: 11px; }
+  .battle-layout-fixed .action-center .dice-panel {
+    max-height: min(48vh, 285px);
+    gap: 5px;
+    padding: 6px 8px;
+  }
+  .action-center .dice-box span {
+    width: 40px;
+    height: 40px;
+    font-size: 24px;
+  }
+  .action-summary strong { font-size: 14px; }
+  .action-summary p { font-size: 11px; }
   .dice-action-slots .slot-grid { padding-bottom: 4px; }
   .self-destruct-panel .self-destruct-title { display: grid; }
   .self-destruct-panel .self-destruct-btn { min-height: 44px; }
-  .dice-action-slot { min-height: 64px; }
+  .battle-layout-fixed .dice-action-slot {
+    flex-basis: 116px;
+    min-height: 60px;
+    padding: 6px;
+  }
+  .dice-action-slot strong { font-size: 13px; }
+  .dice-action-slot small { font-size: 11px; }
   .self-panel { grid-template-columns: auto minmax(0, 1fr); padding: 7px 8px; }
   .self-avatar { width: 52px; height: 52px; }
   .emote-panel { grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -7084,131 +7108,5 @@ body .lobby-tab-characters > .room-code {
     min-height: 28px;
     font-size: 12px;
     padding: 2px 4px;
-  }
-}
-
-/* ================================================================
-   LOBBY TAB SIZE FIX — classic character + summoner only
-   ================================================================ */
-.lobby-page,
-.lobby-page * {
-  box-sizing: border-box;
-}
-
-.lobby-page .character-picker:not(.duo-slot-picker) {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow-x: hidden;
-}
-
-.lobby-page .character-picker:not(.duo-slot-picker) .character-search,
-.lobby-page .character-picker:not(.duo-slot-picker) .filter-chip,
-.lobby-page .character-picker:not(.duo-slot-picker) .character-grid,
-.lobby-page .character-picker:not(.duo-slot-picker) .character-choice,
-.lobby-page .character-picker:not(.duo-slot-picker) .character-pager {
-  max-width: 100%;
-  min-width: 0;
-}
-
-.lobby-page .character-picker:not(.duo-slot-picker) .character-grid {
-  width: 100%;
-  overflow-x: hidden;
-}
-
-.lobby-page .character-picker:not(.duo-slot-picker) .character-choice,
-.lobby-page .character-picker:not(.duo-slot-picker) .character-pager {
-  width: 100%;
-}
-
-.lobby-page .summoner-select-panel {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.lobby-page .summoner-options {
-  min-width: 0;
-  max-width: 100%;
-  overflow-x: hidden;
-}
-
-.lobby-page .summoner-option,
-.lobby-page .summoner-option-main {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.lobby-page .summoner-option-description {
-  display: -webkit-box !important;
-  overflow: hidden !important;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  white-space: normal !important;
-}
-
-.lobby-page .summoner-info-btn {
-  flex: 0 0 auto;
-}
-
-@media (max-width: 760px) {
-  .lobby-page .character-picker:not(.duo-slot-picker) {
-    padding-bottom: 96px !important;
-  }
-
-  .lobby-page .character-picker:not(.duo-slot-picker) .character-grid {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  .lobby-page .character-picker:not(.duo-slot-picker) .character-choice {
-    grid-template-columns: 52px minmax(0, 1fr) !important;
-  }
-
-  .lobby-page .character-picker:not(.duo-slot-picker) .character-pager {
-    margin-inline: 0 !important;
-  }
-
-  .lobby-page .summoner-select-panel {
-    padding-bottom: 128px !important;
-  }
-
-  .lobby-page .summoner-options {
-    grid-template-columns: minmax(0, 1fr) !important;
-    overflow-y: auto !important;
-    overscroll-behavior: contain;
-    padding-bottom: 128px !important;
-  }
-
-  .lobby-page .summoner-option {
-    min-height: 54px !important;
-    max-height: 70px !important;
-    padding: 7px 40px 7px 9px !important;
-  }
-
-  .lobby-page .summoner-option-main {
-    gap: 1px !important;
-  }
-
-  .lobby-page .summoner-option-main strong {
-    font-size: 13px !important;
-    line-height: 1.15 !important;
-  }
-
-  .lobby-page .summoner-option-main small {
-    font-size: 10px !important;
-    line-height: 1.1 !important;
-  }
-
-  .lobby-page .summoner-option-description {
-    -webkit-line-clamp: 1;
-    font-size: 10px !important;
-    line-height: 1.2 !important;
-  }
-
-  .lobby-page .summoner-info-btn {
-    top: 7px !important;
-    right: 7px !important;
-    width: 24px !important;
-    height: 24px !important;
-    min-height: 24px !important;
   }
 }

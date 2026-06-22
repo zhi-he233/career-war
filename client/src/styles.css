@@ -122,6 +122,9 @@ button,
 input,
 select {
   font: inherit;
+  border: var(--cw-border-thin);
+  border-radius: var(--cw-radius-md);
+  box-sizing: border-box;
 }
 
 button {
@@ -1578,6 +1581,10 @@ button:disabled,
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  padding: 4px;
+  border: var(--cw-border-thin);
+  border-radius: 999px;
+  background: var(--cw-card);
   color: var(--cw-ink);
   font-size: 12px;
   font-weight: 1000;
@@ -1753,9 +1760,10 @@ button:disabled,
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 5px;
-  border: 0;
-  padding: 0;
-  background: transparent;
+  border: var(--cw-border-thin);
+  border-radius: var(--cw-radius-lg);
+  padding: 5px;
+  background: var(--cw-card);
 }
 
 .lobby-tab-btn,
@@ -1932,7 +1940,7 @@ body:has(.lobby-page) {
   align-items: center;
   gap: 3px 5px;
   min-height: 32px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
+  border: var(--cw-border-thin);
   border-radius: 8px;
   padding: 4px 6px;
   background: rgba(248, 250, 252, 0.9);
@@ -1983,6 +1991,8 @@ body:has(.lobby-page) {
 
 .settings-title {
   gap: 6px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid var(--cw-line);
 }
 
 .settings-title .hint,
@@ -2109,8 +2119,10 @@ body:has(.lobby-page) {
   grid-template-columns: minmax(0, 1fr) 126px;
   gap: 8px;
   min-height: 50px;
-  border-width: 1px;
+  border: var(--cw-border-thin);
+  border-radius: var(--cw-radius-lg);
   padding: 7px 8px;
+  background: var(--cw-card);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
 }
 
@@ -2145,6 +2157,8 @@ body:has(.lobby-page) {
 
 .picker-heading {
   gap: 6px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid var(--cw-line);
 }
 
 .picker-heading .hint {
@@ -2168,6 +2182,8 @@ body:has(.lobby-page) {
 .character-search {
   min-height: 30px;
   padding: 5px 8px;
+  border: var(--cw-border-thin);
+  border-radius: var(--cw-radius-md);
   font-size: 11px;
 }
 
@@ -2179,6 +2195,8 @@ body:has(.lobby-page) {
 .filter-chip {
   min-height: 26px;
   padding: 4px 7px;
+  border: var(--cw-border-thin);
+  border-radius: 999px;
   font-size: 10px;
 }
 
@@ -2235,6 +2253,7 @@ body:has(.lobby-page) {
   top: 3px;
   right: 3px;
   padding: 1px 4px;
+  border: 1px solid var(--cw-line);
   font-size: 8px;
 }
 
@@ -2244,6 +2263,10 @@ body:has(.lobby-page) {
   align-items: center;
   gap: 8px;
   min-height: 30px;
+  padding: 5px 8px;
+  border: var(--cw-border-thin);
+  border-radius: var(--cw-radius-lg);
+  background: var(--cw-card);
 }
 
 .character-pager span {
@@ -2266,9 +2289,12 @@ body:has(.lobby-page) {
 .duo-team-panel,
 .duo-slot-card {
   gap: 5px;
-  border-width: 1px;
   padding: 6px;
-  box-shadow: none;
+}
+
+.duo-team-panel.is-waiting {
+  border-style: dashed;
+  opacity: 0.72;
 }
 
 .duo-slot-list {
@@ -2860,8 +2886,10 @@ body:has(.lobby-page) {
   height: 24px !important;
   min-height: 24px !important;
   padding: 0 !important;
-  border-width: 2px !important;
+  border: 2px solid var(--cw-line) !important;
   border-radius: 999px !important;
+  background: var(--cw-card) !important;
+  color: var(--cw-ink) !important;
   font-size: 12px !important;
   line-height: 1 !important;
 }
@@ -6754,5 +6782,210 @@ body .lobby-tab-characters > .room-code {
   50% {
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.28), 0 5px 0 rgba(146, 64, 14, 0.28), inset 0 -4px 0 rgba(245, 158, 11, 0.14);
   }
+}
+
+/* ============================================================
+   LOBBY UI BORDER FIX — strong visible borders via box-shadow
+   Appended last to win the cascade. Does not touch battle.
+   ============================================================ */
+
+/* --- buttons: black border / black fill --- */
+body .primary-btn {
+  box-shadow: inset 0 0 0 2px #111, 0 3px 0 rgba(17,17,17,0.18) !important;
+  border: 2px solid #111 !important;
+}
+body .secondary-btn {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+}
+body .ghost-btn {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+}
+body button:disabled,
+body .primary-btn:disabled,
+body .secondary-btn:disabled,
+body .ghost-btn:disabled {
+  box-shadow: inset 0 0 0 2px #999 !important;
+  border-color: #999 !important;
+}
+
+/* --- tab bar: full frame --- */
+body .lobby-tabs {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+  padding: 5px !important;
+  background: #fff !important;
+}
+
+/* --- tab buttons --- */
+body .lobby-tab-btn {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 999px !important;
+}
+body .lobby-tab-btn.active {
+  background: #111 !important;
+  color: #fff !important;
+  box-shadow: 0 2px 0 rgba(17,17,17,0.22) !important;
+}
+
+/* --- player cards: must look like cards --- */
+body .lobby-page .player-card,
+body .lobby-page .lobby-player-card {
+  box-shadow: inset 0 0 0 2px #111, 0 3px 0 rgba(17,17,17,0.18) !important;
+  border: 2px solid #111 !important;
+  border-radius: 12px !important;
+  background: #fffdf4 !important;
+}
+
+/* --- room code --- */
+body .room-code {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+}
+
+/* --- character cards --- */
+body .character-choice {
+  box-shadow: inset 0 0 0 2px #111, 0 3px 0 rgba(17,17,17,0.18) !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+  background: #fffdf4 !important;
+}
+body .character-choice.selected {
+  box-shadow: inset 0 0 0 3px #111, 0 3px 0 rgba(17,17,17,0.18) !important;
+  border-color: #111 !important;
+}
+body .character-choice .character-status {
+  border: 1px solid #111 !important;
+  border-radius: 999px !important;
+  background: #e8f5e9 !important;
+  color: #111 !important;
+  font-weight: 800 !important;
+}
+
+/* --- summoner skill cards --- */
+body .summoner-option {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 10px !important;
+  background: #fffdf4 !important;
+}
+body .summoner-option.selected {
+  box-shadow: inset 0 0 0 3px #111, 0 0 0 2px #111 !important;
+  background: #fff !important;
+}
+
+/* --- info i buttons: round black border --- */
+body .seat-info-btn,
+body .summoner-info-btn,
+body .character-info-btn {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  color: #111 !important;
+}
+
+/* --- lobby start bar --- */
+body .lobby-start-bar {
+  box-shadow: inset 0 0 0 2px #111, 0 4px 12px rgba(17,17,17,0.14) !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+  background: #fffdf4 !important;
+}
+
+/* --- filter chips --- */
+body .filter-chip {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 999px !important;
+}
+body .filter-chip.active {
+  background: #111 !important;
+  color: #fff !important;
+}
+
+/* --- character search --- */
+body .character-search {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 10px !important;
+}
+
+/* --- character pager --- */
+body .character-pager {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+}
+
+/* --- duo slot cards & team panels --- */
+body .duo-slot-card {
+  box-shadow: inset 0 0 0 2px #111, 0 3px 0 rgba(17,17,17,0.18) !important;
+  border: 2px solid #111 !important;
+  border-radius: 12px !important;
+  background: #fffdf4 !important;
+}
+body .duo-team-panel {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+  background: #fffdf4 !important;
+}
+
+/* --- settings / picker / summoner panels --- */
+body .room-settings-panel {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+}
+body .summoner-select-panel {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+}
+body .character-picker {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+  background: #fffdf4 !important;
+}
+
+/* --- home page --- */
+body .home-title-card {
+  box-shadow: inset 0 0 0 3px #111, 0 6px 0 rgba(17,17,17,0.18) !important;
+  border: 3px solid #111 !important;
+  border-radius: 24px !important;
+}
+body .home-topline {
+  box-shadow: inset 0 0 0 2px #111 !important;
+  border: 2px solid #111 !important;
+  border-radius: 999px !important;
+}
+
+/* --- pvp mode cards --- */
+body .pvp-mode-card {
+  box-shadow: inset 0 0 0 2px #111, 0 4px 0 rgba(17,17,17,0.18) !important;
+  border: 2px solid #111 !important;
+  border-radius: 14px !important;
+}
+
+/* --- input / select --- */
+body .lobby-page input,
+body .lobby-page select {
+  border: 2px solid #111 !important;
+  border-radius: 8px !important;
+}
+
+/* --- settings title / picker heading divider --- */
+body .settings-title {
+  border-bottom: 2px solid #111 !important;
+}
+body .picker-heading {
+  border-bottom: 2px solid #111 !important;
 }
 

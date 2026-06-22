@@ -154,7 +154,7 @@ export interface RogueliteRunState {
         isBoss: boolean;
     };
 }
-export type CharacterReactionSkillId = "gunslinger_copy_damage" | "gunslinger_barrage" | "vampire_life_steal" | "vampire_blood_rite" | "zhao_zilong_hold" | "paladin_invincible" | "self_destruct" | "war_knight_heal" | "crescent_moon_strike" | "fire_lord_spark" | "fire_lord_burst" | "stone_titan_crush" | "mountain_shield_guard";
+export type CharacterReactionSkillId = "gunslinger_copy_damage" | "gunslinger_barrage" | "vampire_life_steal" | "vampire_blood_rite" | "paladin_invincible" | "self_destruct" | "war_knight_heal" | "crescent_moon_strike" | "fire_lord_spark" | "fire_lord_burst" | "stone_titan_crush" | "mountain_shield_guard";
 export type SummonerSkillId = "lucky_plus_one" | "first_aid" | "iron_wall" | "fate_reroll" | "last_stand";
 export type RollActionType = "normal_attack" | "character_skill" | "summoner_skill" | "roguelite_skill";
 export type RollDecisionChoice = RollActionType | "settle";

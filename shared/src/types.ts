@@ -233,7 +233,6 @@ export type CharacterReactionSkillId =
   | "gunslinger_barrage"
   | "vampire_life_steal"
   | "vampire_blood_rite"
-  | "zhao_zilong_hold"
   | "paladin_invincible"
   | "self_destruct"
   | "war_knight_heal"

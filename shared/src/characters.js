@@ -35,16 +35,17 @@ export const characters = {
         fullDescription: ["3 点无伤", "1 点造成 1 伤害并回复 2 血", "6 点再投一次，回复骰点 x3，溢出变护盾"],
         isImplemented: true
     },
+    // Zhao Zilong balance rule: only roll 4 is no-damage; it is not a skill and roll 1 is not no-damage.
     zhaoZilong: {
         id: "zhaoZilong",
         name: "赵子龙",
         maxHp: 20,
-        description: ["4 点无伤", "造成伤害时无视护盾", "每成功造成 3 次血量伤害后，回复 2 点血"],
+        description: ["4 点无伤", "造成伤害时无视护盾", "龙胆：每成功造成 3 次血量伤害后，回复 2 点血"],
         difficulty: "normal",
         role: "attack",
         tags: ["新手推荐", "攻击", "破盾"],
         shortDescription: "攻击能无视护盾，连续造成血量伤害后会回复自己。",
-        fullDescription: ["4 点无伤", "造成伤害时无视护盾", "龙胆：每成功造成 3 次血量伤害后，回复 2 点血，触发后计数清零。"],
+        fullDescription: ["4 点无伤：投出 4 时不造成伤害，自动跳过行动", "造成伤害时无视护盾", "龙胆：每成功造成 3 次血量伤害后，回复 2 点血，触发后计数清零。"],
         isImplemented: true
     },
     assassin: {

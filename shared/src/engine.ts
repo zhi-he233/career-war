@@ -735,7 +735,6 @@ function characterSkillDescription(skillId: CharacterReactionSkillId, roll: numb
   if (skillId === "gunslinger_barrage") return `消耗 🎲 ${roll}，继续投骰造成额外伤害`;
   if (skillId === "vampire_life_steal") return `消耗 🎲 ${roll}，造成 1 点伤害并回复 2 点血`;
   if (skillId === "vampire_blood_rite") return `消耗 🎲 ${roll}，继续投骰并根据结果回复生命`;
-  if (skillId === "zhao_zilong_hold") return `消耗 🎲 ${roll}，本次不造成伤害`;
   if (skillId === "self_destruct") return "选择扣除自己 1-9 点血量，对目标造成双倍普通伤害";
   if (skillId === "war_knight_heal") return `消耗 🎲 ${roll}，回复 3 点血，不造成伤害`;
   if (skillId === "crescent_moon_strike") return `消耗 🎲 ${roll}，造成固定 9 点伤害`;
@@ -767,7 +766,6 @@ function getAvailableCharacterReactionSkill(characterId: CharacterId | undefined
   if (characterId === "gunslinger" && roll === 6) return { id: "gunslinger_barrage", name: "连射" };
   if (characterId === "vampire" && roll === 1) return { id: "vampire_life_steal", name: "吸血" };
   if (characterId === "vampire" && roll === 6) return { id: "vampire_blood_rite", name: "血祭回复" };
-  if (characterId === "zhaoZilong" && roll === 4) return { id: "zhao_zilong_hold", name: "按兵不动" };
   if (characterId === "paladin" && roll === 4) return { id: "paladin_invincible", name: "全员无敌" };
   if (characterId === "self_destructor" && roll === 6) return { id: "self_destruct", name: "自爆" };
   if (characterId === "war_knight" && roll === 3) return { id: "war_knight_heal", name: "战争复苏" };
@@ -1610,9 +1608,11 @@ function resolveSkill(
     return outcome;
   }
 
+  // Zhao Zilong balance rule: only roll 4 is no-damage; it is not a skill and roll 1 is not no-damage.
+  // Uses the same generic no-damage pattern as vampire roll 3, paladin roll 1, stone_titan rolls 1-4.
   if (characterId === "zhaoZilong") {
     outcome.ignoresShield = true;
-    if (first === 4 && options.useOptionalCharacterSkill) {
+    if (first === 4) {
       outcome.damage = 0;
       outcome.skillMessages.push("赵子龙投出 4，本次无伤害");
     } else {

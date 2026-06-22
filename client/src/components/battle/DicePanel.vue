@@ -28,39 +28,34 @@ const hasSkillTrigger = computed(() => props.skillHints.length > 0 || Boolean(pr
       'core-roll-zone': props.showRollButton
     }"
   >
-    <div class="dice-main-row">
-      <div class="dice-visual">
-        <div class="dice-box" :key="props.diceKey">
-          <span v-for="(dice, index) in props.diceValues" :key="`${props.diceKey}-${index}`">{{ dice }}</span>
-        </div>
-        <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
-          <span v-for="hint in props.skillHints" :key="hint.id" class="skill-hint-badge">
-            <span>{{ hint.text }}</span>
-            <b v-if="hint.valueText">{{ hint.valueText }}</b>
-          </span>
-        </transition-group>
+    <div class="dice-visual">
+      <div class="dice-box" :key="props.diceKey">
+        <span v-for="(dice, index) in props.diceValues" :key="`${props.diceKey}-${index}`">{{ dice }}</span>
       </div>
-
-      <div class="action-summary">
-        <strong>{{ props.title }}</strong>
-        <p v-if="props.detail">{{ props.detail }}</p>
-        <p v-if="props.skillText" class="skill-summary">技能：{{ props.skillText }}</p>
-      </div>
+      <transition-group name="skill-hint" tag="div" class="skill-hint-stack" aria-live="polite">
+        <span v-for="hint in props.skillHints" :key="hint.id" class="skill-hint-badge">
+          <span>{{ hint.text }}</span>
+          <b v-if="hint.valueText">{{ hint.valueText }}</b>
+        </span>
+      </transition-group>
     </div>
 
-    <div class="dice-action-area">
-      <slot name="action-slots" />
+    <div class="action-summary">
+      <strong>{{ props.title }}</strong>
+      <p v-if="props.detail">{{ props.detail }}</p>
+      <p v-if="props.skillText" class="skill-summary">技能：{{ props.skillText }}</p>
     </div>
 
-    <div v-if="props.showRollButton" class="dice-panel-footer">
-      <button
-        class="roll-btn"
-        type="button"
-        :disabled="!props.canRoll"
-        @click="emit('roll')"
-      >
-        {{ props.rollButtonText }}
-      </button>
-    </div>
+    <slot name="action-slots" />
+
+    <button
+      v-if="props.showRollButton"
+      class="roll-btn"
+      type="button"
+      :disabled="!props.canRoll"
+      @click="emit('roll')"
+    >
+      {{ props.rollButtonText }}
+    </button>
   </div>
 </template>

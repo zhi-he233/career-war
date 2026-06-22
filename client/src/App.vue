@@ -210,9 +210,14 @@ function clearCurrentRoom(): void {
 }
 
 function handleKickedFromRoom(): void {
+  const gameMode = room.value?.gameMode;
   clearCurrentRoom();
   showError("你已被房主移出房间");
-  router.replace("/modes");
+  if (gameMode === "pve_roguelite" || gameMode === "pve_1v1") {
+    router.replace("/");
+  } else {
+    router.replace("/modes");
+  }
 }
 
 function resumePayload(roomIdToResume: string): { roomId: string; clientId: string; playerId?: string; userId?: string } {
@@ -339,9 +344,14 @@ function confirmRollDecision(payload: { roomId?: string; pendingDecisionId?: str
 }
 
 function leaveRoom(): void {
+  const gameMode = room.value?.gameMode;
   emitWithAck("leaveRoom", {}, () => {
     clearCurrentRoom();
-    router.replace("/modes");
+    if (gameMode === "pve_roguelite" || gameMode === "pve_1v1") {
+      router.replace("/");
+    } else {
+      router.replace("/modes");
+    }
   });
 }
 

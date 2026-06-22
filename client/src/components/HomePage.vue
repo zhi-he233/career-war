@@ -1,192 +1,36 @@
 <script setup lang="ts">
+import { ref } from "vue";
+
 const emit = defineEmits<{
   selectPvp: [];
   selectPve: [];
   selectRoguelite: [];
 }>();
+
+const showRules = ref(false);
 </script>
 
 <template>
-  <section class="home-page">
-    <div class="home-hero">
-      <h2>职业互怼</h2>
-      <p>选择玩法入口 — 玩家对战、人机练习、肉鸽挑战。</p>
+  <section class="home-page game-home">
+    <div class="home-topline">
+      <span>骰子桌游</span>
+      <span>H5 对战</span>
     </div>
 
-    <div class="mode-entry-list">
-      <button class="mode-entry-card available" type="button" @click="emit('selectPvp')">
-        <span class="mode-status ready">可进入</span>
-        <strong>玩家对战</strong>
-        <small>创建房间、加入房间、查看房间列表，进入 1V1 / 自由对战或 2V2 双角色。</small>
-      </button>
+    <div class="home-title-card">
+      <span class="home-dice-mark">🎲</span>
+      <h2>职业互怼</h2>
+      <p>骰子职业对战 · 实时互怼 · 肉鸽挑战</p>
+    </div>
 
-      <button class="mode-entry-card available" type="button" @click="emit('selectPve')">
-        <span class="mode-status ready">可进入</span>
-        <strong>人机练习</strong>
-        <small>单人 1V1 练习模式：选择 1 个职业和 1 个召唤师技能，服务端生成 AI 对手。</small>
-        <div class="sub-mode-list">
-          <span>玩家 vs AI</span>
-          <span>无账号 / 无存档</span>
-        </div>
-      </button>
-
-      <button class="mode-entry-card available" type="button" @click="emit('selectRoguelite')">
-        <span class="mode-status ready">可进入</span>
-        <strong>肉鸽挑战</strong>
-        <small>连续挑战 15 关，前期快速成型，第 15 关大 Boss 后获得 Boss 能力奖励。</small>
-        <div class="sub-mode-list">
-          <span>15 关挑战</span>
-          <span>胜利选奖励</span>
-          <span>Boss 能力</span>
-        </div>
-      </button>
-
-      <article class="mode-entry-card disabled" aria-disabled="true">
-        <span class="mode-status">占位</span>
-        <strong>玩家档案</strong>
-        <small>游客玩家</small>
-        <div class="profile-placeholder">
-          <span>等级：开发中</span>
-          <span>金币：开发中</span>
-          <span>战绩：开发中</span>
-        </div>
-      </article>
+    <div class="home-actions">
+      <button class="primary-btn home-start-btn" type="button" @click="emit('selectPvp')">开始游戏</button>
+      <button class="secondary-btn home-rule-btn" type="button" @click="showRules = !showRules">规则说明</button>
+      <p v-if="showRules" class="home-rule-note">投骰决定本回合行动强度，选择职业和召唤师技能后进入战斗。详细职业规则可在房间页查看。</p>
+      <div class="home-sub-actions">
+        <button class="secondary-btn" type="button" @click="emit('selectRoguelite')">肉鸽挑战</button>
+        <button class="ghost-btn" type="button" @click="emit('selectPve')">人机练习</button>
+      </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-.home-page {
-  display: grid;
-  gap: 14px;
-}
-
-.home-hero,
-.mode-entry-card {
-  border: 2px solid #d7dee8;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  box-shadow: 0 0 0 2px rgba(23, 32, 51, 0.05), 0 8px 0 rgba(23, 32, 51, 0.08);
-}
-
-.home-hero {
-  padding: 18px 16px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
-    linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(245, 158, 11, 0.08));
-}
-
-.home-hero h2 {
-  margin: 4px 0 8px;
-  color: #172033;
-  font-size: 28px;
-  font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
-  letter-spacing: 0.03em;
-  line-height: 1.15;
-}
-
-.home-hero p:last-child {
-  margin: 0;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.mode-entry-list {
-  display: grid;
-  gap: 10px;
-}
-
-.mode-entry-card {
-  position: relative;
-  display: grid;
-  gap: 8px;
-  min-height: 124px;
-  padding: 16px;
-  text-align: left;
-  overflow: hidden;
-}
-
-button.mode-entry-card {
-  cursor: pointer;
-}
-
-.mode-entry-card::after {
-  content: "";
-  position: absolute;
-  inset: auto -20px -20px auto;
-  width: 92px;
-  height: 92px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(245, 158, 11, 0.16));
-  transform: rotate(16deg);
-  pointer-events: none;
-}
-
-.mode-entry-card.available {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1), 0 10px 0 rgba(37, 99, 235, 0.08), 0 18px 24px rgba(37, 99, 235, 0.1);
-}
-
-.mode-entry-card.disabled {
-  background: #f8fafc;
-  color: #64748b;
-}
-
-.mode-entry-card strong {
-  color: #172033;
-  font-size: 22px;
-  font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
-  line-height: 1.2;
-}
-
-.mode-entry-card small,
-.sub-mode-list,
-.profile-placeholder {
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.45;
-}
-
-.mode-status {
-  justify-self: start;
-  border-radius: 999px;
-  padding: 3px 8px;
-  background: #e2e8f0;
-  color: #475569;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.mode-status.ready {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-.sub-mode-list,
-.profile-placeholder {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.sub-mode-list span,
-.profile-placeholder span {
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: #eef2ff;
-}
-
-@media (max-width: 480px) {
-  .home-hero h2 {
-    font-size: 25px;
-  }
-
-  .mode-entry-card {
-    min-height: 116px;
-    padding: 14px;
-  }
-}
-</style>

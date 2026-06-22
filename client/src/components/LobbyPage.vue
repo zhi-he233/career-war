@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import type { Character, CharacterId, DuoCharacterSlot, GameMode, Player, Room, RoomSettings, SummonerSkillId, TeamId } from "@career-war/shared";
 import { getCharacterArt } from "../assets/art/characters";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
@@ -49,6 +49,7 @@ const ROLE_LABELS: Record<NonNullable<Character["role"]>, string> = {
 };
 
 const MAX_PLAYER_OPTIONS = [2, 3, 4, 5, 6, 7, 8];
+const CHARACTER_PAGE_SIZE = 4;
 const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   maxPlayers: 8,
   allowDuplicateCharacters: true,
@@ -61,6 +62,7 @@ const SUMMONER_SKILLS: Array<{ id: SummonerSkillId; name: string; description: s
   { id: "fate_reroll", name: "命运重掷", description: "服务器重新投一次主骰，必须接受新骰点。冷却：3 次自己的行动。" },
   { id: "last_stand", name: "破釜", description: "攻击伤害行动可用，最终伤害 +2，自己受 2 点反噬。冷却：3 次自己的行动。" }
 ];
+type SummonerSkill = (typeof SUMMONER_SKILLS)[number];
 
 const LOCKED_CHARACTERS: CharacterCard[] = [
   {
@@ -111,10 +113,15 @@ const LOCKED_CHARACTERS: CharacterCard[] = [
 
 const activeFilter = ref<CharacterFilter>("all");
 const searchKeyword = ref("");
+const characterPage = ref(0);
 const selectedCharacter = ref<CharacterCard | null>(null);
+const selectedSummonerSkillDetail = ref<SummonerSkill | null>(null);
 const showRuleGuide = ref(false);
 const copyFeedback = ref(false);
+const lobbyTab = ref<"players" | "settings" | "summoner" | "characters">("players");
 let copyFeedbackTimer: number | undefined;
+let pendingLeaveAutoConfirm = false;
+let leaveAutoConfirmListenerAttached = false;
 
 const me = computed(() => props.room.players.find((player) => player.id === props.playerId));
 const isHost = computed(() => props.room.hostId === props.playerId);
@@ -170,9 +177,59 @@ const startHint = computed(() => {
 const inviteLink = computed(() => `${window.location.origin}/room/${props.room.id}`);
 const visibleCharacters = computed<CharacterCard[]>(() => [...props.characters, ...LOCKED_CHARACTERS].filter((character) => !character.isHidden));
 const filteredCharacters = computed(() => visibleCharacters.value.filter((character) => matchesFilter(character) && matchesSearch(character)));
+const characterPageCount = computed(() => Math.max(1, Math.ceil(filteredCharacters.value.length / CHARACTER_PAGE_SIZE)));
+const pagedCharacters = computed(() => filteredCharacters.value.slice(characterPage.value * CHARACTER_PAGE_SIZE, (characterPage.value + 1) * CHARACTER_PAGE_SIZE));
 const randomCandidates = computed(() => filteredCharacters.value.filter(isSelectableCharacter));
 const visibleMaxPlayers = computed(() => (isDuoModeDevelopment.value ? 2 : isSinglePlayerPveMode.value ? 1 : roomSettings.value.maxPlayers));
 const selectableMaxPlayerOptions = computed(() => (isDuoModeDevelopment.value ? [2] : isSinglePlayerPveMode.value ? [1] : MAX_PLAYER_OPTIONS).map((count) => ({ count, disabled: count < props.room.players.length })));
+const lobbySeats = computed(() =>
+  Array.from({ length: Math.max(visibleMaxPlayers.value, props.room.players.length) }, (_, index) => ({
+    index,
+    player: props.room.players[index]
+  }))
+);
+
+watch([activeFilter, searchKeyword], () => {
+  characterPage.value = 0;
+});
+
+watch(characterPageCount, (count) => {
+  if (characterPage.value >= count) {
+    characterPage.value = Math.max(0, count - 1);
+  }
+});
+
+watch(
+  [roomMode, lobbyTab],
+  () => {
+    if (isRogueliteMode.value && (lobbyTab.value === "characters" || lobbyTab.value === "summoner")) {
+      lobbyTab.value = "players";
+      return;
+    }
+    if (isDuoModeDevelopment.value && lobbyTab.value === "summoner") {
+      lobbyTab.value = "characters";
+    }
+  },
+  { immediate: true }
+);
+
+function autoConfirmLeaveClick(event: MouseEvent): void {
+  const button = (event.target as HTMLElement | null)?.closest("button");
+  if (!button || button.textContent?.trim() !== "离开") return;
+  if (pendingLeaveAutoConfirm) return;
+  pendingLeaveAutoConfirm = true;
+  window.setTimeout(() => {
+    const confirmButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".leave-confirm-dialog button")).find((item) => item.textContent?.includes("确认离开"));
+    confirmButton?.click();
+    pendingLeaveAutoConfirm = false;
+  }, 0);
+}
+
+onMounted(() => {
+  if (leaveAutoConfirmListenerAttached) return;
+  document.addEventListener("click", autoConfirmLeaveClick, true);
+  leaveAutoConfirmListenerAttached = true;
+});
 
 async function copyInviteLink(): Promise<void> {
   await navigator.clipboard.writeText(inviteLink.value);
@@ -191,12 +248,43 @@ function confirmCharacterChoice(): void {
   closeCharacterDetails();
 }
 
+function chooseCharacterFromCard(character: CharacterCard): void {
+  if (!isSelectableCharacter(character)) return;
+  emit("chooseCharacter", character.id as CharacterId);
+}
+
 function openCharacterDetails(character: CharacterCard): void {
   selectedCharacter.value = character;
 }
 
 function closeCharacterDetails(): void {
   selectedCharacter.value = null;
+}
+
+function selectSummonerSkill(skill: SummonerSkill): void {
+  emit("chooseSummonerSkill", skill.id);
+}
+
+function openSummonerSkillDetails(skill: SummonerSkill): void {
+  selectedSummonerSkillDetail.value = skill;
+}
+
+function closeSummonerSkillDetails(): void {
+  selectedSummonerSkillDetail.value = null;
+}
+
+function chooseSummonerSkillFromDetail(): void {
+  if (!selectedSummonerSkillDetail.value) return;
+  selectSummonerSkill(selectedSummonerSkillDetail.value);
+  closeSummonerSkillDetails();
+}
+
+function summonerSkillTag(id: SummonerSkillId): string {
+  if (id === "lucky_plus_one") return "+1";
+  if (id === "first_aid") return "回血";
+  if (id === "iron_wall") return "护盾";
+  if (id === "fate_reroll") return "重掷";
+  return "爆发";
 }
 
 function chooseRandomCharacter(): void {
@@ -367,7 +455,7 @@ function characterSprite(characterId: string): string | undefined {
 </script>
 
 <template>
-  <section class="page-panel lobby-page">
+  <section class="page-panel lobby-page" :class="`lobby-tab-${lobbyTab}`">
     <section class="lobby-summary">
       <div class="room-code">
         <span>房间号</span>
@@ -379,22 +467,34 @@ function characterSprite(characterId: string): string | undefined {
         <button class="ghost-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
       </div>
 
-      <section>
+      <nav class="lobby-tabs">
+        <button class="lobby-tab-btn" :class="{ active: lobbyTab === 'players' }" type="button" @click="lobbyTab = 'players'">玩家</button>
+        <button class="lobby-tab-btn" :class="{ active: lobbyTab === 'settings' }" type="button" @click="lobbyTab = 'settings'">设置</button>
+        <button v-if="isDuoModeDevelopment" class="lobby-tab-btn" :class="{ active: lobbyTab === 'characters' }" type="button" @click="lobbyTab = 'characters'">阵容</button>
+        <button v-if="!isDuoModeDevelopment && !isRogueliteMode" class="lobby-tab-btn" :class="{ active: lobbyTab === 'characters' }" type="button" @click="lobbyTab = 'characters'">职业</button>
+        <button v-if="!isDuoModeDevelopment && !isRogueliteMode" class="lobby-tab-btn" :class="{ active: lobbyTab === 'summoner' }" type="button" @click="lobbyTab = 'summoner'">技能</button>
+      </nav>
+
+      <section v-show="lobbyTab === 'players'">
         <h2>玩家 {{ room.players.length }}/{{ visibleMaxPlayers }}</h2>
         <div class="player-list lobby-player-list">
-          <article v-for="(player, index) in room.players" :key="player.id" class="player-card lobby-player-card">
-            <div>
-              <strong>{{ index + 1 }}号 {{ player.nickname }}</strong>
-              <span v-if="player.id === room.hostId || player.isHost" class="badge host-badge">房主</span>
-              <span class="badge" :class="{ offline: !player.isOnline }">{{ player.isOnline ? "在线" : "离线" }}</span>
-              <button v-if="canKickPlayer(player)" class="ghost-btn small-btn" type="button" @click="requestKickPlayer(player)">Kick</button>
-            </div>
-            <p>{{ classicPlayerChoiceText(player) }}</p>
+          <article v-for="seat in lobbySeats" :key="seat.player?.id ?? `empty-${seat.index}`" class="player-card lobby-player-card" :class="{ empty: !seat.player }">
+            <template v-if="seat.player">
+              <strong>{{ seat.index + 1 }} {{ seat.player.nickname }}</strong>
+              <span v-if="seat.player.id === room.hostId || seat.player.isHost" class="badge host-badge">房主</span>
+              <span class="badge" :class="{ offline: !seat.player.isOnline }">{{ seat.player.isOnline ? "在线" : "离线" }}</span>
+              <span class="lobby-seat-choice">{{ characterName(seat.player.characterId) }}</span>
+              <button v-if="canKickPlayer(seat.player)" class="ghost-btn small-btn lobby-kick-btn" type="button" @click="requestKickPlayer(seat.player)">Kick</button>
+            </template>
+            <template v-else>
+              <strong>{{ seat.index + 1 }} 空位</strong>
+              <span class="badge">等待</span>
+            </template>
           </article>
         </div>
       </section>
 
-      <section class="room-settings-panel">
+      <section v-show="lobbyTab === 'settings'" class="room-settings-panel">
         <div class="settings-title">
           <h2>房间设置</h2>
           <span v-if="!isHost" class="hint">仅房主可修改</span>
@@ -435,23 +535,30 @@ function characterSprite(characterId: string): string | undefined {
         <p v-if="isDuoModeDevelopment" class="settings-warning">2V2 双角色测试版：请完成 4 个角色槽位和召唤师技能选择后开始。</p>
       </section>
 
-      <section v-if="!isDuoModeDevelopment && !isRogueliteMode" class="summoner-select-panel">
+      <section v-show="lobbyTab === 'summoner'" class="summoner-select-panel">
         <div class="settings-title">
           <h2>召唤师技能</h2>
           <span class="hint">每人选择 1 个</span>
         </div>
         <div class="summoner-options">
-          <button
+          <article
             v-for="skill in SUMMONER_SKILLS"
             :key="skill.id"
             class="summoner-option"
             :class="{ selected: (me?.summonerSkillId ?? 'lucky_plus_one') === skill.id }"
-            type="button"
-            @click="emit('chooseSummonerSkill', skill.id)"
+            role="button"
+            tabindex="0"
+            @click="selectSummonerSkill(skill)"
+            @keydown.enter.prevent="selectSummonerSkill(skill)"
+            @keydown.space.prevent="selectSummonerSkill(skill)"
           >
-            <strong>{{ skill.name }}</strong>
-            <small>{{ skill.description }}</small>
-          </button>
+            <span class="summoner-option-main">
+              <strong>{{ skill.name }}</strong>
+              <small>{{ summonerSkillTag(skill.id) }}</small>
+              <em class="summoner-option-description">{{ skill.description }}</em>
+            </span>
+            <button class="seat-info-btn summoner-info-btn" type="button" aria-label="查看技能详情" @click.stop="openSummonerSkillDetails(skill)">i</button>
+          </article>
         </div>
         <p class="hint">当前已选择：{{ selectedSummonerSkill.name }}</p>
       </section>
@@ -467,7 +574,7 @@ function characterSprite(characterId: string): string | undefined {
       </section>
     </section>
 
-    <section v-if="isDuoModeDevelopment" class="character-picker duo-slot-picker">
+    <section v-if="isDuoModeDevelopment" v-show="lobbyTab === 'characters'" class="character-picker duo-slot-picker">
       <div class="picker-heading">
         <div>
           <h2>2V2 双角色选角</h2>
@@ -475,8 +582,9 @@ function characterSprite(characterId: string): string | undefined {
         </div>
       </div>
 
-      <div class="duo-team-grid">
-        <article v-for="team in duoTeams" :key="team.id" class="duo-team-panel">
+      <p v-if="duoSlots.length === 0" class="empty-state duo-slot-empty">2V2 槽位尚未生成，请等待房间同步或重新切换模式。</p>
+      <div v-else class="duo-team-grid">
+        <article v-for="team in duoTeams" :key="team.id" class="duo-team-panel" :class="{ 'is-waiting': !team.player }">
           <div class="settings-title">
             <h2>{{ team.label }}</h2>
             <span class="hint">{{ team.player ? team.player.nickname : "等待玩家加入" }}</span>
@@ -524,7 +632,7 @@ function characterSprite(characterId: string): string | undefined {
       </div>
     </section>
 
-    <section v-else-if="isRogueliteMode" class="character-picker roguelite-intro">
+    <section v-else-if="isRogueliteMode" v-show="lobbyTab === 'characters'" class="character-picker roguelite-intro">
       <div class="picker-heading">
         <div>
           <h2>肉鸽挑战</h2>
@@ -533,7 +641,7 @@ function characterSprite(characterId: string): string | undefined {
       </div>
     </section>
 
-    <section v-else class="character-picker">
+    <section v-else v-show="lobbyTab === 'characters'" class="character-picker">
       <div class="picker-heading">
         <div>
           <h2>选择职业</h2>
@@ -559,16 +667,20 @@ function characterSprite(characterId: string): string | undefined {
       </div>
 
       <div class="character-grid">
-        <button
-          v-for="character in filteredCharacters"
+        <article
+          v-for="character in pagedCharacters"
           :key="character.id"
           class="character-choice"
           :class="{ selected: me?.characterId === character.id, locked: !isSelectableCharacter(character), taken: isTakenByOther(character.id) }"
-          type="button"
-          :disabled="!isSelectableCharacter(character)"
-          @click="openCharacterDetails(character)"
+          role="button"
+          :tabindex="isSelectableCharacter(character) ? 0 : -1"
+          :aria-disabled="!isSelectableCharacter(character)"
+          @click="chooseCharacterFromCard(character)"
+          @keydown.enter.prevent="chooseCharacterFromCard(character)"
+          @keydown.space.prevent="chooseCharacterFromCard(character)"
         >
           <span class="character-status">{{ characterStatusLabel(character) }}</span>
+          <button class="seat-info-btn character-info-btn" type="button" aria-label="查看职业详情" @click.stop="openCharacterDetails(character)">i</button>
           <span class="character-art-thumb" :class="{ empty: !characterSprite(character.id) }">
             <img v-if="characterSprite(character.id)" :src="characterSprite(character.id)" :alt="character.name" draggable="false" />
             <span v-else>{{ character.name.slice(0, 1) }}</span>
@@ -584,7 +696,13 @@ function characterSprite(characterId: string): string | undefined {
             <span v-if="me?.characterId === character.id" class="chosen-note">你已选择</span>
             <span v-else-if="selectedNames(character.id).length" class="chosen-note">已选：{{ selectedNames(character.id).join("、") }}</span>
           </span>
-        </button>
+        </article>
+      </div>
+
+      <div v-if="characterPageCount > 1" class="character-pager">
+        <button class="ghost-btn small-btn" type="button" :disabled="characterPage === 0" @click="characterPage = Math.max(0, characterPage - 1)">上一页</button>
+        <span>{{ characterPage + 1 }}/{{ characterPageCount }}</span>
+        <button class="ghost-btn small-btn" type="button" :disabled="characterPage + 1 >= characterPageCount" @click="characterPage = Math.min(characterPageCount - 1, characterPage + 1)">下一页</button>
       </div>
 
       <p v-if="filteredCharacters.length === 0" class="hint">没有找到匹配的职业。</p>
@@ -627,6 +745,29 @@ function characterSprite(characterId: string): string | undefined {
             {{ isSelectableCharacter(selectedCharacter) ? "确认选择" : isTakenByOther(selectedCharacter.id) ? "已被选择" : "未开放" }}
           </button>
           <button class="ghost-btn" type="button" @click="closeCharacterDetails">退出</button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="selectedSummonerSkillDetail" class="character-detail-backdrop skill-detail-backdrop" @click.self="closeSummonerSkillDetails">
+      <section class="character-detail-panel skill-detail-panel" role="dialog" aria-modal="true" :aria-label="selectedSummonerSkillDetail.name">
+        <header class="character-detail-header">
+          <div>
+            <span class="detail-status">{{ summonerSkillTag(selectedSummonerSkillDetail.id) }}</span>
+            <h2>{{ selectedSummonerSkillDetail.name }}</h2>
+            <p>{{ (me?.summonerSkillId ?? 'lucky_plus_one') === selectedSummonerSkillDetail.id ? "当前已选择" : "可选择的召唤师技能" }}</p>
+          </div>
+          <button class="detail-close-btn" type="button" aria-label="关闭" @click="closeSummonerSkillDetails">×</button>
+        </header>
+
+        <div class="character-detail-body">
+          <h3>技能说明</h3>
+          <p>{{ selectedSummonerSkillDetail.description }}</p>
+        </div>
+
+        <footer class="character-detail-actions">
+          <button class="primary-btn" type="button" @click="chooseSummonerSkillFromDetail">选择</button>
+          <button class="ghost-btn" type="button" @click="closeSummonerSkillDetails">关闭</button>
         </footer>
       </section>
     </div>

@@ -11,7 +11,6 @@ import EmotePanel from "./battle/EmotePanel.vue";
 import BattleLogDrawer from "./battle/BattleLogDrawer.vue";
 import PlayerDetailDialog from "./battle/PlayerDetailDialog.vue";
 import CombatBoard from "./battle/CombatBoard.vue";
-import BattleSeat from "./battle/BattleSeat.vue";
 import DicePanel from "./battle/DicePanel.vue";
 import ActionSlots from "./battle/ActionSlots.vue";
 import SelfPanel from "./battle/SelfPanel.vue";
@@ -53,12 +52,6 @@ type EmoteOption = {
   emoji: string;
 };
 type VisibleEmote = { key: string; emoji: string };
-type BattleEmoteItem = {
-  key: string;
-  emoji: string;
-  lane: "top" | "middle" | "bottom";
-  side: "left" | "center" | "right";
-};
 
 const MAX_RENDERED_LOG = 50;
 const HIGHLIGHT_DISPLAY_MS = 1500;
@@ -76,7 +69,7 @@ const pendingRoom = ref<Room | null>(null);
 const room = computed(() => displayedRoom.value);
 
 const { rollPhase, rollMode, rollingDice, isRolling, startAnimation, reveal, finishReveal, clearAllTimers } = useDiceAnimation();
-const { activeEmotes, locked: emoteLocked, lock: lockEmote, showEmote, getEmote: lookupEmote, clearAll: clearEmotes } = useEmote();
+const { locked: emoteLocked, lock: lockEmote, showEmote, getEmote: lookupEmote, clearAll: clearEmotes } = useEmote();
 
 const visibleRollId = ref<string | undefined>(getLatestRoll(props.room)?.id);
 const visibleGuardCheckId = ref<string | undefined>(getLatestGuardCheck(props.room)?.id);
@@ -162,43 +155,6 @@ const classicSeats = computed<SeatViewModel[]>(() =>
   }))
 );
 
-/** Seat for the player's own character standing on stage. */
-const selfSeat = computed<SeatViewModel | null>(() => {
-  const player = me.value;
-  if (!player) return null;
-  return {
-    playerId: player.id,
-    playerNumber: playerNumber(player),
-    nickname: player.nickname,
-    isDead: player.isDead,
-    isActive: player.id === activePlayer.value?.id,
-    isSelectable: false,
-    isSelected: false,
-    isHit: isRecentDamageTarget(player),
-    isHealed: isRecentHealTarget(player),
-    isBlocked: isNoDamageTarget(player),
-    isSelf: true,
-    avatarEmoji: playerFallbackMark(player),
-    avatarSrc: getCharacterArt(player.characterId)?.avatar,
-    spriteSrc: getCharacterArt(player.characterId)?.sprite,
-    statusText: playerStatus(player),
-    hp: player.hp,
-    maxHp: player.maxHp,
-    shield: player.shield,
-    lastRollText: lastRollText(player),
-    characterName: displayCharacterName(player),
-    seatTags: [characterName(player.characterId)],
-    attackableLabel: "",
-    targetLabel: "",
-    isHost: false,
-    hasInvincible: hasInvincible(player),
-    damageEffect: selfDamageEffect(),
-    healEffect: selfHealEffect(),
-    noEffect: selfNoEffect(),
-    emote: selfEmote()
-  };
-});
-
 /** Pre-computed seat data for each duo team column. */
 const duoTeamSeats = computed<Record<string, SeatViewModel[]>>(() => {
   const result: Record<string, SeatViewModel[]> = {};
@@ -277,20 +233,8 @@ function seatNoEffect(player: Player): { key: string } | undefined {
 }
 
 function seatEmote(player: Player) {
-  if (isDuoMode.value && player.controllerId && !isDuoControllerEmoteSeat(player)) {
-    return undefined;
-  }
   const e = lookupEmote(player.id, player.controllerId);
   return e ? { key: e.key, emoji: e.emoji } : undefined;
-}
-
-function isDuoControllerEmoteSeat(player: Player): boolean {
-  const controllerId = player.controllerId;
-  if (!controllerId) return true;
-  const representative = room.value.players
-    .filter((item) => item.controllerId === controllerId)
-    .sort((a, b) => (a.slotIndex ?? 0) - (b.slotIndex ?? 0) || a.id.localeCompare(b.id))[0];
-  return representative?.id === player.id;
 }
 
 /** Shared props for DicePanel — mode-agnostic fields. */
@@ -755,18 +699,6 @@ const rematchControllerIds = computed(() => {
 });
 const rematchReadyCount = computed(() => rematchParticipants.value.filter((participant) => rematchReadyIds.value.includes(participant.id)).length);
 const isAllRematchReady = computed(() => rematchParticipants.value.length > 0 && rematchReadyCount.value >= rematchParticipants.value.length);
-const isPvpGameOver = computed(() => room.value.phase === "gameOver" && !isSinglePlayerPveMode.value);
-const battleEmoteItems = computed<BattleEmoteItem[]>(() => {
-  return Object.entries(activeEmotes.value).map(([emotePlayerId, emote]) => {
-    const player = playerForEmoteId(emotePlayerId);
-    return {
-      key: `battle-${emote.key}`,
-      emoji: emote.emoji || "!",
-      lane: player ? endedEmoteLane(player) : "middle",
-      side: player ? endedEmoteSide(player) : "center"
-    };
-  });
-});
 const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
 const actionStageText = computed(() => {
@@ -1327,38 +1259,11 @@ function isSummonerSkillId(value: unknown): value is SummonerSkillId {
 function sendEmote(emoteId: EmoteId): void {
   if (emoteLocked.value) return;
   lockEmote();
-  showPlayerEmote({
-    roomId: room.value.id,
-    playerId: isDuoMode.value ? props.playerId : (me.value?.id ?? props.playerId),
-    emoteId,
-    createdAt: Date.now()
-  });
   socket.emit("sendEmote", { emoteId });
 }
 
 function emoteFor(player: Player): VisibleEmote | undefined {
   return lookupEmote(player.id, player.controllerId);
-}
-
-function playerForEmoteId(emotePlayerId: string): Player | undefined {
-  return room.value.players.find((player) => player.id === emotePlayerId || player.controllerId === emotePlayerId);
-}
-
-function isMineForEndedEmote(player: Player): boolean {
-  return player.id === props.playerId || player.controllerId === props.playerId;
-}
-
-function endedEmoteLane(player: Player): BattleEmoteItem["lane"] {
-  if (isMineForEndedEmote(player)) return "bottom";
-  return isDuoMode.value ? "middle" : "top";
-}
-
-function endedEmoteSide(player: Player): BattleEmoteItem["side"] {
-  if (!isDuoMode.value) return isMineForEndedEmote(player) ? "left" : "right";
-  if (isMineForEndedEmote(player)) return "left";
-  if (player.teamId === "A") return "left";
-  if (player.teamId === "B") return "right";
-  return "center";
 }
 
 function controllerNickname(player: Player): string {
@@ -1553,9 +1458,9 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 </script>
 
 <template>
-  <section class="battle-page" :class="{ 'battle-page--ended': isPvpGameOver }">
+  <section class="battle-page">
     <div class="battle-phone-shell">
-      <section class="battle-layout battle-layout-fixed" :class="{ 'battle-layout-ended': isPvpGameOver, 'has-ended-emote-layer': isPvpGameOver && battleEmoteItems.length > 0 }">
+      <section class="battle-layout battle-layout-fixed">
         <section class="battle-tools">
           <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
           <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">战斗日志</button>
@@ -1639,15 +1544,6 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           />
         </section>
 
-        <!-- Player character standing on stage -->
-        <section v-if="!isDuoMode && selfSeat" class="battle-stage-self">
-          <BattleSeat
-            :seat="selfSeat"
-            :is-self="true"
-            @info-click="openPlayerDetailById"
-          />
-        </section>
-
         <section v-if="!isDuoMode" class="action-center" :class="[`turn-guide-${turnGuideTone}`, { 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive }]">
           <div v-if="!isActionPanelActive" class="action-wait-strip">
             <span>当前阶段</span>
@@ -1686,17 +1582,12 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 
         <section v-if="room.phase === 'gameOver'" class="log-panel rematch-panel">
           <p class="winner">{{ winnerText }}</p>
-          <button class="primary-btn rematch-action-btn" type="button" :disabled="isRematchReady" @click="readyForRematch">
+          <button class="primary-btn" type="button" :disabled="isRematchReady" @click="readyForRematch">
             {{ isRematchReady ? "已准备" : "准备再来一局" }}
           </button>
           <p class="hint">{{ isAllRematchReady ? "即将返回选职业阶段" : `等待其他玩家准备（${rematchReadyCount}/${rematchParticipants.length}）` }}</p>
           <div class="player-list">
-            <article
-              v-for="(participant, index) in rematchParticipants"
-              :key="`rematch-${participant.id}`"
-              class="player-card rematch-player-card"
-              :class="{ ready: rematchReadyIds.includes(participant.id), pending: !rematchReadyIds.includes(participant.id) }"
-            >
+            <article v-for="(participant, index) in rematchParticipants" :key="`rematch-${participant.id}`" class="player-card">
               <strong>{{ index + 1 }}号 {{ participant.nickname }}</strong>
               <span class="badge" :class="{ 'host-badge': participant.isHost }">
                 {{ rematchReadyIds.includes(participant.id) ? "已准备" : "未准备" }}
@@ -1705,17 +1596,6 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           </div>
         </section>
       </section>
-
-      <div v-if="isPvpGameOver && battleEmoteItems.length > 0" class="battle-emote-layer is-ended" aria-hidden="true">
-        <span
-          v-for="item in battleEmoteItems"
-          :key="item.key"
-          class="battle-emote-pop"
-          :class="[`emote-lane-${item.lane}`, `emote-side-${item.side}`]"
-        >
-          {{ item.emoji }}
-        </span>
-      </div>
 
       <div v-if="showRogueliteRewardCenterPrompt" class="roguelite-reward-center-layer">
         <section class="roguelite-reward-center-card">

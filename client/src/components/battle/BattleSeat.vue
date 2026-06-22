@@ -4,7 +4,6 @@ export type { SeatViewModel };
 
 const props = defineProps<{
   seat: SeatViewModel;
-  isSelf?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -24,8 +23,7 @@ const emit = defineEmits<{
       selected: props.seat.isSelected,
       hit: props.seat.isHit,
       healed: props.seat.isHealed,
-      blocked: props.seat.isBlocked,
-      'is-self': isSelf || props.seat.isSelf
+      blocked: props.seat.isBlocked
     }"
   >
     <button

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { GameMode, RoomListItem } from "@career-war/shared";
 import { useAuth } from "../composables/useAuth";
 
@@ -22,6 +22,7 @@ const roomId = ref("");
 const inviteRoomId = ref("");
 const selectedMode = ref<GameMode | null>(null);
 const submitting = ref(false);
+const joinError = ref("");
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
 const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
 const isPveMode = computed(() => selectedMode.value === "pve_1v1");
@@ -68,36 +69,64 @@ function backToModeSelect(): void {
   selectedMode.value = null;
 }
 
+function normalizedNickname(): string {
+  return nickname.value.trim() || "玩家";
+}
+
 function rememberName(): void {
-  localStorage.setItem("career-war-nickname", nickname.value.trim());
+  const name = normalizedNickname();
+  nickname.value = name;
+  localStorage.setItem("career-war-nickname", name);
 }
 
 let submittingTimer: number | undefined;
 
+function clearSubmittingTimer(): void {
+  if (submittingTimer) {
+    window.clearTimeout(submittingTimer);
+    submittingTimer = undefined;
+  }
+}
+
+function startSubmitting(timeoutMs = 1800, timeoutMessage = ""): void {
+  submitting.value = true;
+  joinError.value = "";
+  clearSubmittingTimer();
+  submittingTimer = window.setTimeout(() => {
+    submitting.value = false;
+    if (timeoutMessage) joinError.value = timeoutMessage;
+    submittingTimer = undefined;
+  }, timeoutMs);
+}
+
+function updateRoomId(value: string): void {
+  roomId.value = value.toUpperCase();
+  joinError.value = "";
+}
+
 function createRoom(): void {
   if (!selectedMode.value || submitting.value) return;
-  submitting.value = true;
+  startSubmitting(3000);
   rememberName();
-  emit("createRoom", { nickname: nickname.value, gameMode: selectedMode.value });
-  submittingTimer = window.setTimeout(() => { submitting.value = false; }, 3000);
+  emit("createRoom", { nickname: normalizedNickname(), gameMode: selectedMode.value });
 }
 
 function joinRoom(): void {
   if (!selectedMode.value || submitting.value) return;
-  submitting.value = true;
+  startSubmitting(1600, "房间不存在，请检查房间号");
   rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: roomId.value, gameMode: selectedMode.value });
-  submittingTimer = window.setTimeout(() => { submitting.value = false; }, 3000);
+  emit("joinRoom", { nickname: normalizedNickname(), roomId: roomId.value, gameMode: selectedMode.value });
 }
 
 function selectRoom(room: RoomListItem): void {
   if (!room.canJoin || !selectedMode.value || submitting.value) return;
-  submitting.value = true;
+  startSubmitting(1600, "房间不存在，请检查房间号");
   roomId.value = room.roomId;
   rememberName();
-  emit("joinRoom", { nickname: nickname.value, roomId: room.roomId, gameMode: selectedMode.value });
-  submittingTimer = window.setTimeout(() => { submitting.value = false; }, 3000);
+  emit("joinRoom", { nickname: normalizedNickname(), roomId: room.roomId, gameMode: selectedMode.value });
 }
+
+onBeforeUnmount(clearSubmittingTimer);
 
 function isRoomVisibleForSelectedMode(room: RoomListItem): boolean {
   if (selectedMode.value === "classic") return room.gameMode === undefined || room.gameMode === "classic";
@@ -141,6 +170,8 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <h2>{{ selectedModeTitle }}</h2>
         <button class="ghost-btn small-btn" type="button" @click="backToModeSelect">返回模式选择</button>
       </div>
+
+      <p v-if="joinError" class="pvp-alert">{{ joinError }}</p>
 
       <label class="field">
         <span>{{ currentUser ? "游戏名（登录用户）" : "游客昵称" }}</span>
@@ -187,7 +218,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 
         <label class="field">
           <span>房间号</span>
-          <input v-model="roomId" maxlength="4" placeholder="例如 A8K2" @input="roomId = roomId.toUpperCase()" />
+          <input :value="roomId" maxlength="4" placeholder="例如 A8K2" @input="updateRoomId(($event.target as HTMLInputElement).value)" />
         </label>
         <button class="secondary-btn" type="button" :disabled="submitting" @click="joinRoom">{{ submitting ? "加入中……" : "加入房间" }}</button>
       </template>

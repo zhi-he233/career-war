@@ -1398,8 +1398,6 @@ h2 {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-  }
-}
 /* ============================================================
    Flip-card inspired tabletop skin
    Black/white board-game UI, mobile game canvas, no page scrolling.
@@ -7088,3 +7086,128 @@ body .lobby-tab-characters > .room-code {
   }
 }
 
+/* ================================================================
+   LOBBY TAB SIZE FIX — classic character + summoner only
+   ================================================================ */
+.lobby-page,
+.lobby-page * {
+  box-sizing: border-box;
+}
+
+.lobby-page .character-picker:not(.duo-slot-picker) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.lobby-page .character-picker:not(.duo-slot-picker) .character-search,
+.lobby-page .character-picker:not(.duo-slot-picker) .filter-chip,
+.lobby-page .character-picker:not(.duo-slot-picker) .character-grid,
+.lobby-page .character-picker:not(.duo-slot-picker) .character-choice,
+.lobby-page .character-picker:not(.duo-slot-picker) .character-pager {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.lobby-page .character-picker:not(.duo-slot-picker) .character-grid {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.lobby-page .character-picker:not(.duo-slot-picker) .character-choice,
+.lobby-page .character-picker:not(.duo-slot-picker) .character-pager {
+  width: 100%;
+}
+
+.lobby-page .summoner-select-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lobby-page .summoner-options {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.lobby-page .summoner-option,
+.lobby-page .summoner-option-main {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lobby-page .summoner-option-description {
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal !important;
+}
+
+.lobby-page .summoner-info-btn {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  .lobby-page .character-picker:not(.duo-slot-picker) {
+    padding-bottom: 96px !important;
+  }
+
+  .lobby-page .character-picker:not(.duo-slot-picker) .character-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .lobby-page .character-picker:not(.duo-slot-picker) .character-choice {
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+  }
+
+  .lobby-page .character-picker:not(.duo-slot-picker) .character-pager {
+    margin-inline: 0 !important;
+  }
+
+  .lobby-page .summoner-select-panel {
+    padding-bottom: 128px !important;
+  }
+
+  .lobby-page .summoner-options {
+    grid-template-columns: minmax(0, 1fr) !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    padding-bottom: 128px !important;
+  }
+
+  .lobby-page .summoner-option {
+    min-height: 54px !important;
+    max-height: 70px !important;
+    padding: 7px 40px 7px 9px !important;
+  }
+
+  .lobby-page .summoner-option-main {
+    gap: 1px !important;
+  }
+
+  .lobby-page .summoner-option-main strong {
+    font-size: 13px !important;
+    line-height: 1.15 !important;
+  }
+
+  .lobby-page .summoner-option-main small {
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+  }
+
+  .lobby-page .summoner-option-description {
+    -webkit-line-clamp: 1;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+  }
+
+  .lobby-page .summoner-info-btn {
+    top: 7px !important;
+    right: 7px !important;
+    width: 24px !important;
+    height: 24px !important;
+    min-height: 24px !important;
+  }
+}

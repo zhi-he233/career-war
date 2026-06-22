@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import type { Character, CharacterId, DuoCharacterSlot, GameMode, Player, Room, RoomSettings, SummonerSkillId, TeamId } from "@career-war/shared";
 import { getCharacterArt } from "../assets/art/characters";
+import CareerDetailCard from "./CareerDetailCard.vue";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
 const props = defineProps<{
@@ -22,6 +23,18 @@ const emit = defineEmits<{
 
 type CharacterFilter = "all" | "newbie" | "attack" | "defense" | "healing" | "burst" | "special";
 type CharacterCard = Omit<Character, "id"> & { id: string };
+
+const CAREER_DETAIL_TAGS: Partial<Record<string, string[]>> = {
+  zhaoZilong: ["破盾", "回血", "稳定输出"],
+  mountain_shield: ["防御", "护盾", "坦克"],
+  fire_lord: ["灼烧", "爆发", "持续伤害"],
+  self_destructor: ["高风险", "爆炸", "赌命"],
+  vampire: ["吸血", "回复", "消耗"]
+};
+
+const CAREER_ART_ID_ALIASES: Record<string, string> = {
+  warKnight: "war_knight"
+};
 
 const FILTERS: Array<{ id: CharacterFilter; label: string }> = [
   { id: "all", label: "全部" },
@@ -254,8 +267,7 @@ function confirmCharacterChoice(): void {
 }
 
 function chooseCharacterFromCard(character: CharacterCard): void {
-  if (!isSelectableCharacter(character)) return;
-  emit("chooseCharacter", character.id as CharacterId);
+  openCharacterDetails(character);
 }
 
 function openCharacterDetails(character: CharacterCard): void {
@@ -453,9 +465,33 @@ function fullDescription(character: CharacterCard): string[] {
   return character.fullDescription?.length ? character.fullDescription : character.description;
 }
 
+function characterTitle(character: CharacterCard): string {
+  return [roleLabel(character.role), difficultyLabel(character.difficulty)].filter(Boolean).join(" / ");
+}
+
+function characterDetailTags(character: CharacterCard): string[] {
+  return uniqueCareerTags([roleLabel(character.role), difficultyLabel(character.difficulty), ...(CAREER_DETAIL_TAGS[character.id] ?? []), ...(character.tags ?? [])]);
+}
+
+function isRecommendedCharacter(character: CharacterCard): boolean {
+  return character.tags?.includes(roleLabel("newbie")) ?? false;
+}
+
+function characterAvatar(characterId: string): string | undefined {
+  return getCharacterArt(normalizeCareerArtId(characterId))?.avatar;
+}
+
 function characterSprite(characterId: string): string | undefined {
-  const art = getCharacterArt(characterId);
+  const art = getCharacterArt(normalizeCareerArtId(characterId));
   return art?.sprite ?? art?.avatar;
+}
+
+function normalizeCareerArtId(characterId: string): string {
+  return CAREER_ART_ID_ALIASES[characterId] ?? characterId;
+}
+
+function uniqueCareerTags(tags: Array<string | undefined>): string[] {
+  return Array.from(new Set(tags.filter((tag): tag is string => Boolean(tag))));
 }
 </script>
 
@@ -707,44 +743,23 @@ function characterSprite(characterId: string): string | undefined {
       <p v-if="filteredCharacters.length === 0" class="hint">没有找到匹配的职业。</p>
     </section>
 
-    <div v-if="selectedCharacter" class="character-detail-backdrop" @click.self="closeCharacterDetails">
-      <section class="character-detail-panel" role="dialog" aria-modal="true" :aria-label="selectedCharacter.name">
-        <header class="character-detail-header">
-          <div class="character-detail-art" :class="{ empty: !characterSprite(selectedCharacter.id) }">
-            <img v-if="characterSprite(selectedCharacter.id)" :src="characterSprite(selectedCharacter.id)" :alt="selectedCharacter.name" draggable="false" />
-            <span v-else>{{ selectedCharacter.name.slice(0, 1) }}</span>
-          </div>
-          <div>
-            <span class="detail-status" :class="{ locked: !isSelectableCharacter(selectedCharacter) }">{{ isSelectableCharacter(selectedCharacter) ? "已开放" : "未开放" }}</span>
-            <h2>{{ selectedCharacter.name }}</h2>
-            <p>最大血量 {{ selectedCharacter.maxHp }}</p>
-          </div>
-          <button class="detail-close-btn" type="button" aria-label="关闭" @click="closeCharacterDetails">×</button>
-        </header>
-
-        <div class="character-detail-meta">
-          <span>{{ difficultyLabel(selectedCharacter.difficulty) }}</span>
-          <span>{{ roleLabel(selectedCharacter.role) }}</span>
-          <span v-for="tag in selectedCharacter.tags ?? []" :key="tag">{{ tag }}</span>
-        </div>
-
-        <div class="character-detail-body">
-          <h3>技能说明</h3>
-          <ul>
-            <li v-for="item in fullDescription(selectedCharacter)" :key="item">{{ item }}</li>
-          </ul>
-          <p v-if="me?.characterId === selectedCharacter.id" class="chosen-note">你已选择这个职业</p>
-          <p v-else-if="selectedNames(selectedCharacter.id).length" class="chosen-note">已选：{{ selectedNames(selectedCharacter.id).join("、") }}</p>
-          <p v-if="!isImplementedCharacter(selectedCharacter)" class="hint">该职业暂未开放，暂时不能选择。</p>
-          <p v-else-if="isTakenByOther(selectedCharacter.id)" class="hint">该职业已被其他玩家选择。</p>
-        </div>
-
-        <footer class="character-detail-actions">
-          <button class="primary-btn" type="button" :disabled="!isSelectableCharacter(selectedCharacter)" @click="confirmCharacterChoice">
-            {{ isSelectableCharacter(selectedCharacter) ? "确认选择" : isTakenByOther(selectedCharacter.id) ? "已被选择" : "未开放" }}
-          </button>
-          <button class="ghost-btn" type="button" @click="closeCharacterDetails">退出</button>
-        </footer>
+    <div v-if="selectedCharacter" class="character-detail-backdrop career-card-backdrop" @click.self="closeCharacterDetails">
+      <section class="character-detail-panel career-detail-panel" role="dialog" aria-modal="true" :aria-label="selectedCharacter.name">
+        <CareerDetailCard
+          :career-id="selectedCharacter.id"
+          :name="selectedCharacter.name"
+          :title="characterTitle(selectedCharacter)"
+          :hp="selectedCharacter.maxHp"
+          :avatar-src="characterAvatar(selectedCharacter.id)"
+          :sprite-src="characterSprite(selectedCharacter.id)"
+          :tags="characterDetailTags(selectedCharacter)"
+          :skill-lines="fullDescription(selectedCharacter)"
+          :selected="me?.characterId === selectedCharacter.id"
+          :disabled="!isSelectableCharacter(selectedCharacter)"
+          :recommended="isRecommendedCharacter(selectedCharacter)"
+          @select="confirmCharacterChoice"
+          @close="closeCharacterDetails"
+        />
       </section>
     </div>
 
@@ -776,6 +791,22 @@ function characterSprite(characterId: string): string | undefined {
 </template>
 
 <style scoped>
+.career-card-backdrop {
+  align-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.career-detail-panel {
+  display: block;
+  width: min(100%, 430px);
+  max-height: none;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .roguelite-intro-body {
   padding: 10px;
   border: 1px solid #d7dee8;

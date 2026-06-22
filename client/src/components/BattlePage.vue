@@ -24,6 +24,7 @@ import DicePanel from "./battle/DicePanel.vue";
 import ActionSlots from "./battle/ActionSlots.vue";
 import SelfPanel from "./battle/SelfPanel.vue";
 import RoguelitePanel from "./battle/RoguelitePanel.vue";
+import RogueliteRewardChoice from "./battle/RogueliteRewardChoice.vue";
 import RogueliteStatusCompact from "./battle/RogueliteStatusCompact.vue";
 import type { SeatViewModel, DicePanelProps, ActionSlotVM, SelfDestructOption, SelfPanelVM, RoguelitePanelVM, RoguelitePerkVM, RogueliteRewardOptionVM, RogueliteBossStateChip } from "./battle/types";
 
@@ -319,7 +320,7 @@ const selfPanelVM = computed<SelfPanelVM | null>(() => {
   };
 });
 
-const showRogueliteRewardCenterPrompt = computed(() => Boolean(roguelitePanelVM.value.enabled && roguelitePanelVM.value.rewardPhase && !showRogueliteDetails.value));
+const showRogueliteRewardCenterPrompt = computed(() => Boolean(roguelitePanelVM.value.enabled && roguelitePanelVM.value.rewardPhase));
 const showRogueliteCompactStatus = computed(() => Boolean(roguelitePanelVM.value.enabled && !roguelitePanelVM.value.rewardPhase));
 
 function buildSelfStatusTags(player: Player): string[] {
@@ -473,7 +474,10 @@ function buildRogueliteRewardPhaseVM(): NonNullable<RoguelitePanelVM["rewardPhas
       id: r.id,
       name: r.name,
       description: r.description,
-      isBoss: isBossRewardType(r.type)
+      isBoss: isBossRewardType(r.type),
+      rarity: rogueliteRewardRarity(r.type),
+      tags: rogueliteRewardTags(r.type),
+      icon: rogueliteRewardIcon(r.type)
     }))
   };
 }
@@ -1261,6 +1265,29 @@ function isRogueliteSkillRewardType(type: string): boolean {
   return ROGUELITE_SKILL_REWARD_TYPES.has(type);
 }
 
+function rogueliteRewardRarity(type: string): RogueliteRewardOptionVM["rarity"] {
+  if (isBossRewardType(type)) return "legendary";
+  if (isRogueliteSkillRewardType(type)) return "epic";
+  if (type.startsWith("starter_")) return "rare";
+  return "common";
+}
+
+function rogueliteRewardTags(type: string): string[] {
+  if (isBossRewardType(type)) return ["Boss", "Endgame"];
+  if (isRogueliteSkillRewardType(type)) return ["Skill", "Build"];
+  if (type.startsWith("starter_")) return ["Starter", "Core"];
+  if (isGrowthRewardType(type)) return ["Growth", "Boost"];
+  return ["Loot"];
+}
+
+function rogueliteRewardIcon(type: string): string {
+  if (isBossRewardType(type)) return "👑";
+  if (isRogueliteSkillRewardType(type)) return "✦";
+  if (type.startsWith("starter_")) return "◆";
+  if (isGrowthRewardType(type)) return "▲";
+  return "★";
+}
+
 function isSummonerSkillId(value: unknown): value is SummonerSkillId {
   return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
 }
@@ -1606,20 +1633,29 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         </section>
       </section>
 
-      <div v-if="showRogueliteRewardCenterPrompt" class="roguelite-reward-center-layer">
-        <section class="roguelite-reward-center-card">
+      <div v-if="showRogueliteRewardCenterPrompt && roguelitePanelVM.rewardPhase" class="roguelite-reward-center-layer">
+        <RogueliteRewardChoice
+          :rewards="roguelitePanelVM.rewardPhase.options"
+          :title="roguelitePanelVM.rewardPhase.title"
+          :subtitle="roguelitePanelVM.rewardPhase.hint"
+          :show-close="false"
+          @select="onChooseRogueliteReward"
+        />
+        <!-- legacy reward prompt removed
           <span class="reward-center-icon">★</span>
+
           <div>
             <strong>获得奖励</strong>
             <p>选择一个奖励继续</p>
           </div>
           <button class="primary-btn" type="button" @click="openRogueliteDetails">选择奖励</button>
         </section>
+        -->
       </div>
     </div>
 
     <div
-      v-if="showRogueliteDetails && roguelitePanelVM.enabled"
+      v-if="showRogueliteDetails && roguelitePanelVM.enabled && !roguelitePanelVM.rewardPhase"
       class="roguelite-detail-backdrop"
       @click.self="closeRogueliteDetails"
     >

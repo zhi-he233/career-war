@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Character, Player } from "@career-war/shared";
+import BattleUnitDetailCard from "./BattleUnitDetailCard.vue";
 
 const props = defineProps<{
   player: Player;
@@ -41,6 +42,12 @@ function rogueliteEnemySkills(player: Player): string[] {
   return player.rogueliteEnemyInfo?.skillNames ?? [];
 }
 
+function skillLines(player: Player): string[] {
+  const enemySkills = rogueliteEnemySkills(player);
+  if (enemySkills.length) return enemySkills;
+  return characterFor(player.characterId)?.description ?? [];
+}
+
 function playerStatus(player: Player): string {
   if (!player.isOnline) return "离线";
   if (player.isDead) return "死亡";
@@ -53,56 +60,55 @@ function zhaoZilongHitText(player: Player): string {
   const hits = (player as Player & { zhaoZilongHitCount?: number }).zhaoZilongHitCount ?? 0;
   return `龙胆：${hits}/3`;
 }
+
+function detailTags(player: Player): string[] {
+  return [playerStatus(player), zhaoZilongHitText(player)].filter(Boolean);
+}
 </script>
 
 <template>
   <div class="player-detail-backdrop" role="presentation" @click.self="emit('close')">
     <section class="player-detail-panel" role="dialog" aria-modal="true" :aria-label="`${player.nickname} 状态详情`">
-      <header class="player-detail-header">
-        <div>
-          <span class="detail-avatar">
-            <img v-if="playerAvatarSrc" :src="playerAvatarSrc" :alt="detailSubtitle(player)" draggable="false" />
-            <span v-else>{{ playerAvatarEmoji }}</span>
-          </span>
-          <h2>{{ player.nickname }}</h2>
-          <p>{{ detailSubtitle(player) }}</p>
-        </div>
-        <button class="detail-close-btn" type="button" aria-label="关闭详情" @click="emit('close')">×</button>
-      </header>
-      <dl class="player-detail-list">
-        <div>
-          <dt>血量</dt>
-          <dd>{{ player.hp }} / {{ player.maxHp }}</dd>
-        </div>
-        <div>
-          <dt>护盾</dt>
-          <dd>{{ player.shield }}</dd>
-        </div>
-        <div>
-          <dt>状态</dt>
-          <dd>{{ playerStatus(player) }}</dd>
-        </div>
-        <div>
-          <dt>是否死亡</dt>
-          <dd>{{ player.isDead ? "已死亡" : "存活" }}</dd>
-        </div>
-        <div>
-          <dt>最近骰点</dt>
-          <dd>{{ lastRollText || "暂无" }}</dd>
-        </div>
-        <div v-if="zhaoZilongHitText(player)">
-          <dt>龙胆</dt>
-          <dd>{{ zhaoZilongHitText(player) }}</dd>
-        </div>
-        <div v-if="rogueliteEnemySkills(player).length">
-          <dt>敌人机制</dt>
-          <dd>{{ rogueliteEnemySkills(player).join("；") }}</dd>
-        </div>
-        <div v-else-if="characterFor(player.characterId)?.description?.length">
-          <dt>职业技能</dt>
-          <dd>{{ characterFor(player.characterId)?.description.join("；") }}</dd>
-        </div>
-      </dl>
+      <BattleUnitDetailCard
+        :name="player.nickname"
+        :career-name="detailSubtitle(player)"
+        :hp="player.hp"
+        :max-hp="player.maxHp"
+        :shield="player.shield"
+        :status-text="playerStatus(player)"
+        :last-roll-text="lastRollText"
+        :avatar-src="playerAvatarSrc"
+        :fallback-mark="playerAvatarEmoji"
+        :skill-lines="skillLines(player)"
+        :tags="detailTags(player)"
+        :dead="player.isDead"
+        :offline="!player.isOnline"
+        @close="emit('close')"
+      />
     </section>
   </div>
 </template>
+
+<style scoped>
+.player-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  align-items: center;
+  padding: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(15, 23, 42, 0.42);
+  animation: backdrop-in 180ms ease;
+}
+
+.player-detail-panel {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  animation: dialog-up 200ms ease;
+}
+</style>

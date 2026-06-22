@@ -5704,8 +5704,9 @@ body .lobby-tab-characters > .room-code {
   z-index: 68;
   display: grid;
   place-items: center;
-  padding: 24px;
-  pointer-events: none;
+  padding: 16px 12px;
+  pointer-events: auto;
+  overflow: hidden;
 }
 
 .roguelite-reward-center-card {

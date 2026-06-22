@@ -112,6 +112,10 @@ export interface RogueliteRewardOptionVM {
   name: string;
   description: string;
   isBoss: boolean;
+  rarity?: "common" | "rare" | "epic" | "legendary";
+  tags?: string[];
+  icon?: string;
+  disabled?: boolean;
 }
 
 export interface RoguelitePanelVM {

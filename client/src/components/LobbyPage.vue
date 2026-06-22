@@ -584,51 +584,57 @@ function characterSprite(characterId: string): string | undefined {
 
       <p v-if="duoSlots.length === 0" class="empty-state duo-slot-empty">2V2 槽位尚未生成，请等待房间同步或重新切换模式。</p>
       <div v-else class="duo-team-grid">
-        <article v-for="team in duoTeams" :key="team.id" class="duo-team-panel" :class="{ 'is-waiting': !team.player }">
-          <div class="settings-title">
-            <h2>{{ team.label }}</h2>
-            <span class="hint">{{ team.player ? team.player.nickname : "等待玩家加入" }}</span>
+        <template v-for="team in duoTeams" :key="team.id">
+          <!-- B team waiting: compact strip, not a full panel -->
+          <div v-if="!team.player" class="duo-wait-strip">
+            <span class="duo-wait-label">{{ team.label }} · 等待玩家加入</span>
           </div>
 
-          <div v-if="team.player" class="duo-slot-list">
-            <article v-for="slot in duoSlotsForTeam(team.id)" :key="`${slot.controllerId}-${slot.slotIndex}`" class="duo-slot-card">
-              <div class="settings-title">
-                <h3>槽位 {{ slot.slotIndex + 1 }}</h3>
-                <span class="badge" :class="{ 'host-badge': canEditDuoSlot(slot) }">{{ canEditDuoSlot(slot) ? "你的槽位" : "对方槽位" }}</span>
-              </div>
+          <!-- team with player: full panel with slots -->
+          <article v-else class="duo-team-panel">
+            <div class="settings-title">
+              <h2>{{ team.label }}</h2>
+              <span class="hint">{{ team.player.nickname }}</span>
+            </div>
 
-              <label class="compact-field">
-                <span>职业</span>
-                <select v-if="canEditDuoSlot(slot)" :value="slot.characterId ?? ''" @change="updateDuoSlotCharacter(slot, $event)">
-                  <option value="">未选择职业</option>
-                  <option
-                    v-for="character in props.characters"
-                    :key="character.id"
-                    :value="character.id"
-                    :disabled="isDuoCharacterTakenByOtherSlot(slot, character.id)"
-                  >
-                    {{ character.name }}{{ isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "" }}
-                  </option>
-                </select>
-                <span v-else class="hint">{{ duoSlotCharacterText(slot) }}</span>
-              </label>
+            <div class="duo-slot-list">
+              <article v-for="slot in duoSlotsForTeam(team.id)" :key="`${slot.controllerId}-${slot.slotIndex}`" class="duo-slot-card">
+                <div class="duo-slot-header">
+                  <strong>槽位 {{ slot.slotIndex + 1 }}</strong>
+                  <span class="badge" :class="{ 'host-badge': canEditDuoSlot(slot) }">{{ canEditDuoSlot(slot) ? "你的槽位" : "对方槽位" }}</span>
+                </div>
 
-              <label class="compact-field">
-                <span>召唤师技能</span>
-                <select v-if="canEditDuoSlot(slot)" :value="slot.summonerSkillId ?? 'lucky_plus_one'" @change="updateDuoSlotSummonerSkill(slot, $event)">
-                  <option v-for="skill in SUMMONER_SKILLS" :key="skill.id" :value="skill.id">
-                    {{ skill.name }}
-                  </option>
-                </select>
-                <span v-else class="hint">{{ duoSlotSummonerSkillText(slot) }}</span>
-              </label>
+                <label class="compact-field">
+                  <span>职业</span>
+                  <select v-if="canEditDuoSlot(slot)" :value="slot.characterId ?? ''" @change="updateDuoSlotCharacter(slot, $event)">
+                    <option value="">未选择职业</option>
+                    <option
+                      v-for="character in props.characters"
+                      :key="character.id"
+                      :value="character.id"
+                      :disabled="isDuoCharacterTakenByOtherSlot(slot, character.id)"
+                    >
+                      {{ character.name }}{{ isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "" }}
+                    </option>
+                  </select>
+                  <span v-else class="hint">{{ duoSlotCharacterText(slot) }}</span>
+                </label>
 
-              <p class="hint">当前：{{ duoSlotCharacterText(slot) }} / {{ duoSlotSummonerSkillText(slot) }}</p>
-            </article>
-          </div>
+                <label class="compact-field">
+                  <span>召唤师技能</span>
+                  <select v-if="canEditDuoSlot(slot)" :value="slot.summonerSkillId ?? 'lucky_plus_one'" @change="updateDuoSlotSummonerSkill(slot, $event)">
+                    <option v-for="skill in SUMMONER_SKILLS" :key="skill.id" :value="skill.id">
+                      {{ skill.name }}
+                    </option>
+                  </select>
+                  <span v-else class="hint">{{ duoSlotSummonerSkillText(slot) }}</span>
+                </label>
 
-          <p v-else class="empty-state">等待玩家加入后生成两个角色槽位。</p>
-        </article>
+                <p class="hint duo-slot-summary">当前：{{ duoSlotCharacterText(slot) }} / {{ duoSlotSummonerSkillText(slot) }}</p>
+              </article>
+            </div>
+          </article>
+        </template>
       </div>
     </section>
 

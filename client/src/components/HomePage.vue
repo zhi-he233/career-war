@@ -12,10 +12,7 @@ const showRules = ref(false);
 
 <template>
   <section class="home-page game-home">
-    <div class="home-topline">
-      <span>骰子桌游</span>
-      <span>H5 对战</span>
-    </div>
+    <div class="home-topline"></div>
 
     <div class="home-title-card">
       <span class="home-dice-mark">🎲</span>

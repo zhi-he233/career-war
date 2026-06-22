@@ -1,5 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+  ROGUELITE_BOSS_ABILITY_REWARDS,
+  ROGUELITE_BOSSES,
+  ROGUELITE_CHARACTER_SKILL_REWARDS,
+  ROGUELITE_ENEMIES,
+  ROGUELITE_GROWTH_REWARDS,
+  ROGUELITE_STAGE_SCALING,
+  ROGUELITE_STARTER_REWARDS
+} from "@career-war/shared";
 import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import { getCharacterArt } from "../assets/art/characters";
@@ -426,16 +435,11 @@ function buildRogueliteEnemyTraitsVM(): string[] | undefined {
   if (room.value.phase !== "battle") return undefined;
   const bot = room.value.players.find(p => p.isBot);
   if (!bot) return undefined;
-  const traits: string[] = [];
-  const bid = bot.rogueliteBossId;
-  if (bid === "normal_shield_breaker") traits.push("破盾：攻击护盾额外 +2");
-  if (bid === "normal_armor_piercer") traits.push("穿甲：无视 1 点护甲");
-  if (bid === "normal_gambler") traits.push("赌徒：投 1 自伤，投 6 增伤");
-  if (bid === "elite_reaper") traits.push("收割：玩家低血时增伤");
-  if (bid === "elite_armor_piercing") traits.push("强穿甲：无视护甲，半血后增强");
-  if (bid === "boss_god_berserker") traits.push("狂战增伤", "生命阈值");
-  if (bid === "boss_gambler_dealer") traits.push("骰子操控", "赌注", "庄家通吃");
-  return traits.length > 0 ? traits : undefined;
+  const stateSkills = bot.rogueliteEnemyInfo?.skillNames?.filter(Boolean) ?? [];
+  if (stateSkills.length > 0) return stateSkills;
+  if (!bot.rogueliteBossId) return undefined;
+  const balanceSkills = rogueliteEnemyMechanicSkills(bot.rogueliteBossId);
+  return balanceSkills.length > 0 ? balanceSkills : undefined;
 }
 
 function buildRoguelitePerksVM(): RoguelitePanelVM["perks"] {
@@ -485,8 +489,8 @@ const rogueliteStageType = computed(() => {
   const liveStageType = rogueliteEnemyInfo.value?.stageType;
   if (liveStageType) return liveStageType;
   const stage = rogueliteState.value?.stage ?? 1;
-  if (stage % 3 === 0) return "boss";
-  if (stage % 3 === 2 && stage >= 5) return "elite";
+  if (stage % ROGUELITE_STAGE_SCALING.bossInterval === 0) return "boss";
+  if (stage % ROGUELITE_STAGE_SCALING.bossInterval === 2 && stage >= 5) return "elite";
   return "normal";
 });
 
@@ -501,40 +505,47 @@ const rogueliteEnemyInfo = computed(() => {
   return room.value.players.find((p) => p.isBot)?.rogueliteEnemyInfo;
 });
 
-const PERK_DISPLAY: Record<string, { name: string; category: "growth" | "boss"; perLevelDesc: string }> = {
-  heavy_punch: { name: "重拳训练", category: "growth", perLevelDesc: "伤害 +1，最大生命 +2" },
-  iron_body: { name: "铁布衫", category: "growth", perLevelDesc: "护甲 +1，每关开始护盾 +2" },
-  blood_punch: { name: "吸血拳法", category: "growth", perLevelDesc: "伤害 +1，造成生命伤害后回复 1" },
-  breathing_recovery: { name: "战斗喘息", category: "growth", perLevelDesc: "最大生命 +3，获得时恢复 40% 最大生命" },
-  battle_instinct: { name: "战斗本能", category: "growth", perLevelDesc: "伤害 +1，战后额外恢复 +2" },
-  guard_training: { name: "防守训练", category: "growth", perLevelDesc: "最大生命 +4，每关开始护盾 +3" },
-  starter_recovery: { name: "续航开局", category: "growth", perLevelDesc: "最大生命 +4，战后额外恢复 +5" },
-  berserker_blood: { name: "狂怒之血", category: "boss", perLevelDesc: "攻击额外造成已损失生命一半的伤害 + 每级额外 +2" },
-  vampire_instinct: { name: "吸血本能", category: "boss", perLevelDesc: "造成生命伤害后回复 2，溢出转护盾" },
-  dragon_courage: { name: "龙胆之力", category: "boss", perLevelDesc: "攻击无视护盾和护甲，每级额外伤害 +1" },
-  vitality_boost: { name: "生命强化", category: "growth", perLevelDesc: "最大生命 +4" },
-  shield_wall: { name: "护盾壁垒", category: "growth", perLevelDesc: "每关开始护盾 +4" },
-  first_strike: { name: "先手优势", category: "growth", perLevelDesc: "每关首次攻击伤害 +3" },
-  low_hp_armor: { name: "绝境护甲", category: "growth", perLevelDesc: "血量低于一半时护甲 +1" },
-  kill_heal: { name: "战利品", category: "growth", perLevelDesc: "击败敌人后回复 3 点生命" },
-  drink_blood: { name: "饮血", category: "growth", perLevelDesc: "造成直接攻击生命伤害后回复 1 点生命" },
-  comeback: { name: "翻盘之力", category: "growth", perLevelDesc: "血量低于一半时伤害 +3" },
-  low_roll_defense: { name: "低点防御", category: "growth", perLevelDesc: "投到 1/2 获得护盾" },
-  shield_strike: { name: "盾击", category: "growth", perLevelDesc: "拥有护盾时攻击伤害 +2" },
-  shield_overload: { name: "护盾过载", category: "growth", perLevelDesc: "每关首次带盾攻击消耗护盾增伤" },
-  sturdy_bulwark: { name: "稳固壁垒", category: "growth", perLevelDesc: "拥有护盾时护甲 +1" },
-  fate_tokens: { name: "命运筹码", category: "growth", perLevelDesc: "投到 1 获得筹码，3 个后投骰 +1" },
-  low_roll_charge: { name: "低点蓄力", category: "growth", perLevelDesc: "低点蓄力，高点攻击消耗增伤" },
-  desperate_reroll: { name: "孤注一掷", category: "growth", perLevelDesc: "每关一次重投（后续主动按钮）" },
-  lucky_floor: { name: "幸运保底", category: "growth", perLevelDesc: "连续低点后下一次至少 4" }
+type RogueliteDisplayDraft = {
+  type: string;
+  name: string;
+  description: string;
 };
+type PerkDisplay = { name: string; category: "growth" | "boss"; perLevelDesc: string };
+type SkillDisplay = { name: string; perLevelDesc: string };
 
-const SKILL_DISPLAY: Record<string, { name: string; perLevelDesc: string }> = {
-  gunner_triple_shot: { name: "枪手技能", perLevelDesc: "Lv.1：6 点三倍伤害；Lv.2：额外 +3；Lv.3：5/6 点触发" },
-  vampire_skill: { name: "吸血鬼技能", perLevelDesc: "造成生命伤害后回复等同等级的生命" },
-  zhaoyun_pierce: { name: "赵子龙技能", perLevelDesc: "攻击无视护盾和护甲，升级后穿透伤害 +1/+2" },
-  flame_lord_mark: { name: "火焰领主技能", perLevelDesc: "攻击命中后添加等同等级的火焰印记" }
-};
+const ROGUELITE_GROWTH_DISPLAY_DRAFTS: readonly RogueliteDisplayDraft[] = [
+  ...ROGUELITE_GROWTH_REWARDS,
+  ...ROGUELITE_STARTER_REWARDS
+];
+const ROGUELITE_BOSS_DISPLAY_DRAFTS: readonly RogueliteDisplayDraft[] = ROGUELITE_BOSS_ABILITY_REWARDS;
+const ROGUELITE_SKILL_DISPLAY_DRAFTS: readonly RogueliteDisplayDraft[] = ROGUELITE_CHARACTER_SKILL_REWARDS;
+const ROGUELITE_GROWTH_REWARD_TYPES = new Set<string>(ROGUELITE_GROWTH_DISPLAY_DRAFTS.map((reward) => reward.type));
+const ROGUELITE_BOSS_REWARD_TYPES = new Set<string>(ROGUELITE_BOSS_DISPLAY_DRAFTS.map((reward) => reward.type));
+const ROGUELITE_SKILL_REWARD_TYPES = new Set<string>(ROGUELITE_SKILL_DISPLAY_DRAFTS.map((reward) => reward.type));
+
+function createPerkDisplay(): Record<string, PerkDisplay> {
+  const result: Record<string, PerkDisplay> = {};
+  for (const reward of ROGUELITE_GROWTH_DISPLAY_DRAFTS) {
+    result[reward.type] = { name: reward.name, category: "growth", perLevelDesc: reward.description };
+  }
+  for (const reward of ROGUELITE_BOSS_DISPLAY_DRAFTS) {
+    result[reward.type] = { name: reward.name, category: "boss", perLevelDesc: reward.description };
+  }
+  const heavyPunch = result.heavy_punch_training;
+  if (heavyPunch) result.heavy_punch = heavyPunch;
+  return result;
+}
+
+function createSkillDisplay(): Record<string, SkillDisplay> {
+  const result: Record<string, SkillDisplay> = {};
+  for (const reward of ROGUELITE_SKILL_DISPLAY_DRAFTS) {
+    result[reward.type] = { name: reward.name, perLevelDesc: reward.description };
+  }
+  return result;
+}
+
+const PERK_DISPLAY = createPerkDisplay();
+const SKILL_DISPLAY = createSkillDisplay();
 
 const rogueliteGrowthPerks = computed(() => {
   const stacks = me.value?.roguelitePerkStacks ?? {};
@@ -564,15 +575,13 @@ const rogueliteCharacterSkills = computed(() => {
 
 const hasAnyRoguelitePerks = computed(() => rogueliteGrowthPerks.value.length > 0 || rogueliteCharacterSkills.value.length > 0 || rogueliteBossPerks.value.length > 0);
 
-const BOSS_SKILL_DISPLAY: Record<string, string[]> = {
-  boss_boxer_king: ["蓄力：投到 1/2 时蓄力，下次攻击额外伤害", "重拳：消耗蓄力造成额外伤害（每层 +3）", "狂暴：半血后伤害 +2"],
-  boss_blood_demon: ["吸血攻击：造成生命伤害后回复 2 点血", "血盾：投到 3 时获得 4 点护盾", "血祭：血量低于 40% 时回复 5 点血并获得 3 点护盾"],
-  boss_shield_guard: ["坚守：天生护甲 +1", "架盾：投到 1/2 时获得 5 点护盾并准备减伤", "盾击反击：架盾后受到攻击时反击 2 点伤害"],
-  boss_god_berserker: ["狂战：已损失生命转化为额外伤害", "生命阈值：15 / 10 / 5 / 1（一次只触发一个）", "濒死一击：1 血后完成最后一次攻击才会倒下"],
-  boss_gambler_dealer: ["骰子操控：投到 1-3 时重投一次", "赌注：玩家投 6 时获得 3 点护盾", "庄家通吃：血量低于 30% 时伤害 +3"],
-  elite_iron_skin: ["铁皮：天生护甲 +1，每回合获 2 护盾"],
-  elite_berserker: ["狂暴：血量低于一半时伤害 +3"]
-};
+function rogueliteEnemyMechanicSkills(id: string): string[] {
+  const boss = ROGUELITE_BOSSES.find((item) => item.id === id);
+  if (boss) return [...boss.skills];
+  const enemy = ROGUELITE_ENEMIES.find((item) => item.id === id);
+  if (!enemy || enemy.id === "normal") return [];
+  return [...enemy.skills];
+}
 
 const currentBossPlayer = computed(() => {
   if (!isRogueliteMode.value || room.value.phase !== "battle") return undefined;
@@ -583,7 +592,7 @@ const currentBossSkills = computed(() => {
   if (!currentBossPlayer.value) return [];
   if (currentBossPlayer.value.rogueliteEnemyInfo?.skillNames?.length) return currentBossPlayer.value.rogueliteEnemyInfo.skillNames;
   if (!currentBossPlayer.value.rogueliteBossId) return [];
-  return BOSS_SKILL_DISPLAY[currentBossPlayer.value.rogueliteBossId] ?? [];
+  return rogueliteEnemyMechanicSkills(currentBossPlayer.value.rogueliteBossId);
 });
 const activeControllerId = computed(() => room.value.activeControllerId);
 const isMyDuoControllerTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId);
@@ -1241,15 +1250,15 @@ function confirmSelfDestructAmount(amount: number): void {
 }
 
 function isBossRewardType(type: string): boolean {
-  return type === "berserker_blood" || type === "vampire_instinct" || type === "dragon_courage";
+  return ROGUELITE_BOSS_REWARD_TYPES.has(type);
 }
 
 function isGrowthRewardType(type: string): boolean {
-  return type === "starter_heavy_punch" || type === "starter_blood_punch" || type === "starter_iron_wall" || type === "starter_recovery" || type === "heavy_punch_training" || type === "iron_body" || type === "breathing_recovery" || type === "blood_punch" || type === "battle_instinct" || type === "guard_training" || type === "vitality_boost" || type === "shield_wall" || type === "first_strike" || type === "low_hp_armor" || type === "kill_heal" || type === "drink_blood" || type === "comeback" || type === "low_roll_defense" || type === "shield_strike" || type === "shield_overload" || type === "sturdy_bulwark" || type === "fate_tokens" || type === "low_roll_charge" || type === "desperate_reroll" || type === "lucky_floor";
+  return ROGUELITE_GROWTH_REWARD_TYPES.has(type);
 }
 
 function isRogueliteSkillRewardType(type: string): boolean {
-  return type === "gunner_triple_shot" || type === "vampire_skill" || type === "zhaoyun_pierce" || type === "flame_lord_mark";
+  return ROGUELITE_SKILL_REWARD_TYPES.has(type);
 }
 
 function isSummonerSkillId(value: unknown): value is SummonerSkillId {

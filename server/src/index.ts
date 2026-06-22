@@ -8,6 +8,18 @@ import { Server } from "socket.io";
 import { authMiddleware, authRouter } from "./auth.js";
 import {
   EMOTE_IDS,
+  ROGUELITE_BALANCE_MECHANICS,
+  ROGUELITE_BOT_BASE,
+  ROGUELITE_BOSS_ABILITY_REWARDS,
+  ROGUELITE_BOSSES,
+  ROGUELITE_CHARACTER_SKILL_REWARDS,
+  ROGUELITE_ENEMIES,
+  ROGUELITE_GROWTH_REWARDS,
+  ROGUELITE_MAX_STAGE,
+  ROGUELITE_PLAYER_START,
+  ROGUELITE_REWARD_RHYTHM,
+  ROGUELITE_STAGE_SCALING,
+  ROGUELITE_STARTER_REWARDS,
   beginControllerGuardCheckIfNeeded,
   characterList,
   chooseCharacter,
@@ -31,6 +43,8 @@ import {
   type RoomListStatus,
   type RoomSettings,
   type RogueliteReward,
+  type RogueliteBossId as BalanceRogueliteBossId,
+  type RogueliteEnemyId as BalanceRogueliteEnemyId,
   type RollActionType,
   type RollDecisionChoice,
   type SummonerSkillId,
@@ -47,240 +61,12 @@ const DUO_MAX_CONTROLLERS = 2;
 const PVE_BOT_ID = "bot";
 const PVE_BOT_CLIENT_ID = "bot";
 const PVE_BOT_NICKNAME = "AI";
-const ROGUELITE_MAX_STAGE = 15;
-const ROGUELITE_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
-  {
-    type: "heavy_punch_training",
-    name: "重拳训练",
-    description: "伤害 +1，最大生命 +2。",
-    value: 1
-  },
-  {
-    type: "iron_body",
-    name: "铁布衫",
-    description: "护甲 +1，每关开始护盾 +2。",
-    value: 1
-  },
-  {
-    type: "breathing_recovery",
-    name: "战斗喘息",
-    description: "恢复 40% 最大生命，最低 8 点，最大生命 +3。",
-    value: 40
-  },
-  {
-    type: "blood_punch",
-    name: "吸血拳法",
-    description: "伤害 +1，造成生命伤害后回复 1 点血。",
-    value: 1
-  },
-  {
-    type: "battle_instinct",
-    name: "战斗本能",
-    description: "伤害 +1，每关胜利后的战后恢复额外 +3，最大生命 +2。",
-    value: 1
-  },
-  {
-    type: "guard_training",
-    name: "防守训练",
-    description: "最大生命 +4，每关开始护盾 +3。",
-    value: 4
-  },
-  {
-    type: "vitality_boost",
-    name: "生命强化",
-    description: "最大生命 +4。",
-    value: 4,
-    tag: "armor"
-  },
-  {
-    type: "shield_wall",
-    name: "护盾壁垒",
-    description: "每关开始护盾 +4。拥有护盾时受到伤害 -1。",
-    value: 4,
-    tag: "shield",
-    maxStacks: 3
-  },
-  {
-    type: "first_strike",
-    name: "先手优势",
-    description: "每关首次攻击伤害 +3。",
-    value: 3,
-    tag: "burst",
-    maxStacks: 3
-  },
-  {
-    type: "low_hp_armor",
-    name: "绝境护甲",
-    description: "血量低于一半时护甲 +1。最多 3 层。",
-    value: 1,
-    tag: "low_hp",
-    maxStacks: 3
-  },
-  {
-    type: "kill_heal",
-    name: "战利品",
-    description: "击败敌人后回复 3 生命，溢出转下关护盾。最多 3 层。",
-    value: 3,
-    tag: "heal",
-    maxStacks: 3
-  },
-  {
-    type: "drink_blood",
-    name: "饮血",
-    description: "造成直接攻击生命伤害后回复 1 点生命。每层 +1，最多 3 层。",
-    value: 1,
-    tag: "heal",
-    maxStacks: 3
-  },
-  {
-    type: "comeback",
-    name: "翻盘之力",
-    description: "血量低于一半时伤害 +3。最多 2 层。",
-    value: 3,
-    tag: "low_hp",
-    maxStacks: 2
-  },
-  // ── 护盾流 ──
-  {
-    type: "low_roll_defense",
-    name: "低点防御",
-    description: "投到 1 或 2 时，获得 2 护盾。每层 +2。",
-    value: 2,
-    tag: "shield",
-    maxStacks: 3
-  },
-  {
-    type: "shield_strike",
-    name: "盾击",
-    description: "拥有护盾时攻击伤害 +2。每层 +2。",
-    value: 2,
-    tag: "shield",
-    maxStacks: 3
-  },
-  {
-    type: "shield_overload",
-    name: "护盾过载",
-    description: "每关首次攻击时，若拥有护盾，消耗最多 6 点护盾，额外造成 floor(消耗/2) 伤害。",
-    value: 1,
-    tag: "shield",
-    maxStacks: 1
-  },
-  {
-    type: "sturdy_bulwark",
-    name: "稳固壁垒",
-    description: "拥有护盾时护甲 +1。",
-    value: 1,
-    tag: "shield",
-    maxStacks: 1
-  },
-  // ── 控骰流 ──
-  {
-    type: "fate_tokens",
-    name: "命运筹码",
-    description: "每次投到 1，获得 1 筹码。3 筹码时下次投骰 +1（不超过 6），消耗筹码。",
-    value: 1,
-    tag: "dice",
-    maxStacks: 1
-  },
-  {
-    type: "low_roll_charge",
-    name: "低点蓄力",
-    description: "投到 1/2/3 时获得 1 层蓄力。投到 5/6 攻击时消耗全部蓄力，每层 +2 伤害。跨关清空。",
-    value: 1,
-    tag: "dice",
-    maxStacks: 1
-  },
-  {
-    type: "desperate_reroll",
-    name: "孤注一掷",
-    description: "每关一次，可重投骰子。若更低则受 2 伤害。TODO: 主动按钮。",
-    value: 1,
-    tag: "dice",
-    maxStacks: 1
-  },
-  {
-    type: "lucky_floor",
-    name: "幸运保底",
-    description: "连续两次投到 1 或 2 后，下次投骰至少为 4。触发后重置。",
-    value: 1,
-    tag: "dice",
-    maxStacks: 1
-  }
-];
-const ROGUELITE_SKILL_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
-  {
-    type: "gunner_triple_shot",
-    name: "枪手技能",
-    description: "投到 6 时，攻击造成 3 倍伤害。升级后提高触发和额外伤害。",
-    value: 1
-  },
-  {
-    type: "vampire_skill",
-    name: "吸血鬼技能",
-    description: "造成生命伤害后回复生命，每级回复 +1。",
-    value: 1
-  },
-  {
-    type: "zhaoyun_pierce",
-    name: "赵子龙技能",
-    description: "攻击无视护盾和护甲，升级后穿透伤害额外提高。",
-    value: 1
-  },
-  {
-    type: "flame_lord_mark",
-    name: "火焰领主技能",
-    description: "攻击命中后添加火焰印记，每级添加层数 +1。",
-    value: 1
-  }
-];
-const ROGUELITE_BOSS_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
-  {
-    type: "berserker_blood",
-    name: "狂怒之血",
-    description: "攻击额外造成已损失生命一半的伤害。",
-    value: 0
-  },
-  {
-    type: "vampire_instinct",
-    name: "吸血本能",
-    description: "造成生命伤害后，回复 2 点生命，溢出可转护盾。",
-    value: 2
-  },
-  {
-    type: "dragon_courage",
-    name: "龙胆之力",
-    description: "你的攻击无视护盾和护甲。",
-    value: 0
-  }
-];
-const ROGUELITE_STARTER_REWARD_POOL: ReadonlyArray<Omit<RogueliteReward, "id">> = [
-  {
-    type: "starter_heavy_punch",
-    name: "重拳开局",
-    description: "伤害 +2，最大生命 +4。",
-    value: 2
-  },
-  {
-    type: "starter_blood_punch",
-    name: "吸血开局",
-    description: "伤害 +1，造成生命伤害后回复 2 点血。",
-    value: 1
-  },
-  {
-    type: "starter_iron_wall",
-    name: "铁壁开局",
-    description: "护甲 +1，最大生命 +6，每关开始护盾 +3。",
-    value: 1
-  },
-  {
-    type: "starter_recovery",
-    name: "续航开局",
-    description: "最大生命 +4，每关胜利后额外恢复 5 点血。",
-    value: 4
-  }
-];
-const ROGUELITE_BOSS_POOL = ["boss_boxer_king", "boss_blood_demon", "boss_shield_guard", "boss_god_berserker", "boss_gambler_dealer"] as const;
-type RogueliteBossId = (typeof ROGUELITE_BOSS_POOL)[number];
+const ROGUELITE_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_GROWTH_REWARDS;
+const ROGUELITE_SKILL_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_CHARACTER_SKILL_REWARDS;
+const ROGUELITE_BOSS_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_BOSS_ABILITY_REWARDS;
+const ROGUELITE_STARTER_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_STARTER_REWARDS;
+const ROGUELITE_BOSS_POOL = ROGUELITE_BOSSES.map((boss) => boss.id);
+type RogueliteBossId = BalanceRogueliteBossId;
 
 interface RogueliteBossConfig {
   id: RogueliteBossId;
@@ -291,46 +77,23 @@ interface RogueliteBossConfig {
   skills: string[];
 }
 
-const ROGUELITE_BOSS_CONFIGS: Record<RogueliteBossId, RogueliteBossConfig> = {
-  boss_boxer_king: {
-    id: "boss_boxer_king",
-    name: "小Boss：拳王",
-    baseHp: 18,
-    baseShield: 2,
-    skills: ["蓄力：投到 1/2 时蓄力，下次攻击额外伤害", "重拳：消耗蓄力造成额外伤害（每层 +3）", "狂暴：半血后伤害 +2"]
-  },
-  boss_blood_demon: {
-    id: "boss_blood_demon",
-    name: "小Boss：血魔",
-    baseHp: 16,
-    baseShield: 0,
-    skills: ["吸血攻击：造成生命伤害后回复 2 点血", "血盾：投到 3 时获得 4 点护盾", "血祭：血量低于 40% 时回复 5 点血并获得 3 点护盾"]
-  },
-  boss_shield_guard: {
-    id: "boss_shield_guard",
-    name: "小Boss：山盾守卫",
-    baseHp: 14,
-    baseShield: 5,
-    skills: ["坚守：天生护甲 +1", "架盾：投到 1/2 时获得 5 点护盾并准备减伤", "盾击反击：架盾后受到攻击时反击 2 点伤害"]
-  },
-  boss_god_berserker: {
-    id: "boss_god_berserker",
-    name: "神狂战",
-    baseHp: 20,
-    fixedHp: 20,
-    baseShield: 0,
-    skills: ["狂战：已损失生命转化为额外伤害", "生命阈值：15 / 10 / 5 / 1（一次伤害只触发一个）", "濒死一击：1 血后完成最后一次攻击才会倒下"]
-  },
-  boss_gambler_dealer: {
-    id: "boss_gambler_dealer",
-    name: "赌命庄家",
-    baseHp: 16,
-    baseShield: 3,
-    skills: ["骰子操控：投到 1-3 时重投一次（必须接受新结果）", "赌注：玩家投到 6 时，庄家获得 3 点护盾", "庄家通吃：血量低于 30% 时，每次攻击额外造成 3 伤害"]
-  }
-};
+function toRogueliteBossConfig(boss: (typeof ROGUELITE_BOSSES)[number]): RogueliteBossConfig {
+  const config: RogueliteBossConfig = {
+    id: boss.id,
+    name: boss.name,
+    baseHp: boss.baseHp,
+    baseShield: boss.baseShield,
+    skills: [...boss.skills]
+  };
+  if ("fixedHp" in boss && boss.fixedHp !== undefined) config.fixedHp = boss.fixedHp;
+  return config;
+}
 
-type RogueliteEnemyType = "normal" | "normal_shield_breaker" | "normal_armor_piercer" | "normal_gambler" | "elite_iron_skin" | "elite_berserker" | "elite_reaper" | "elite_armor_piercing";
+const ROGUELITE_BOSS_CONFIGS = Object.fromEntries(
+  ROGUELITE_BOSSES.map((boss) => [boss.id, toRogueliteBossConfig(boss)])
+) as Record<RogueliteBossId, RogueliteBossConfig>;
+
+type RogueliteEnemyType = BalanceRogueliteEnemyId;
 
 interface RogueliteEnemyConfig {
   type: RogueliteEnemyType;
@@ -341,48 +104,88 @@ interface RogueliteEnemyConfig {
   skills: string[];
 }
 
-function getRogueliteEnemyForStage(stage: number): RogueliteEnemyConfig {
-  const isElite = stage % 3 === 2 && stage >= 5;
+function toRogueliteEnemyConfig(enemy: (typeof ROGUELITE_ENEMIES)[number]): RogueliteEnemyConfig {
+  const skills = enemy.id === "normal" ? [] : [...enemy.skills];
+  return {
+    type: enemy.id,
+    name: enemy.name,
+    hpBonus: enemy.hpBonus,
+    shieldBonus: enemy.shieldBonus,
+    damageBonus: enemy.damageBonus,
+    skills
+  };
+}
 
-  // Normal enemies — add variant types from stage 4+
+const ROGUELITE_ENEMY_CONFIGS = Object.fromEntries(
+  ROGUELITE_ENEMIES.map((enemy) => [enemy.id, toRogueliteEnemyConfig(enemy)])
+) as Record<RogueliteEnemyType, RogueliteEnemyConfig>;
+
+function getRogueliteEnemyConfig(type: RogueliteEnemyType): RogueliteEnemyConfig {
+  return ROGUELITE_ENEMY_CONFIGS[type] ?? ROGUELITE_ENEMY_CONFIGS.normal;
+}
+
+function getRogueliteEnemyForStage(stage: number): RogueliteEnemyConfig {
+  const isElite = isRogueliteEliteStage(stage);
+
   if (!isElite) {
-    if (stage >= 7) {
-      // Rotate through normal variants
-      const variants: RogueliteEnemyType[] = ["normal", "normal_gambler", "normal_shield_breaker", "normal_armor_piercer"];
-      const idx = stage % variants.length;
-      const variant = variants[idx];
-      if (variant === "normal_shield_breaker") return { type: variant, name: "破盾兵", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["破盾：攻击护盾时额外 +2 伤害"] };
-      if (variant === "normal_armor_piercer") return { type: variant, name: "穿甲兵", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["穿甲：攻击无视 1 点护甲"] };
-      if (variant === "normal_gambler") return { type: variant, name: "赌徒", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["赌徒：投 1 自伤 1，投 6 伤害 +2"] };
+    if (stage >= ROGUELITE_BALANCE_MECHANICS.normalEnemyRotationStartsAtStage) {
+      const variants = ROGUELITE_BALANCE_MECHANICS.normalEnemyRotation;
+      const variant = variants[stage % variants.length] ?? "normal";
+      return getRogueliteEnemyConfig(variant);
     }
-    if (stage >= 4) {
-      // 25% chance of gambler
-      if (stage % 4 === 0) return { type: "normal_gambler", name: "赌徒", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["赌徒：投 1 自伤 1，投 6 伤害 +2"] };
+    if (stage >= ROGUELITE_BALANCE_MECHANICS.normalGamblerFallbackStartsAtStage && stage % ROGUELITE_BALANCE_MECHANICS.normalGamblerFallbackModulo === 0) {
+      return getRogueliteEnemyConfig("normal_gambler");
     }
-    return { type: "normal", name: "普通兵", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: [] };
+    return getRogueliteEnemyConfig("normal");
   }
 
-  // Elite enemies — rotate with expanded pool from stage 10+
-  const eliteCycle = Math.floor((stage - 1) / 3);
-  const eliteTypesEarly: RogueliteEnemyType[] = ["elite_iron_skin", "elite_berserker"];
-  const eliteTypesLate: RogueliteEnemyType[] = ["elite_iron_skin", "elite_berserker", "elite_reaper", "elite_armor_piercing"];
-  const eliteTypes = stage >= 10 ? eliteTypesLate : eliteTypesEarly;
-  const type = eliteTypes[eliteCycle % eliteTypes.length];
-
-  if (type === "elite_iron_skin") return { type, name: "铁皮精英", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["铁皮：天生护甲 +1，每回合开始获得 2 护盾"] };
-  if (type === "elite_berserker") return { type, name: "狂暴精英", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["狂暴：血量低于一半时伤害 +3"] };
-  if (type === "elite_reaper") return { type, name: "收割精英", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["收割：玩家生命低于 40% 时，伤害 +2"] };
-  return { type, name: "穿甲精英", hpBonus: 0, shieldBonus: 0, damageBonus: 0, skills: ["强穿甲：无视 1 护甲，半血后无视 2 护甲"] };
+  const eliteCycle = Math.floor((stage - 1) / ROGUELITE_STAGE_SCALING.bossInterval);
+  const eliteTypes = stage >= ROGUELITE_BALANCE_MECHANICS.eliteLatePoolStartsAtStage
+    ? ROGUELITE_BALANCE_MECHANICS.eliteLatePool
+    : ROGUELITE_BALANCE_MECHANICS.eliteEarlyPool;
+  const type = eliteTypes[eliteCycle % eliteTypes.length] ?? "elite_iron_skin";
+  return getRogueliteEnemyConfig(type);
 }
 
 function getRogueliteBossForStage(stage: number): RogueliteBossConfig {
-  const bossCycleLength = 3;
+  const bossCycleLength = ROGUELITE_STAGE_SCALING.bossInterval;
   const bossIndex = Math.floor((stage - 1) / bossCycleLength) % ROGUELITE_BOSS_POOL.length;
-  return ROGUELITE_BOSS_CONFIGS[ROGUELITE_BOSS_POOL[bossIndex]];
+  const bossId = ROGUELITE_BOSS_POOL[bossIndex] ?? ROGUELITE_BOSS_POOL[0];
+  if (!bossId) throw new Error("肉鸽 Boss 配置为空");
+  return ROGUELITE_BOSS_CONFIGS[bossId];
 }
 
 function getRogueliteBossHp(config: RogueliteBossConfig, hpBonus: number): number {
   return config.fixedHp ?? config.baseHp + hpBonus;
+}
+
+function getRogueliteEarlyStage(stage: number): (typeof ROGUELITE_STAGE_SCALING.earlyStages)[number] | undefined {
+  return ROGUELITE_STAGE_SCALING.earlyStages.find((item) => item.stage === stage);
+}
+
+function isRogueliteBossStage(stage: number): boolean {
+  return stage % ROGUELITE_STAGE_SCALING.bossInterval === 0;
+}
+
+function isRogueliteEliteStage(stage: number): boolean {
+  return stage % ROGUELITE_STAGE_SCALING.bossInterval === 2 && stage >= ROGUELITE_BALANCE_MECHANICS.eliteStartsAtStage;
+}
+
+function getRogueliteStageBonus(stage: number): { hpBonus: number; shieldBonus: number } {
+  const stage4To6 = ROGUELITE_STAGE_SCALING.stage4To6 as Readonly<Partial<Record<number, { hpBonus: number; shieldBonus: number }>>>;
+  const configured = stage4To6[stage];
+  if (configured) return configured;
+
+  let hpBonus = stage * ROGUELITE_STAGE_SCALING.stage7Plus.hpBonusPerStage;
+  let shieldBonus = Math.floor(stage / ROGUELITE_STAGE_SCALING.stage7Plus.shieldStageDivisor) * ROGUELITE_STAGE_SCALING.stage7Plus.shieldBonusPerStep;
+  if (isRogueliteBossStage(stage)) {
+    hpBonus += ROGUELITE_STAGE_SCALING.stage7Plus.bossExtraHp;
+    shieldBonus += ROGUELITE_STAGE_SCALING.stage7Plus.bossExtraShield;
+  } else if (isRogueliteEliteStage(stage)) {
+    hpBonus += ROGUELITE_STAGE_SCALING.stage7Plus.eliteExtraHp;
+    shieldBonus += ROGUELITE_STAGE_SCALING.stage7Plus.eliteExtraShield;
+  }
+  return { hpBonus, shieldBonus };
 }
 
 const REWARD_TO_PERK: Record<string, { perkId: string; levels: number }> = {
@@ -1141,7 +944,7 @@ function handleRogueliteBattleEnd(room: Room, gameOver: { winnerId: string; winn
   const stage = roguelite.stage;
   const enemyBot = room.players.find((p) => p.isBot);
   const enemyName = enemyBot?.nickname ?? "敌人";
-  const isBossStage = enemyBot?.rogueliteEnemyInfo?.stageType === "boss" || stage % 3 === 0;
+  const isBossStage = enemyBot?.rogueliteEnemyInfo?.stageType === "boss" || isRogueliteBossStage(stage);
 
   // Stage-specific post-battle heal
   let actualHeal = 0;
@@ -1179,28 +982,28 @@ function handleRogueliteBattleEnd(room: Room, gameOver: { winnerId: string; winn
     isBoss: isBossStage
   };
 
-  if (stage === 15 && isBossStage) {
+  if (stage === ROGUELITE_BOSS_REWARD_STAGE && isBossStage) {
     room.roguelite = {
       ...roguelite,
       lastStageSummary: stageSummary,
       rewardChoices: createRogueliteBossRewardChoices()
     };
-    addEvent(room, "system", `第 15 关大 Boss 胜利！选择 1 个 Boss 能力`);
-  } else if (stage === 1) {
+    addEvent(room, "system", `第 ${ROGUELITE_BOSS_REWARD_STAGE} 关大 Boss 胜利！选择 1 个 Boss 能力`);
+  } else if (stage === ROGUELITE_BASIC_REWARD_STAGE) {
     room.roguelite = {
       ...roguelite,
       lastStageSummary: stageSummary,
       rewardChoices: createRogueliteBasicRewardChoices(winner.roguelitePerkStacks)
     };
     addEvent(room, "system", `第 1 关胜利！选择 1 个基础奖励`);
-  } else if (stage === 2) {
+  } else if (stage === ROGUELITE_ARCHETYPE_REWARD_STAGE) {
     room.roguelite = {
       ...roguelite,
       lastStageSummary: stageSummary,
       rewardChoices: createRogueliteArchetypeStarterChoices(winner.roguelitePerkStacks)
     };
     addEvent(room, "system", `第 2 关胜利！选择 1 个流派启动奖励`);
-  } else if (stage === 3) {
+  } else if (stage === ROGUELITE_CORE_REWARD_STAGE) {
     room.roguelite = {
       ...roguelite,
       lastStageSummary: stageSummary,
@@ -1232,34 +1035,27 @@ function ensureRogueliteState(room: Room): NonNullable<Room["roguelite"]> {
 
 type RogueliteRewardDraft = Omit<RogueliteReward, "id">;
 
-const BASIC_REWARD_TYPES: ReadonlyArray<RogueliteReward["type"]> = [
-  "vitality_boost",
-  "shield_wall",
-  "heavy_punch_training",
-  "iron_body",
-  "breathing_recovery",
-  "guard_training"
-];
-const ARCHETYPE_STARTER_TYPES: ReadonlyArray<RogueliteReward["type"]> = [
-  "low_roll_defense",
-  "shield_strike",
-  "fate_tokens",
-  "low_roll_charge",
-  "low_hp_armor",
-  "comeback",
-  "first_strike"
-];
-const CORE_REWARD_TYPES: ReadonlyArray<RogueliteReward["type"]> = [
-  "shield_overload",
-  "sturdy_bulwark",
-  "lucky_floor",
-  "drink_blood"
-];
+function getRogueliteRewardRhythm(stageKey: string): (typeof ROGUELITE_REWARD_RHYTHM)[number] | undefined {
+  return ROGUELITE_REWARD_RHYTHM.find((item) => item.stage === stageKey);
+}
+
+const ROGUELITE_BASIC_REWARD_STAGE = Number(getRogueliteRewardRhythm("1")?.stage ?? 1);
+const ROGUELITE_ARCHETYPE_REWARD_STAGE = Number(getRogueliteRewardRhythm("2")?.stage ?? 2);
+const ROGUELITE_CORE_REWARD_STAGE = Number(getRogueliteRewardRhythm("3")?.stage ?? 3);
+const ROGUELITE_BOSS_REWARD_STAGE = ROGUELITE_BALANCE_MECHANICS.bossAbilityRewardStage;
+const ROGUELITE_TAG_BIAS_STAGE_RANGE = (getRogueliteRewardRhythm("4-6")?.stage ?? "4-6")
+  .split("-")
+  .map((value) => Number(value));
+const ROGUELITE_TAG_BIAS_STAGE_START = ROGUELITE_TAG_BIAS_STAGE_RANGE[0] ?? 4;
+const ROGUELITE_TAG_BIAS_STAGE_END = ROGUELITE_TAG_BIAS_STAGE_RANGE[1] ?? ROGUELITE_TAG_BIAS_STAGE_START;
+const BASIC_REWARD_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogueliteRewardRhythm("1")?.rewardTypes ?? [];
+const ARCHETYPE_STARTER_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogueliteRewardRhythm("2")?.rewardTypes ?? [];
+const CORE_REWARD_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogueliteRewardRhythm("3")?.rewardTypes ?? [];
 
 function createRogueliteRewardChoices(currentStacks?: Record<string, number>, appliedRewards: readonly RogueliteReward[] = [], stage = 1): RogueliteReward[] {
   const pool = getAvailableRogueliteDrafts([...ROGUELITE_SKILL_REWARD_POOL, ...ROGUELITE_REWARD_POOL], currentStacks);
   const choices: RogueliteReward[] = [];
-  const preferredTags = stage >= 4 && stage <= 6 ? getPreferredRogueliteTags(appliedRewards) : [];
+  const preferredTags = stage >= ROGUELITE_TAG_BIAS_STAGE_START && stage <= ROGUELITE_TAG_BIAS_STAGE_END ? getPreferredRogueliteTags(appliedRewards) : [];
   for (const tag of preferredTags.slice(0, 2)) {
     const taggedIndex = pool.findIndex((draft) => draft.tag === tag);
     if (taggedIndex < 0) continue;
@@ -1827,8 +1623,8 @@ function validatePveStartGame(room: Room, actorId: string): void {
   if (!player) throw new Error("玩家不存在");
 
   if (ensureRoomGameMode(room) === "pve_roguelite") {
-    player.characterId = "boxer";
-    const boxerCharacter = characterList.find((item) => item.id === "boxer");
+    player.characterId = ROGUELITE_PLAYER_START.characterId;
+    const boxerCharacter = characterList.find((item) => item.id === ROGUELITE_PLAYER_START.characterId);
     if (!boxerCharacter) throw new Error("拳手职业配置不存在");
     player.maxHp = boxerCharacter.maxHp;
     player.hp = boxerCharacter.maxHp;
@@ -1849,49 +1645,44 @@ function ensurePveBot(room: Room): void {
   if (!isSinglePlayerPveMode(room)) return;
   room.players = room.players.filter((player) => !player.isBot);
 
-  const character = characterList.find((item) => item.id === "boxer");
+  const botCharacterId = ensureRoomGameMode(room) === "pve_roguelite" ? ROGUELITE_BOT_BASE.characterId : "boxer";
+  const character = characterList.find((item) => item.id === botCharacterId);
   if (!character) throw new Error("AI 职业配置不存在");
   const stage = ensureRoomGameMode(room) === "pve_roguelite" ? ensureRogueliteState(room).stage : 1;
 
-  // Stages 1-3: fixed beginner-friendly difficulty
-  if (stage === 1) {
-    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, "训练拳手", false);
+  // Stages 1-3: fixed beginner-friendly difficulty from roguelite balance.
+  const earlyStage = getRogueliteEarlyStage(stage);
+  if (earlyStage && "enemyId" in earlyStage && earlyStage.enemyId && typeof earlyStage.hp === "number" && typeof earlyStage.shield === "number") {
+    const enemyConfig = getRogueliteEnemyConfig(earlyStage.enemyId);
+    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, earlyStage.description, false);
     bot.isBot = true;
     bot.isOnline = true;
     bot.controllerId = PVE_BOT_ID;
-    bot.characterId = "boxer";
+    bot.characterId = botCharacterId;
     bot.summonerSkillId = "first_aid";
     bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
-    bot.maxHp = 8;
-    bot.hp = 8;
-    bot.shield = 0;
-    bot.rogueliteEnemyInfo = { stageType: "normal", hpBonus: 0, shieldBonus: 0, damageBonus: 0, description: "训练关" };
+    bot.maxHp = earlyStage.hp;
+    bot.hp = earlyStage.hp;
+    bot.shield = earlyStage.shield;
+    bot.rogueliteEnemyInfo = {
+      stageType: enemyConfig.type.startsWith("elite_") ? "elite" : "normal",
+      hpBonus: Math.max(0, earlyStage.hp - character.maxHp),
+      shieldBonus: earlyStage.shield,
+      damageBonus: enemyConfig.damageBonus,
+      description: earlyStage.description,
+      skillNames: enemyConfig.skills.length > 0 ? enemyConfig.skills : undefined
+    };
     room.players.push(bot);
     return;
   }
-  if (stage === 2) {
-    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, "普通拳手", false);
-    bot.isBot = true;
-    bot.isOnline = true;
-    bot.controllerId = PVE_BOT_ID;
-    bot.characterId = "boxer";
-    bot.summonerSkillId = "first_aid";
-    bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
-    bot.maxHp = 12;
-    bot.hp = 12;
-    bot.shield = 0;
-    bot.rogueliteEnemyInfo = { stageType: "normal", hpBonus: 4, shieldBonus: 0, damageBonus: 0, description: "普通关" };
-    room.players.push(bot);
-    return;
-  }
-  if (stage === 3) {
+  if (earlyStage?.hp === "boss_config") {
     const bossConfig = getRogueliteBossForStage(stage);
     const bossHp = getRogueliteBossHp(bossConfig, 0);
     const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, bossConfig.name, false);
     bot.isBot = true;
     bot.isOnline = true;
     bot.controllerId = PVE_BOT_ID;
-    bot.characterId = "boxer";
+    bot.characterId = botCharacterId;
     bot.summonerSkillId = "first_aid";
     bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
     bot.maxHp = bossHp;
@@ -1909,21 +1700,10 @@ function ensurePveBot(room: Room): void {
     return;
   }
 
-  // Stages 4+: formula-based scaling
-  let bonusHp = 0;
-  let bonusShield = 0;
+  // Stages 4+: formula-based scaling from roguelite balance.
+  const { hpBonus: bonusHp, shieldBonus: bonusShield } = getRogueliteStageBonus(stage);
 
-  if (stage === 4) { bonusHp = 10; bonusShield = 2; }
-  else if (stage === 5) { bonusHp = 15; bonusShield = 4; }
-  else if (stage === 6) { bonusHp = 25; bonusShield = 8; }
-  else {
-    bonusHp = stage * 5;
-    bonusShield = Math.floor(stage / 2) * 2;
-    if (stage % 3 === 0) { bonusHp += 10; bonusShield += 4; }
-    else if (stage % 3 === 2) { bonusHp += 3; bonusShield += 2; }
-  }
-
-  if (stage % 3 === 0) {
+  if (isRogueliteBossStage(stage)) {
     // Boss stage (6+): use boss config with scaling
     const bossConfig = getRogueliteBossForStage(stage);
     const bossHp = getRogueliteBossHp(bossConfig, bonusHp);
@@ -1931,7 +1711,7 @@ function ensurePveBot(room: Room): void {
     bot.isBot = true;
     bot.isOnline = true;
     bot.controllerId = PVE_BOT_ID;
-    bot.characterId = "boxer";
+    bot.characterId = botCharacterId;
     bot.summonerSkillId = "first_aid";
     bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
     bot.maxHp = bossHp;
@@ -1949,14 +1729,14 @@ function ensurePveBot(room: Room): void {
     return;
   }
 
-  const isElite = stage % 3 === 2 && stage >= 5;
+  const isElite = isRogueliteEliteStage(stage);
   const enemyConfig = getRogueliteEnemyForStage(stage);
 
   const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, enemyConfig.name, false);
   bot.isBot = true;
   bot.isOnline = true;
   bot.controllerId = PVE_BOT_ID;
-  bot.characterId = "boxer";
+  bot.characterId = botCharacterId;
   bot.summonerSkillId = "first_aid";
   bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
   bot.maxHp = character.maxHp + bonusHp + enemyConfig.hpBonus;

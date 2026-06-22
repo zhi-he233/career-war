@@ -136,6 +136,11 @@ const duoTeams = computed<Array<{ id: TeamId; label: string; player: Player | un
   { id: "A", label: "A 队", player: props.room.players[0] },
   { id: "B", label: "B 队", player: props.room.players[1] }
 ]);
+const myDuoSlots = computed(() => duoSlots.value.filter((s) => s.controllerId === props.playerId).sort((a, b) => a.slotIndex - b.slotIndex));
+const selfTeamId = computed(() => myDuoSlots.value[0]?.teamId ?? undefined);
+const opponentTeamId = computed(() => (selfTeamId.value === "A" ? "B" : selfTeamId.value === "B" ? "A" : undefined));
+const opponentPlayer = computed(() => props.room.players.find((p) => duoSlots.value.some((s) => s.controllerId === p.id && s.teamId === opponentTeamId.value)));
+const opponentTeamLabel = computed(() => opponentTeamId.value === "A" ? "A 队" : "B 队");
 const selectedSummonerSkill = computed(() => SUMMONER_SKILLS.find((skill) => skill.id === (me.value?.summonerSkillId ?? "lucky_plus_one")) ?? SUMMONER_SKILLS[0]!);
 const isDuoReadyToStart = computed(() => props.room.players.length === 2 && duoSlots.value.length === 4 && duoSlots.value.every((slot) => isDuoSlotCharacterReady(slot) && isDuoSlotSummonerSkillReady(slot)) && !hasDuplicateCharacterConflict.value);
 const canStart = computed(() => {
@@ -583,58 +588,46 @@ function characterSprite(characterId: string): string | undefined {
       </div>
 
       <p v-if="duoSlots.length === 0" class="empty-state duo-slot-empty">2V2 槽位尚未生成，请等待房间同步或重新切换模式。</p>
-      <div v-else class="duo-team-grid">
-        <template v-for="team in duoTeams" :key="team.id">
-          <!-- B team waiting: compact strip, not a full panel -->
-          <div v-if="!team.player" class="duo-wait-strip">
-            <span class="duo-wait-label">{{ team.label }} · 等待玩家加入</span>
+      <div v-else class="duo-self-slots-grid">
+        <article v-for="(slot, idx) in myDuoSlots" :key="slot.slotIndex" class="duo-slot-card">
+          <div class="duo-slot-header">
+            <strong>槽位 {{ idx + 1 }}</strong>
+            <span class="badge">你的槽位</span>
           </div>
 
-          <!-- team with player: full panel with slots -->
-          <article v-else class="duo-team-panel">
-            <div class="settings-title">
-              <h2>{{ team.label }}</h2>
-              <span class="hint">{{ team.player.nickname }}</span>
-            </div>
+          <label class="compact-field">
+            <span>职业</span>
+            <select :value="slot.characterId ?? ''" @change="updateDuoSlotCharacter(slot, $event)">
+              <option value="">未选择职业</option>
+              <option
+                v-for="character in props.characters"
+                :key="character.id"
+                :value="character.id"
+                :disabled="isDuoCharacterTakenByOtherSlot(slot, character.id)"
+              >
+                {{ character.name }}{{ isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "" }}
+              </option>
+            </select>
+          </label>
 
-            <div class="duo-slot-list">
-              <article v-for="slot in duoSlotsForTeam(team.id)" :key="`${slot.controllerId}-${slot.slotIndex}`" class="duo-slot-card">
-                <div class="duo-slot-header">
-                  <strong>槽位 {{ slot.slotIndex + 1 }}</strong>
-                  <span class="badge" :class="{ 'host-badge': canEditDuoSlot(slot) }">{{ canEditDuoSlot(slot) ? "你的槽位" : "对方槽位" }}</span>
-                </div>
+          <label class="compact-field">
+            <span>技能</span>
+            <select :value="slot.summonerSkillId ?? 'lucky_plus_one'" @change="updateDuoSlotSummonerSkill(slot, $event)">
+              <option v-for="skill in SUMMONER_SKILLS" :key="skill.id" :value="skill.id">
+                {{ skill.name }}
+              </option>
+            </select>
+          </label>
 
-                <label class="compact-field">
-                  <span>职业</span>
-                  <select v-if="canEditDuoSlot(slot)" :value="slot.characterId ?? ''" @change="updateDuoSlotCharacter(slot, $event)">
-                    <option value="">未选择职业</option>
-                    <option
-                      v-for="character in props.characters"
-                      :key="character.id"
-                      :value="character.id"
-                      :disabled="isDuoCharacterTakenByOtherSlot(slot, character.id)"
-                    >
-                      {{ character.name }}{{ isDuoCharacterTakenByOtherSlot(slot, character.id) ? "（已被选择）" : "" }}
-                    </option>
-                  </select>
-                  <span v-else class="hint">{{ duoSlotCharacterText(slot) }}</span>
-                </label>
+          <p class="duo-slot-summary">当前：{{ duoSlotCharacterText(slot) }} / {{ duoSlotSummonerSkillText(slot) }}</p>
+        </article>
+      </div>
 
-                <label class="compact-field">
-                  <span>召唤师技能</span>
-                  <select v-if="canEditDuoSlot(slot)" :value="slot.summonerSkillId ?? 'lucky_plus_one'" @change="updateDuoSlotSummonerSkill(slot, $event)">
-                    <option v-for="skill in SUMMONER_SKILLS" :key="skill.id" :value="skill.id">
-                      {{ skill.name }}
-                    </option>
-                  </select>
-                  <span v-else class="hint">{{ duoSlotSummonerSkillText(slot) }}</span>
-                </label>
-
-                <p class="hint duo-slot-summary">当前：{{ duoSlotCharacterText(slot) }} / {{ duoSlotSummonerSkillText(slot) }}</p>
-              </article>
-            </div>
-          </article>
-        </template>
+      <div v-if="!opponentPlayer" class="duo-wait-strip">
+        <span class="duo-wait-label">{{ opponentTeamLabel }} · 等待玩家加入</span>
+      </div>
+      <div v-else class="duo-wait-strip">
+        <span class="duo-wait-label">{{ opponentTeamLabel }} · 已加入，进入战斗后选择目标</span>
       </div>
     </section>
 
@@ -836,9 +829,4 @@ function characterSprite(characterId: string): string | undefined {
   font-size: 15px;
 }
 
-@media (min-width: 760px) {
-  .duo-team-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 </style>

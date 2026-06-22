@@ -1691,7 +1691,6 @@ button:disabled,
 .summoner-select-panel,
 .player-card,
 .character-choice,
-.duo-team-panel,
 .duo-slot-card {
   border: var(--cw-border-thin) !important;
   border-radius: var(--cw-radius-lg) !important;
@@ -2276,25 +2275,7 @@ body:has(.lobby-page) {
 }
 
 .duo-team-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.duo-team-panel,
-.duo-slot-card {
-  gap: 5px;
-  padding: 6px;
-}
-
-.duo-team-panel.is-waiting {
-  border-style: dashed;
-  opacity: 0.72;
-}
-
-.duo-slot-list {
-  gap: 5px;
+  display: none;
 }
 
 .duo-slot-card h3 {
@@ -7037,5 +7018,73 @@ body .lobby-tab-characters > .room-code {
 .lobby-page .settings-title,
 .lobby-page .picker-heading {
   border-bottom: 1.5px solid rgba(17,17,17,0.55) !important;
+}
+
+/* ================================================================
+   DUO 2V2 — self slots grid + compact cards
+   ================================================================ */
+.duo-self-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 0;
+}
+
+.duo-slot-picker .duo-slot-card {
+  min-width: 0;
+  padding: 8px 10px !important;
+  gap: 4px !important;
+  border-radius: 14px !important;
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.45), 0 1px 3px rgba(17,17,17,0.06) !important;
+  border: none !important;
+}
+
+.duo-slot-picker .duo-slot-card select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px !important;
+  padding: 3px 5px !important;
+  font-size: 13px;
+}
+
+.duo-slot-picker .duo-slot-card .compact-field {
+  gap: 2px !important;
+}
+
+.duo-wait-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  max-height: 56px;
+  padding: 8px 12px;
+  background: #f2efe8;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.28);
+  border-radius: 12px;
+}
+
+.duo-slot-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 120px;
+  gap: 8px;
+}
+
+@media (max-width: 380px) {
+  .duo-self-slots-grid {
+    gap: 6px;
+  }
+  .duo-slot-picker .duo-slot-card {
+    padding: 6px 7px;
+    gap: 3px;
+  }
+  .duo-slot-picker .duo-slot-card select {
+    min-height: 28px;
+    font-size: 12px;
+    padding: 2px 4px;
+  }
 }
 

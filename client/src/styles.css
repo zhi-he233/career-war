@@ -2640,10 +2640,10 @@ body:has(.lobby-page) {
 }
 
 .lobby-tab-characters .lobby-summary {
-  grid-template-rows: auto auto auto auto !important;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto !important;
 }
 
-.lobby-tab-characters .lobby-summary > section:not(.lobby-start-bar) {
+.lobby-tab-characters .lobby-summary > section:not(.lobby-start-bar):not(.character-picker) {
   display: none !important;
 }
 
@@ -3805,7 +3805,7 @@ body .lobby-page .lobby-summary > .room-code strong {
   grid-row: 5 !important;
 }
 
-.lobby-tab-characters .lobby-summary > section:not(.lobby-start-bar) {
+.lobby-tab-characters .lobby-summary > section:not(.lobby-start-bar):not(.character-picker) {
   display: none !important;
 }
 
@@ -4395,8 +4395,8 @@ body .lobby-tab-characters > .room-code {
     z-index: 1 !important;
   }
 
-  .lobby-tab-characters .character-picker,
-  .duo-slot-picker {
+  .lobby-tab-characters .character-picker.duo-slot-picker,
+  .lobby-tab-characters .character-picker.roguelite-intro {
     display: block !important;
     min-height: 0 !important;
     overflow-y: auto !important;
@@ -4405,7 +4405,89 @@ body .lobby-tab-characters > .room-code {
     padding-bottom: 180px !important;
   }
 
-  .lobby-tab-characters .character-picker > * + *,
+  .lobby-tab-characters .lobby-summary {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    overscroll-behavior: contain !important;
+    gap: 0 !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .room-code,
+  .lobby-tab-characters .lobby-summary > .lobby-quick-actions,
+  .lobby-tab-characters .lobby-summary > .lobby-tabs,
+  .lobby-tab-characters .lobby-summary > .lobby-start-bar {
+    flex: 0 0 auto !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin-top: 10px !important;
+    transform: none !important;
+    padding: 8px !important;
+    box-sizing: border-box !important;
+    overscroll-behavior: contain !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) > .picker-heading,
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) > .character-toolbar {
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) > .character-toolbar {
+    display: block !important;
+    margin-bottom: 10px !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-search {
+    display: none !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-filters {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    padding-bottom: 4px !important;
+    scrollbar-width: none;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .filter-chip {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .random-character-btn {
+    padding: 5px 8px !important;
+    min-height: 30px !important;
+    font-size: 12px !important;
+  }
+
+  .lobby-tab-characters .character-picker.duo-slot-picker > * + *,
+  .lobby-tab-characters .character-picker.roguelite-intro > * + *,
   .summoner-select-panel > * + *,
   .duo-slot-picker > * + * {
     margin-top: 8px !important;
@@ -4421,6 +4503,18 @@ body .lobby-tab-characters > .room-code {
     overflow: visible !important;
   }
 
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 160px !important;
+    gap: 10px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain !important;
+    max-height: none !important;
+  }
+
   .character-choice {
     width: 100% !important;
     min-width: 0 !important;
@@ -4430,6 +4524,8 @@ body .lobby-tab-characters > .room-code {
     align-items: center !important;
     column-gap: 9px !important;
     min-height: 98px !important;
+    height: auto !important;
+    flex: 0 0 auto !important;
     max-height: none !important;
     padding: 10px 44px 30px 10px !important;
     overflow: hidden !important;

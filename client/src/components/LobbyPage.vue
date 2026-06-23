@@ -604,6 +604,73 @@ function uniqueCareerTags(tags: Array<string | undefined>): string[] {
         <p class="hint">当前已选择：{{ selectedSummonerSkill.name }}</p>
       </section>
 
+      <section v-if="!isDuoModeDevelopment && !isRogueliteMode" v-show="lobbyTab === 'characters'" class="character-picker">
+        <div class="picker-heading">
+          <div>
+            <h2>选择职业</h2>
+            <p class="hint">当前选择：{{ characterName(me?.characterId) }}</p>
+          </div>
+          <button class="secondary-btn random-character-btn" type="button" :disabled="randomCandidates.length === 0" @click="chooseRandomCharacter">随机职业</button>
+        </div>
+
+        <div class="character-toolbar">
+          <input v-model="searchKeyword" class="character-search" type="search" placeholder="搜索职业名或标签" />
+          <div class="character-filters" aria-label="职业分类筛选">
+            <button
+              v-for="filter in FILTERS"
+              :key="filter.id"
+              class="filter-chip"
+              :class="{ active: activeFilter === filter.id }"
+              type="button"
+              @click="activeFilter = filter.id"
+            >
+              {{ filter.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="character-grid">
+          <article
+            v-for="character in pagedCharacters"
+            :key="character.id"
+            class="character-choice"
+            :class="{ selected: me?.characterId === character.id, locked: !isSelectableCharacter(character), taken: isTakenByOther(character.id) }"
+            role="button"
+            :tabindex="isSelectableCharacter(character) ? 0 : -1"
+            :aria-disabled="!isSelectableCharacter(character)"
+            @click="chooseCharacterFromCard(character)"
+            @keydown.enter.prevent="chooseCharacterFromCard(character)"
+            @keydown.space.prevent="chooseCharacterFromCard(character)"
+          >
+            <span class="character-status">{{ characterStatusLabel(character) }}</span>
+            <button class="seat-info-btn character-info-btn" type="button" aria-label="查看职业详情" @click.stop="openCharacterDetails(character)">i</button>
+            <span class="character-art-thumb" :class="{ empty: !characterSprite(character.id) }">
+              <img v-if="characterSprite(character.id)" :src="characterSprite(character.id)" :alt="character.name" draggable="false" />
+              <span v-else>{{ character.name.slice(0, 1) }}</span>
+            </span>
+            <span class="character-card-copy">
+              <strong>{{ character.name }}</strong>
+              <span class="character-hp">最大血量 {{ character.maxHp }}</span>
+              <span class="character-tags">
+                <i>{{ difficultyLabel(character.difficulty) }}</i>
+                <i>{{ roleLabel(character.role) }}</i>
+              </span>
+              <small>{{ character.shortDescription ?? character.description[0] }}</small>
+              <span v-if="me?.characterId === character.id" class="chosen-note">你已选择</span>
+              <span v-else-if="selectedNames(character.id).length" class="chosen-note">已选：{{ selectedNames(character.id).join("、") }}</span>
+            </span>
+          </article>
+        </div>
+
+        <div v-if="characterPageCount > 1" class="character-pager">
+          <button class="ghost-btn small-btn" type="button" :disabled="characterPage === 0" @click="characterPage = Math.max(0, characterPage - 1)">上一页</button>
+          <span>{{ characterPage + 1 }}/{{ characterPageCount }}</span>
+          <button class="ghost-btn small-btn" type="button" :disabled="characterPage + 1 >= characterPageCount" @click="characterPage = Math.min(characterPageCount - 1, characterPage + 1)">下一页</button>
+        </div>
+
+        <p v-if="filteredCharacters.length === 0" class="hint">没有找到匹配的职业。</p>
+      </section>
+
       <section class="lobby-start-bar">
         <div>
           <strong>{{ isHost ? "房主操作" : "游戏状态" }}</strong>
@@ -674,73 +741,6 @@ function uniqueCareerTags(tags: Array<string | undefined>): string[] {
           <p class="hint">固定从拳手开始，通过奖励获得能力。</p>
         </div>
       </div>
-    </section>
-
-    <section v-else v-show="lobbyTab === 'characters'" class="character-picker">
-      <div class="picker-heading">
-        <div>
-          <h2>选择职业</h2>
-          <p class="hint">当前选择：{{ characterName(me?.characterId) }}</p>
-        </div>
-        <button class="secondary-btn random-character-btn" type="button" :disabled="randomCandidates.length === 0" @click="chooseRandomCharacter">随机职业</button>
-      </div>
-
-      <div class="character-toolbar">
-        <input v-model="searchKeyword" class="character-search" type="search" placeholder="搜索职业名或标签" />
-        <div class="character-filters" aria-label="职业分类筛选">
-          <button
-            v-for="filter in FILTERS"
-            :key="filter.id"
-            class="filter-chip"
-            :class="{ active: activeFilter === filter.id }"
-            type="button"
-            @click="activeFilter = filter.id"
-          >
-            {{ filter.label }}
-          </button>
-        </div>
-      </div>
-
-      <div class="character-grid">
-        <article
-          v-for="character in pagedCharacters"
-          :key="character.id"
-          class="character-choice"
-          :class="{ selected: me?.characterId === character.id, locked: !isSelectableCharacter(character), taken: isTakenByOther(character.id) }"
-          role="button"
-          :tabindex="isSelectableCharacter(character) ? 0 : -1"
-          :aria-disabled="!isSelectableCharacter(character)"
-          @click="chooseCharacterFromCard(character)"
-          @keydown.enter.prevent="chooseCharacterFromCard(character)"
-          @keydown.space.prevent="chooseCharacterFromCard(character)"
-        >
-          <span class="character-status">{{ characterStatusLabel(character) }}</span>
-          <button class="seat-info-btn character-info-btn" type="button" aria-label="查看职业详情" @click.stop="openCharacterDetails(character)">i</button>
-          <span class="character-art-thumb" :class="{ empty: !characterSprite(character.id) }">
-            <img v-if="characterSprite(character.id)" :src="characterSprite(character.id)" :alt="character.name" draggable="false" />
-            <span v-else>{{ character.name.slice(0, 1) }}</span>
-          </span>
-          <span class="character-card-copy">
-            <strong>{{ character.name }}</strong>
-            <span class="character-hp">最大血量 {{ character.maxHp }}</span>
-            <span class="character-tags">
-              <i>{{ difficultyLabel(character.difficulty) }}</i>
-              <i>{{ roleLabel(character.role) }}</i>
-            </span>
-            <small>{{ character.shortDescription ?? character.description[0] }}</small>
-            <span v-if="me?.characterId === character.id" class="chosen-note">你已选择</span>
-            <span v-else-if="selectedNames(character.id).length" class="chosen-note">已选：{{ selectedNames(character.id).join("、") }}</span>
-          </span>
-        </article>
-      </div>
-
-      <div v-if="characterPageCount > 1" class="character-pager">
-        <button class="ghost-btn small-btn" type="button" :disabled="characterPage === 0" @click="characterPage = Math.max(0, characterPage - 1)">上一页</button>
-        <span>{{ characterPage + 1 }}/{{ characterPageCount }}</span>
-        <button class="ghost-btn small-btn" type="button" :disabled="characterPage + 1 >= characterPageCount" @click="characterPage = Math.min(characterPageCount - 1, characterPage + 1)">下一页</button>
-      </div>
-
-      <p v-if="filteredCharacters.length === 0" class="hint">没有找到匹配的职业。</p>
     </section>
 
     <div v-if="selectedCharacter" class="character-detail-backdrop career-card-backdrop" @click.self="closeCharacterDetails">

@@ -33,6 +33,9 @@ type AuthResponse = AuthResult | AuthError;
 const currentUser = ref<PublicUser | null>(null);
 const loading = ref(true);
 const isLoggedIn = computed(() => currentUser.value !== null);
+const isAuthenticated = isLoggedIn; // alias
+const isLoading = loading; // alias
+const displayName = computed(() => currentUser.value?.username ?? "游客");
 
 let initPromise: Promise<void> | null = null;
 
@@ -143,10 +146,15 @@ export function useAuth() {
   ensureInit();
 
   return {
+    user: currentUser,
     currentUser,
     isLoggedIn,
+    isAuthenticated,
+    isLoading,
     loading,
+    displayName,
     fetchMe,
+    refreshMe: fetchMe,
     register,
     login,
     logout,

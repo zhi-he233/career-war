@@ -24,6 +24,23 @@ declare function updateProfile(patch: Partial<Pick<PublicUser, "avatar">> & {
     tutorialCompleted?: boolean;
 }): Promise<AuthResponse>;
 export declare function useAuth(): {
+    user: import("vue").Ref<{
+        id: string;
+        username: string;
+        nickname: string;
+        displayName: string;
+        avatar: string;
+        tutorialCompleted: boolean;
+        createdAt: string;
+    } | null, PublicUser | {
+        id: string;
+        username: string;
+        nickname: string;
+        displayName: string;
+        avatar: string;
+        tutorialCompleted: boolean;
+        createdAt: string;
+    } | null>;
     currentUser: import("vue").Ref<{
         id: string;
         username: string;
@@ -42,8 +59,12 @@ export declare function useAuth(): {
         createdAt: string;
     } | null>;
     isLoggedIn: import("vue").ComputedRef<boolean>;
+    isAuthenticated: import("vue").ComputedRef<boolean>;
+    isLoading: import("vue").Ref<boolean, boolean>;
     loading: import("vue").Ref<boolean, boolean>;
+    displayName: import("vue").ComputedRef<string>;
     fetchMe: typeof fetchMe;
+    refreshMe: typeof fetchMe;
     register: typeof register;
     login: typeof login;
     logout: typeof logout;

@@ -31,3 +31,9 @@ const showRules = ref(false);
     </div>
   </section>
 </template>
+
+<style scoped>
+.home-topline {
+  /* kept as layout placeholder, styled only if needed later */
+}
+</style>

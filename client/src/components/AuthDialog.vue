@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { nextTick, ref, watch } from "vue";
 import { useAuth } from "../composables/useAuth";
 
 const props = defineProps<{ visible: boolean }>();
@@ -12,19 +12,27 @@ const username = ref("");
 const password = ref("");
 const error = ref("");
 const submitting = ref(false);
+const usernameInput = ref<HTMLInputElement | null>(null);
 
 watch(
   () => props.visible,
-  (v) => {
+  async (v) => {
     if (v) {
       mode.value = "login";
       username.value = "";
       password.value = "";
       error.value = "";
       submitting.value = false;
+      await nextTick();
+      usernameInput.value?.focus();
     }
   },
 );
+
+// Clear error when switching between login/register
+watch(mode, () => {
+  error.value = "";
+});
 
 async function handleSubmit() {
   error.value = "";
@@ -76,6 +84,7 @@ async function handleSubmit() {
       <form class="auth-form" @submit.prevent="handleSubmit">
         <div class="field">
           <input
+            ref="usernameInput"
             v-model="username"
             type="text"
             placeholder="用户名（也是游戏名）"

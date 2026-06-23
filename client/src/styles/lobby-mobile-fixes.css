@@ -1,0 +1,307 @@
+@media (max-width: 760px) {
+  .lobby-page {
+    overflow: hidden !important;
+  }
+
+  .lobby-summary {
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .lobby-start-bar {
+    position: static !important;
+    z-index: 1 !important;
+  }
+
+  .lobby-tab-characters .character-picker.duo-slot-picker,
+  .lobby-tab-characters .character-picker.roguelite-intro {
+    display: block !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain !important;
+    padding-bottom: 180px !important;
+  }
+
+  .lobby-tab-characters .lobby-summary {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    overscroll-behavior: contain !important;
+    gap: 0 !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .room-code,
+  .lobby-tab-characters .lobby-summary > .lobby-quick-actions,
+  .lobby-tab-characters .lobby-summary > .lobby-tabs,
+  .lobby-tab-characters .lobby-summary > .lobby-start-bar {
+    flex: 0 0 auto !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin-top: 10px !important;
+    transform: none !important;
+    padding: 8px !important;
+    box-sizing: border-box !important;
+    overscroll-behavior: contain !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) > .picker-heading,
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) > .character-toolbar {
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) > .character-toolbar {
+    display: block !important;
+    margin-bottom: 10px !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-search {
+    display: none !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-filters {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    padding-bottom: 4px !important;
+    scrollbar-width: none;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .filter-chip {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .random-character-btn {
+    padding: 5px 8px !important;
+    min-height: 30px !important;
+    font-size: 12px !important;
+  }
+
+  .lobby-tab-characters .character-picker.duo-slot-picker > * + *,
+  .lobby-tab-characters .character-picker.roguelite-intro > * + *,
+  .summoner-select-panel > * + *,
+  .duo-slot-picker > * + * {
+    margin-top: 8px !important;
+  }
+
+  .character-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-rows: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    gap: 8px !important;
+    overflow: visible !important;
+  }
+
+  .lobby-tab-characters .lobby-summary > .character-picker:not(.duo-slot-picker):not(.roguelite-intro) .character-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 160px !important;
+    gap: 10px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain !important;
+    max-height: none !important;
+  }
+
+  .character-choice {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    display: grid !important;
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: 9px !important;
+    min-height: 98px !important;
+    height: auto !important;
+    flex: 0 0 auto !important;
+    max-height: none !important;
+    padding: 10px 44px 30px 10px !important;
+    overflow: hidden !important;
+  }
+
+  .character-card-copy {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: grid !important;
+    gap: 3px !important;
+  }
+
+  .character-card-copy strong,
+  .character-card-copy .character-hp,
+  .character-card-copy small,
+  .character-card-copy .chosen-note {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding-right: 0 !important;
+  }
+
+  .character-card-copy strong {
+    font-size: 15px !important;
+  }
+
+  .character-choice .character-status {
+    top: auto !important;
+    right: 8px !important;
+    bottom: 6px !important;
+    left: auto !important;
+    max-width: calc(100% - 16px) !important;
+    pointer-events: none !important;
+  }
+
+  .character-info-btn {
+    top: 8px !important;
+    right: 8px !important;
+  }
+
+  .character-choice > *:not(.character-info-btn) {
+    pointer-events: none !important;
+  }
+
+  .character-pager {
+    flex: 0 0 auto !important;
+    margin-bottom: 10px !important;
+    scroll-margin-bottom: 150px !important;
+  }
+
+  .summoner-select-panel {
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+  }
+
+  .summoner-options {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    padding-bottom: 120px !important;
+  }
+
+  .summoner-option {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-width: 0 !important;
+    max-height: 78px !important;
+    padding: 9px 44px 10px 10px !important;
+  }
+
+  .summoner-option-main {
+    min-width: 0 !important;
+    width: 100% !important;
+    padding-right: 0 !important;
+  }
+
+  .summoner-option-main strong,
+  .summoner-option-main small,
+  .summoner-option-description {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding-right: 0 !important;
+  }
+
+  .summoner-option > .badge {
+    display: none !important;
+  }
+
+  .summoner-option > .summoner-info-btn {
+    top: 8px !important;
+    right: 8px !important;
+  }
+
+  .summoner-option-main,
+  .summoner-option-main * {
+    pointer-events: none !important;
+  }
+
+  .duo-slot-picker {
+    align-content: start !important;
+  }
+
+  .duo-team-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+    min-height: 0 !important;
+  }
+
+  .duo-team-panel {
+    min-width: 0 !important;
+    padding: 10px !important;
+  }
+
+  .duo-team-panel.is-waiting {
+    min-height: 0 !important;
+    padding: 8px 10px !important;
+  }
+
+  .duo-team-panel.is-waiting .settings-title {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    margin: 0 !important;
+  }
+
+  .duo-team-panel.is-waiting .settings-title h2 {
+    font-size: 14px !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  .duo-team-panel.is-waiting .settings-title .hint {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    text-align: right !important;
+  }
+
+  .duo-team-panel.is-waiting .empty-state {
+    display: none !important;
+  }
+
+  .duo-slot-list {
+    gap: 8px !important;
+  }
+
+  .duo-slot-card {
+    min-width: 0 !important;
+    padding: 10px !important;
+    scroll-margin-bottom: 150px !important;
+  }
+
+  .duo-slot-card .compact-field {
+    min-width: 0 !important;
+  }
+
+  .duo-slot-card select {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}

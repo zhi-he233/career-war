@@ -1,2 +1,3 @@
 @import "./styles/legacy.css";
+@import "./styles/patches/stop-bleed.css";
 @import "./styles/lobby-mobile-fixes.css";

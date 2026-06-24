@@ -2444,7 +2444,6 @@ body:has(.lobby-page) {
 .filter-chip,
 .lobby-tab-btn {
   border-width: 2px !important;
-  box-shadow: none !important;
   min-height: 36px;
 }
 
@@ -3201,625 +3200,7 @@ body:has(.lobby-page) {
   max-width: calc(100% - 30px) !important;
 }
 
-/* ============================================================
-   UI STOP-BLEED PATCH V2
-   Only stabilize home / mode / lobby usability. No new visual direction.
-   ============================================================ */
-
-.toast {
-  position: fixed !important;
-  left: 50% !important;
-  top: max(54px, calc(env(safe-area-inset-top) + 12px)) !important;
-  z-index: 1000 !important;
-  width: min(360px, calc(100vw - 28px)) !important;
-  min-height: 38px !important;
-  max-height: 48px !important;
-  display: grid !important;
-  place-items: center !important;
-  padding: 8px 12px !important;
-  transform: translateX(-50%) !important;
-  border: 1px solid #c92a2a !important;
-  border-radius: 12px !important;
-  background: #fff4f2 !important;
-  color: #9b1c1c !important;
-  box-shadow: 0 2px 0 rgba(17, 17, 17, 0.18) !important;
-  font-size: 13px !important;
-  font-weight: 800 !important;
-  line-height: 1.2 !important;
-  overflow: hidden !important;
-  text-align: center !important;
-  pointer-events: none !important;
-}
-
-.game-home {
-  grid-template-rows: 38px minmax(220px, 0.78fr) auto minmax(8px, 0.22fr) !important;
-  justify-content: stretch !important;
-}
-
-.home-title-card {
-  width: 100% !important;
-  max-height: 330px !important;
-  align-self: end !important;
-}
-
-.home-actions {
-  align-self: start !important;
-}
-
-.home-actions .secondary-btn,
-.home-actions .ghost-btn {
-  min-height: 42px !important;
-  font-size: 14px !important;
-}
-
-.home-start-btn {
-  min-height: 48px !important;
-}
-
-.pvp-page {
-  grid-template-rows: 52px minmax(0, 1fr) !important;
-}
-
-.pvp-heading {
-  min-height: 48px !important;
-  border: 1px solid #111111 !important;
-  border-radius: 14px !important;
-  background: #fffdf6 !important;
-  box-shadow: none !important;
-}
-
-.pvp-heading .ghost-btn,
-.section-heading .ghost-btn {
-  width: auto !important;
-  min-width: 76px !important;
-  max-width: 122px !important;
-  min-height: 32px !important;
-  padding: 5px 9px !important;
-  border-width: 1px !important;
-  border-radius: 10px !important;
-  font-size: 12px !important;
-  writing-mode: horizontal-tb !important;
-}
-
-.pvp-mode-card {
-  min-height: 88px !important;
-  max-height: 116px !important;
-  border-width: 1px !important;
-  border-radius: 14px !important;
-  background: #ffffff !important;
-  box-shadow: 0 2px 0 rgba(17, 17, 17, 0.25) !important;
-}
-
-.pvp-mode-card::after {
-  display: none !important;
-}
-
-.pvp-room-flow {
-  align-content: start !important;
-  grid-auto-rows: auto !important;
-  gap: 8px !important;
-  padding: 10px !important;
-  border-width: 1px !important;
-  border-radius: 16px !important;
-  background: #fffdf6 !important;
-  box-shadow: none !important;
-}
-
-.pvp-room-flow .section-heading {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
-  align-items: center !important;
-  gap: 8px !important;
-  min-height: 40px !important;
-}
-
-.pvp-room-flow .section-heading h2 {
-  min-width: 0 !important;
-  margin: 0 !important;
-  overflow: hidden !important;
-  font-size: 18px !important;
-  line-height: 1.1 !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.pvp-room-flow .field {
-  min-height: 68px !important;
-  padding: 8px !important;
-  border-width: 1px !important;
-  border-radius: 12px !important;
-  background: #ffffff !important;
-}
-
-.pvp-room-flow .field span {
-  font-size: 12px !important;
-  line-height: 1.1 !important;
-}
-
-.pvp-room-flow input {
-  height: 46px !important;
-  min-height: 44px !important;
-  padding: 8px 10px !important;
-  border-width: 1px !important;
-  border-radius: 10px !important;
-  font-size: 16px !important;
-}
-
-.pvp-room-flow > .primary-btn,
-.pvp-room-flow > .secondary-btn,
-.pvp-room-flow template + .secondary-btn {
-  min-height: 50px !important;
-  max-height: 56px !important;
-  padding: 8px 12px !important;
-  border-width: 2px !important;
-  border-radius: 14px !important;
-  font-size: 15px !important;
-  box-shadow: none !important;
-}
-
-.pvp-alert {
-  display: grid !important;
-  align-items: center !important;
-  min-height: 38px !important;
-  max-height: 46px !important;
-  margin: 0 !important;
-  padding: 7px 10px !important;
-  border: 1px solid #c92a2a !important;
-  border-radius: 10px !important;
-  background: #fff4f2 !important;
-  color: #9b1c1c !important;
-  font-size: 13px !important;
-  font-weight: 800 !important;
-  line-height: 1.2 !important;
-  overflow: hidden !important;
-}
-
-.room-list-panel {
-  min-height: 0 !important;
-  max-height: 156px !important;
-  padding: 8px !important;
-  border-width: 1px !important;
-  border-radius: 12px !important;
-  overflow: hidden !important;
-}
-
-.room-list {
-  max-height: 96px !important;
-  overflow: hidden !important;
-}
-
-.divider {
-  min-height: 18px !important;
-  margin: 0 !important;
-  color: #666666 !important;
-  font-size: 12px !important;
-  line-height: 18px !important;
-}
-
-.lobby-summary,
-.character-picker,
-.lobby-summary > .room-code,
-.lobby-start-bar,
-.lobby-player-card,
-.character-choice,
-.summoner-option,
-.compact-field,
-.toggle-field {
-  border-width: 1px !important;
-  box-shadow: none !important;
-}
-
-.lobby-summary {
-  background: #fffdf6 !important;
-}
-
-.lobby-start-bar {
-  z-index: 1 !important;
-}
-
-.character-picker,
-.summoner-select-panel,
-.character-grid,
-.summoner-options {
-  pointer-events: auto !important;
-}
-
-.character-choice,
-.summoner-option {
-  pointer-events: auto !important;
-  user-select: none !important;
-}
-
-.character-choice[aria-disabled="true"] {
-  pointer-events: none !important;
-  opacity: 0.55 !important;
-}
-
-.character-info-btn,
-.summoner-info-btn {
-  pointer-events: auto !important;
-}
-
-.summoner-option {
-  background: #ffffff !important;
-}
-
-.summoner-option.selected,
-.character-choice.selected {
-  border-color: #1d4ed8 !important;
-  background: #edf4ff !important;
-}
-
-.lobby-page {
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) !important;
-}
-
-.lobby-summary {
-  grid-template-rows: 52px 40px 38px minmax(0, 1fr) 56px !important;
-}
-
-.lobby-tab-characters .lobby-summary {
-  grid-template-rows: 52px 40px 38px 56px !important;
-}
-
-.lobby-summary > .room-code {
-  box-sizing: border-box !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  min-height: 52px !important;
-  height: 52px !important;
-  max-height: 52px !important;
-  overflow: visible !important;
-  justify-self: stretch !important;
-}
-
-.lobby-summary > .room-code strong {
-  width: auto !important;
-  min-width: 4.5em !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  font-size: 26px !important;
-  line-height: 1 !important;
-}
-
-.lobby-quick-actions {
-  min-height: 40px !important;
-  height: 40px !important;
-}
-
-.lobby-tabs {
-  min-height: 38px !important;
-  height: 38px !important;
-}
-
-.lobby-start-bar {
-  min-height: 54px !important;
-  height: 56px !important;
-  max-height: 58px !important;
-}
-
-@media (max-width: 380px), (max-height: 810px) {
-  .game-home {
-    grid-template-rows: 34px minmax(190px, 0.75fr) auto minmax(4px, 0.25fr) !important;
-  }
-
-  .home-title-card {
-    max-height: 285px !important;
-  }
-
-  .home-dice-mark {
-    width: 46px !important;
-    height: 46px !important;
-    font-size: 26px !important;
-  }
-
-  .pvp-room-flow .field {
-    min-height: 62px !important;
-  }
-
-  .pvp-room-flow input {
-    height: 44px !important;
-  }
-
-  .pvp-mode-card {
-    min-height: 86px !important;
-    max-height: 106px !important;
-    padding: 10px !important;
-  }
-}
-
-/* ============================================================
-   UI STOP-BLEED PATCH V3
-   Explicit fixes for current usability blockers only.
-   ============================================================ */
-
-.top-bar .secondary-btn.small-btn,
-.top-bar .ghost-btn.small-btn,
-.top-bar > .ghost-btn {
-  min-height: 36px !important;
-  padding: 7px 12px !important;
-  border-width: 1px !important;
-  border-radius: 10px !important;
-  font-size: 13px !important;
-  line-height: 1 !important;
-}
-
-.game-home {
-  grid-template-rows: 36px minmax(180px, 0.58fr) auto minmax(68px, 0.42fr) !important;
-  gap: 10px !important;
-}
-
-.home-title-card {
-  align-self: center !important;
-  max-height: 245px !important;
-  padding: 18px 14px !important;
-}
-
-.home-title-card h2 {
-  font-size: clamp(36px, 11vw, 48px) !important;
-}
-
-.home-actions {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
-  gap: 8px !important;
-  align-self: start !important;
-}
-
-.home-start-btn,
-.home-rule-btn {
-  min-height: 48px !important;
-  max-height: 54px !important;
-  border-radius: 14px !important;
-  font-size: 16px !important;
-}
-
-.home-rule-note {
-  grid-column: 1 / -1 !important;
-  margin: 0 !important;
-  min-height: 38px !important;
-  max-height: 46px !important;
-  padding: 7px 10px !important;
-  overflow: hidden !important;
-  border: 1px solid #111111 !important;
-  border-radius: 10px !important;
-  background: #fffdf6 !important;
-  color: #333333 !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  line-height: 1.25 !important;
-}
-
-.home-sub-actions {
-  grid-column: 1 / -1 !important;
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
-  gap: 8px !important;
-}
-
-.home-sub-actions .secondary-btn,
-.home-sub-actions .ghost-btn {
-  min-height: 40px !important;
-  border-width: 1px !important;
-  border-radius: 12px !important;
-  font-size: 13px !important;
-}
-
-.pvp-mode-grid {
-  grid-template-columns: 1fr !important;
-  align-content: start !important;
-}
-
-.pvp-mode-card {
-  grid-template-columns: 1fr !important;
-  grid-template-rows: auto auto auto !important;
-  min-width: 0 !important;
-  width: 100% !important;
-  min-height: 92px !important;
-  max-height: 116px !important;
-  word-break: normal !important;
-  overflow-wrap: normal !important;
-}
-
-.pvp-mode-card .mode-status,
-.pvp-mode-card strong,
-.pvp-mode-card small {
-  grid-column: 1 !important;
-  min-width: 0 !important;
-  writing-mode: horizontal-tb !important;
-  word-break: normal !important;
-}
-
-.pvp-mode-card strong {
-  white-space: nowrap !important;
-}
-
-.pvp-mode-card small {
-  -webkit-line-clamp: 1 !important;
-  max-height: 18px !important;
-}
-
-.lobby-summary {
-  grid-template-columns: minmax(0, 1fr) !important;
-}
-
-.lobby-summary > * {
-  grid-column: 1 / -1 !important;
-}
-
-body .lobby-page .lobby-summary > .room-code {
-  box-sizing: border-box !important;
-  display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr) !important;
-  width: 100% !important;
-  min-width: 100% !important;
-  max-width: 100% !important;
-  justify-self: stretch !important;
-}
-
-body .lobby-page .lobby-summary > .room-code strong {
-  width: auto !important;
-  min-width: 0 !important;
-  overflow: visible !important;
-}
-
-@media (max-width: 380px), (max-height: 810px) {
-  .game-home {
-    grid-template-rows: 34px minmax(165px, 0.54fr) auto minmax(54px, 0.46fr) !important;
-  }
-
-  .home-title-card {
-    max-height: 215px !important;
-    padding: 14px 12px !important;
-  }
-
-  .home-start-btn,
-  .home-rule-btn {
-    min-height: 46px !important;
-  }
-}
-
-/* ============================================================
-   UI STOP-BLEED PATCH V4
-   Fix current overlap/layout issues without changing game logic.
-   ============================================================ */
-
-.pvp-mode-card {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
-  grid-template-rows: auto auto !important;
-  align-items: start !important;
-  gap: 6px 10px !important;
-  min-height: 92px !important;
-  max-height: 116px !important;
-  padding: 12px !important;
-}
-
-.pvp-mode-card .mode-status {
-  position: static !important;
-  grid-column: 2 !important;
-  grid-row: 1 !important;
-  justify-self: end !important;
-  align-self: start !important;
-  width: auto !important;
-  max-width: 72px !important;
-  padding: 3px 8px !important;
-  white-space: nowrap !important;
-  transform: none !important;
-}
-
-.pvp-mode-card strong {
-  grid-column: 1 !important;
-  grid-row: 1 !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.pvp-mode-card small {
-  grid-column: 1 / -1 !important;
-  grid-row: 2 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.home-title-card {
-  transform: translateY(-8px) !important;
-}
-
-.home-actions {
-  grid-template-columns: 1.1fr 1fr !important;
-  align-self: start !important;
-}
-
-.home-rule-btn {
-  background: #ffffff !important;
-  color: #111111 !important;
-}
-
-.lobby-page {
-  position: relative !important;
-  grid-template-rows: minmax(0, 1fr) !important;
-}
-
-.lobby-summary {
-  height: 100% !important;
-  min-height: 0 !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  grid-template-rows: 52px 40px 38px minmax(0, 1fr) 56px !important;
-}
-
-.lobby-summary > .room-code {
-  grid-row: 1 !important;
-}
-
-.lobby-quick-actions {
-  grid-row: 2 !important;
-}
-
-.lobby-tabs {
-  grid-row: 3 !important;
-}
-
-.lobby-summary > section:not(.lobby-start-bar) {
-  grid-row: 4 !important;
-}
-
-.lobby-start-bar {
-  grid-row: 5 !important;
-  align-self: end !important;
-}
-
-.lobby-tab-characters {
-  display: grid !important;
-  grid-template-rows: 52px 40px 38px minmax(0, 1fr) 56px !important;
-  gap: 6px !important;
-}
-
-.lobby-tab-characters .lobby-summary {
-  display: grid !important;
-  grid-row: 1 / -1;
-}
-
-.lobby-tab-characters .lobby-summary > .room-code {
-  grid-row: 1 !important;
-}
-
-.lobby-tab-characters .lobby-quick-actions {
-  grid-row: 2 !important;
-}
-
-.lobby-tab-characters .lobby-tabs {
-  grid-row: 3 !important;
-}
-
-.lobby-tab-characters .character-picker {
-  grid-row: 4 !important;
-  min-height: 0 !important;
-  height: 100% !important;
-}
-
-.lobby-tab-characters .lobby-start-bar {
-  grid-row: 5 !important;
-}
-
-.lobby-tab-characters .lobby-summary > section:not(.lobby-start-bar):not(.character-picker) {
-  display: none !important;
-}
-
-body .lobby-page .lobby-summary > .room-code,
-body .lobby-tab-characters > .room-code {
-  box-sizing: border-box !important;
-  display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr) !important;
-  width: 100% !important;
-  min-width: 100% !important;
-  max-width: 100% !important;
-  height: 52px !important;
-  justify-self: stretch !important;
-}
+/* STOP-BLEED PATCH V2/V3/V4 moved to ./patches/stop-bleed.css */
 
 /* ============================================================
    UI TARGETED FIX 2026-06-22
@@ -4515,7 +3896,6 @@ body .lobby-tab-characters > .room-code {
 }
 
 .avatar-sprite,
-.self-avatar-img,
 .detail-avatar img,
 .character-art-thumb img,
 .character-detail-art img {
@@ -5169,7 +4549,7 @@ body .lobby-tab-characters > .room-code {
 
 .self-panel {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   border: 2px solid #172033;
@@ -5194,26 +4574,18 @@ body .lobby-tab-characters > .room-code {
   opacity: 0.72;
 }
 
-.self-avatar {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  border: 2px solid #172033;
-  border-radius: 12px;
-  background: #fffdf5;
-  font-size: 30px;
-  overflow: hidden;
+.self-panel.danger {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.18), 0 3px 0 rgba(220, 38, 38, 0.1);
 }
 
-.self-avatar-img {
-  transform: scale(1.24);
-  transform-origin: center center;
+.self-panel.danger .self-hp-bar i {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
 }
 
 .self-main {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -5231,28 +4603,59 @@ body .lobby-tab-characters > .room-code {
   white-space: nowrap;
 }
 
-.self-title span,
-.self-meta span {
+.self-title span {
   color: var(--color-text-body);
   font-size: 12px;
   font-weight: 800;
 }
 
+.self-hp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.self-hp-text {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--color-text-primary);
+}
+
+.self-shield-text {
+  font-size: 12px;
+  font-weight: 800;
+  color: #2563eb;
+}
+
+.self-dead-tag {
+  font-size: 11px;
+  font-weight: 800;
+  color: #dc2626;
+  border-radius: var(--radius-full);
+  padding: 1px 6px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
 .self-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 
 .self-meta span {
+  color: var(--color-text-body);
+  font-size: 11px;
+  font-weight: 800;
   border-radius: var(--radius-full);
-  padding: 2px 6px;
+  padding: 1px 6px;
   background: #f1f5f9;
   border: 1px solid #d7dee8;
 }
 
 .self-hp-bar {
-  height: 8px;
+  height: 10px;
   overflow: hidden;
   border-radius: var(--radius-full);
   background: var(--color-bg-neutral-dark);
@@ -5262,7 +4665,8 @@ body .lobby-tab-characters > .room-code {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #ef4444, #f97316);
+  background: linear-gradient(90deg, #f97316, #ef4444);
+  transition: width 0.3s ease;
 }
 
 .self-info-btn {
@@ -6209,31 +5613,33 @@ body .lobby-tab-characters > .room-code {
 }
 
 .self-panel.compact {
-  grid-template-columns: 52px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) 24px;
   gap: 6px;
   min-height: 60px;
   max-height: 64px;
   padding: 5px 6px;
 }
-.self-avatar { width: 64px; height: 64px; }
-.self-panel.compact .self-avatar {
-  width: 52px;
-  height: 52px;
-  font-size: 20px;
-}
 .self-title span { flex: 0 0 auto; }
 .self-meta { gap: 4px; }
 .self-panel.compact .self-main {
-  gap: 3px;
+  gap: 2px;
 }
 .self-panel.compact .self-title {
   gap: 5px;
 }
 .self-panel.compact .self-title strong,
-.self-panel.compact .self-title span,
-.self-panel.compact .self-meta span {
+.self-panel.compact .self-title span {
   font-size: 11px;
   line-height: 1.15;
+}
+.self-panel.compact .self-hp-row {
+  gap: 5px;
+}
+.self-panel.compact .self-hp-text {
+  font-size: 11px;
+}
+.self-panel.compact .self-shield-text {
+  font-size: 10px;
 }
 .self-panel.compact .self-meta {
   flex-wrap: nowrap;
@@ -6246,9 +5652,11 @@ body .lobby-tab-characters > .room-code {
   padding: 1px 5px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.15;
 }
 .self-panel.compact .self-hp-bar {
-  height: 6px;
+  height: 8px;
 }
 .self-panel.compact .self-info-btn {
   width: 24px;
@@ -6260,8 +5668,7 @@ body .lobby-tab-characters > .room-code {
   display: none;
 }
 
-.battle-bottom-bar .self-panel,
-.battle-bottom-bar .self-avatar {
+.battle-bottom-bar .self-panel {
   overflow: visible;
 }
 
@@ -6336,8 +5743,7 @@ body .lobby-tab-characters > .room-code {
   }
   .dice-action-slot strong { font-size: 13px; }
   .dice-action-slot small { font-size: 11px; }
-  .self-panel { grid-template-columns: auto minmax(0, 1fr); padding: 7px 8px; }
-  .self-avatar { width: 52px; height: 52px; }
+  .self-panel { grid-template-columns: minmax(0, 1fr); padding: 7px 8px; }
   .emote-panel { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .emote-btn { min-height: 34px; }
   .emote-btn small { display: none; }

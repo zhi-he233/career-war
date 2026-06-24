@@ -9,38 +9,33 @@
 
 import { computed } from "vue";
 import { useProfile } from "../composables/useProfile";
+import { useAuth } from "../composables/useAuth";
 import { getCharacterArt } from "../assets/art/characters/index";
+import { characters } from "@career-war/shared";
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+const emit = defineEmits<{
+  back: [];
+  openAuth: [];
+}>();
 
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
 
 const { profile, loading, error, refreshProfile, hasProfile } = useProfile();
+const { isLoggedIn } = useAuth();
 
 // ---------------------------------------------------------------------------
-// Career display name lookup (inline — avoids modifying shared)
+// Career display name — always from the canonical character table
 // ---------------------------------------------------------------------------
-
-const CAREER_DISPLAY_NAMES: Record<string, string> = {
-  boxer: "拳击手",
-  gunslinger: "神枪手",
-  vampire: "吸血鬼",
-  zhaoZilong: "赵子龙",
-  assassin: "刺客",
-  paladin: "圣骑士",
-  berserker: "狂战士",
-  stone_titan: "石巨人",
-  mountain_shield: "山盾卫",
-  fire_lord: "火领主",
-  crescent_moon: "月牙骑士",
-  war_knight: "战争骑士",
-  execution_assassin: "处刑刺客",
-  fearless_assassin: "无畏刺客",
-  self_destructor: "自爆兵",
-};
 
 function careerDisplayName(careerId: string): string {
-  return CAREER_DISPLAY_NAMES[careerId] ?? careerId;
+  const c = characters[careerId as keyof typeof characters];
+  return c?.name ?? "未知职业";
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +85,13 @@ function handleRetry() {
 <template>
   <div class="profile-page" role="region" aria-label="玩家档案页">
     <!-- ================================================================ -->
+    <!-- Back button                                                      -->
+    <!-- ================================================================ -->
+    <button class="profile-back-btn" type="button" aria-label="返回首页" @click="emit('back')">
+      ← 返回
+    </button>
+
+    <!-- ================================================================ -->
     <!-- Loading                                                          -->
     <!-- ================================================================ -->
     <div v-if="loading" class="state-card state-card--loading" aria-busy="true">
@@ -104,6 +106,16 @@ function handleRetry() {
       <span class="state-icon" aria-hidden="true">⚠️</span>
       <p class="state-text">{{ error }}</p>
       <button class="retry-btn" type="button" @click="handleRetry">重新读取</button>
+    </div>
+
+    <!-- ================================================================ -->
+    <!-- Guest locked — not logged in                                     -->
+    <!-- ================================================================ -->
+    <div v-else-if="!isLoggedIn" class="state-card state-card--guest">
+      <span class="state-icon state-icon--guest" aria-hidden="true">🔒</span>
+      <p class="state-text state-text--guest">登录后开启个人档案</p>
+      <p class="state-hint">登录后可查看等级、战绩、肉鸽记录和成就墙</p>
+      <button class="login-cta-btn" type="button" @click="emit('openAuth')">去登录</button>
     </div>
 
     <!-- ================================================================ -->
@@ -344,6 +356,15 @@ function handleRetry() {
         </div>
       </section>
     </template>
+
+    <!-- ================================================================ -->
+    <!-- Empty / fallback                                                 -->
+    <!-- ================================================================ -->
+    <div v-else class="state-card">
+      <span class="state-icon" aria-hidden="true">🎲</span>
+      <p class="state-text">暂无档案数据</p>
+      <p class="state-hint">请先登录或创建角色</p>
+    </div>
   </div>
 </template>
 
@@ -367,6 +388,31 @@ function handleRetry() {
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* ---- back button ---- */
+.profile-back-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  border: var(--cw-border-thin, 2px solid #111111);
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: #ffffff;
+  color: #111111;
+  font-family: var(--font-pixel, "Trebuchet MS", "Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif);
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 3px 0 rgba(17, 17, 17, 0.2);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.profile-back-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(17, 17, 17, 0.2);
 }
 
 /* =====================================================================
@@ -477,6 +523,47 @@ function handleRetry() {
 .retry-btn:active {
   transform: translateY(3px);
   box-shadow: 0 1px 0 rgba(17, 17, 17, 0.24);
+}
+
+/* ---- guest locked state ---- */
+.state-card--guest {
+  border-color: rgba(17, 17, 17, 0.12);
+  background:
+    linear-gradient(135deg, rgba(248, 250, 252, 0.78), rgba(241, 245, 249, 0.62)),
+    #f8fafc;
+  box-shadow: 0 2px 0 rgba(17, 17, 17, 0.08), 0 8px 16px rgba(15, 23, 42, 0.06);
+}
+
+.state-icon--guest {
+  border-color: rgba(17, 17, 17, 0.08);
+  background: #f1f5f9;
+  box-shadow: none;
+  font-size: 28px;
+}
+
+.state-text--guest {
+  color: #475569;
+}
+
+.login-cta-btn {
+  min-height: 42px;
+  min-width: 140px;
+  border: var(--cw-border-thin, 2px solid #111111);
+  border-radius: 10px;
+  padding: 10px 20px;
+  background: #111111;
+  color: #ffffff;
+  font-family: var(--font-pixel, "Trebuchet MS", "Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif);
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 4px 0 rgba(17, 17, 17, 0.28);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.login-cta-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 rgba(17, 17, 17, 0.28);
 }
 
 /* =====================================================================

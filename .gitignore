@@ -20,3 +20,4 @@ server/data/*.sqlite
 .codex/
 graphify-out/
 *.keep-*.css
+.claude/settings.local.json

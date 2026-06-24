@@ -15,7 +15,8 @@ const router = createRouter({
     { path: "/", name: "home", component: PassThrough },
     { path: "/modes", name: "modes", component: PassThrough },
     { path: "/room/:roomId", name: "lobby", component: PassThrough },
-    { path: "/room/:roomId/battle", name: "battle", component: PassThrough }
+    { path: "/room/:roomId/battle", name: "battle", component: PassThrough },
+    { path: "/profile", name: "profile", component: PassThrough }
   ]
 });
 

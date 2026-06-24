@@ -5,6 +5,7 @@ const emit = defineEmits<{
   selectPvp: [];
   selectPve: [];
   selectRoguelite: [];
+  selectProfile: [];
 }>();
 
 const showRules = ref(false);
@@ -28,6 +29,7 @@ const showRules = ref(false);
         <button class="secondary-btn" type="button" @click="emit('selectRoguelite')">肉鸽挑战</button>
         <button class="ghost-btn" type="button" @click="emit('selectPve')">人机练习</button>
       </div>
+      <button class="ghost-btn home-profile-btn" type="button" @click="emit('selectProfile')">玩家档案</button>
     </div>
   </section>
 </template>
@@ -35,5 +37,9 @@ const showRules = ref(false);
 <style scoped>
 .home-topline {
   /* kept as layout placeholder, styled only if needed later */
+}
+
+.home-profile-btn {
+  grid-column: 1 / -1;
 }
 </style>

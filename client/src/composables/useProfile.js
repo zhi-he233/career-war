@@ -50,23 +50,39 @@ export function useProfile() {
         const stopAuthWatch = watch(authLoading, (v) => {
             if (v)
                 return; // still loading
-            const username = currentUser.value?.username ?? "游客骰王";
-            refreshProfile(username);
+            if (currentUser.value) {
+                refreshProfile(currentUser.value.username);
+            }
+            else {
+                profile.value = null;
+                loading.value = false;
+            }
             stopAuthWatch();
         });
         // If auth already loaded (e.g. second call in the same session), fire now.
         if (!authLoading.value) {
             stopAuthWatch();
-            const username = currentUser.value?.username ?? "游客骰王";
-            refreshProfile(username);
+            if (currentUser.value) {
+                refreshProfile(currentUser.value.username);
+            }
+            else {
+                profile.value = null;
+                loading.value = false;
+            }
         }
     }
     // After initial load, react to login / logout.
+    // Guest users get null profile (locked state); logged-in users get a mock profile.
     watch(isLoggedIn, (loggedIn) => {
-        const username = loggedIn
-            ? currentUser.value?.username ?? "游客骰王"
-            : "游客骰王";
-        refreshProfile(username);
+        if (loggedIn) {
+            const username = currentUser.value?.username ?? "游客骰王";
+            refreshProfile(username);
+        }
+        else {
+            profile.value = null;
+            loading.value = false;
+            error.value = "";
+        }
     });
     return {
         /** Current player profile (null while loading or on error). */

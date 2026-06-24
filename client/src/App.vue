@@ -12,6 +12,7 @@ import PvpModePage from "./components/PvpModePage.vue";
 import LobbyPage from "./components/LobbyPage.vue";
 import BattlePage from "./components/BattlePage.vue";
 import AuthDialog from "./components/AuthDialog.vue";
+import ProfilePage from "./components/ProfilePage.vue";
 import { useAuth } from "./composables/useAuth";
 
 const ROOM_ID_KEY = "career-war-room-id";
@@ -299,6 +300,10 @@ function openRogueliteMode(): void {
   createRoom({ nickname, gameMode: "pve_roguelite" });
 }
 
+function openProfile(): void {
+  router.push("/profile");
+}
+
 function backToHome(): void {
   router.push("/");
 }
@@ -493,6 +498,12 @@ function getTransportName(transport: unknown): string {
       @select-pvp="openPvpMode"
       @select-pve="openPveMode"
       @select-roguelite="openRogueliteMode"
+      @select-profile="openProfile"
+    />
+    <ProfilePage
+      v-else-if="route.name === 'profile'"
+      @back="backToHome"
+      @open-auth="showAuthDialog = true"
     />
     <PvpModePage
       v-else-if="route.name === 'modes'"

@@ -1,20 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import {
-  ROGUELITE_BOSS_ABILITY_REWARDS,
-  ROGUELITE_BOSSES,
-  ROGUELITE_CHARACTER_SKILL_REWARDS,
-  ROGUELITE_ENEMIES,
-  ROGUELITE_GROWTH_REWARDS,
-  ROGUELITE_STAGE_SCALING,
-  ROGUELITE_STARTER_REWARDS
-} from "@career-war/shared";
 import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import { getCharacterArt } from "../assets/art/characters";
 import { useDiceAnimation } from "../composables/useDiceAnimation";
-import type { RollPhase, RollMode } from "../composables/useDiceAnimation";
+import type { RollMode } from "../composables/useDiceAnimation";
 import { useEmote } from "../composables/useEmote";
+import { useRogueliteViewModels } from "./battle/composables/useRogueliteViewModels";
+import { useBattleUiState } from "./battle/composables/useBattleUiState";
+import { useBattlePlayerHelpers } from "./battle/composables/useBattlePlayerHelpers";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 import EmotePanel from "./battle/EmotePanel.vue";
 import BattleLogDrawer from "./battle/BattleLogDrawer.vue";
@@ -26,7 +20,7 @@ import SelfPanel from "./battle/SelfPanel.vue";
 import RoguelitePanel from "./battle/RoguelitePanel.vue";
 import RogueliteRewardChoice from "./battle/RogueliteRewardChoice.vue";
 import RogueliteStatusCompact from "./battle/RogueliteStatusCompact.vue";
-import type { SeatViewModel, DicePanelProps, ActionSlotVM, SelfDestructOption, SelfPanelVM, RoguelitePanelVM, RoguelitePerkVM, RogueliteRewardOptionVM, RogueliteBossStateChip } from "./battle/types";
+import type { SeatViewModel, DicePanelProps, ActionSlotVM, SelfDestructOption, SelfPanelVM } from "./battle/types";
 
 const props = defineProps<{
   room: Room;
@@ -94,10 +88,22 @@ const activeHighlight = ref<CharacterHighlight | null>(null);
 const activeSkillHints = ref<SkillHint[]>([]);
 const rogueliteAlert = ref<{ text: string; key: string } | null>(null);
 let rogueliteAlertTimer: number | undefined;
-const showRuleGuide = ref(false);
-const showBattleLog = ref(false);
-const showRogueliteDetails = ref(false);
-const detailPlayerId = ref<string | null>(null);
+const {
+  showRuleGuide,
+  showBattleLog,
+  showRogueliteDetails,
+  detailPlayerId,
+  detailPlayer,
+  openPlayerDetail,
+  openPlayerDetailById,
+  closePlayerDetail,
+  toggleBattleLog,
+  closeBattleLog,
+  openRuleGuide,
+  closeRuleGuide,
+  openRogueliteDetails,
+  closeRogueliteDetails,
+} = useBattleUiState(room);
 const selectedActionSlot = ref<RollActionType | null>(null);
 let highlightTimer: number | undefined;
 let skillHintTimer: number | undefined;
@@ -110,13 +116,7 @@ const isPveMode = computed(() => room.value.gameMode === "pve_1v1");
 const isRogueliteMode = computed(() => room.value.gameMode === "pve_roguelite");
 const isSinglePlayerPveMode = computed(() => isPveMode.value || isRogueliteMode.value);
 const isBotTurn = computed(() => isSinglePlayerPveMode.value && Boolean(activePlayer.value?.isBot) && room.value.phase === "battle");
-const rogueliteState = computed(() => room.value.roguelite);
-const rogueliteRewardChoices = computed(() => rogueliteState.value?.rewardChoices ?? []);
-const rogueliteAppliedRewards = computed(() => rogueliteState.value?.appliedRewards ?? []);
-const currentRogueliteRound = computed(() => Math.floor(((rogueliteState.value?.stage ?? 1) - 1) / 3) + 1);
-const isBossRewardPhase = computed(() => room.value.phase === "reward" && rogueliteRewardChoices.value.length > 0 && rogueliteRewardChoices.value.every((reward) => isBossRewardType(reward.type)));
 const isBossStage = computed(() => room.value.phase === "battle" && rogueliteEnemyInfo.value?.stageType === "boss");
-const isRogueliteContinuePhase = computed(() => isRogueliteMode.value && room.value.phase === "roguelite_continue");
 const isRogueliteSuccess = computed(() => isRogueliteMode.value && room.value.phase === "gameOver" && room.value.winnerId === props.playerId);
 
 /** Unified click handler for any seat click from CombatBoard/BattleSeat.
@@ -209,26 +209,6 @@ const duoTeamSeats = computed<Record<string, SeatViewModel[]>>(() => {
   return result;
 });
 
-function buildSeatTags(player: Player): string[] {
-  if (isRogueliteMode.value && player.isBot && player.rogueliteEnemyInfo) {
-    const tags = [rogueliteEnemyTypeLabel(player)];
-    if (player.rogueliteEnemyInfo.skillNames?.[0]) tags.push(player.rogueliteEnemyInfo.skillNames[0]);
-    return tags;
-  }
-  const tags: string[] = [characterName(player.characterId)];
-  if (!isRogueliteMode.value || player.isBot) {
-    tags.push(`${summonerSkillName(player.summonerSkillId)}${player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : ""}`);
-  }
-  tags.push(...guardBadges(player));
-  return tags;
-}
-
-function buildDuoSeatTags(player: Player): string[] {
-  const tags: string[] = [characterName(player.characterId), summonerSkillName(player.summonerSkillId)];
-  tags.push(...guardBadges(player));
-  return tags;
-}
-
 function seatDamageEffect(player: Player): { key: string; value: number } | undefined {
   const effect = activeFloatingEffects.value.find((e) => e.playerId === player.id && e.type === "damage");
   return effect ? { key: effect.key, value: effect.value } : undefined;
@@ -320,9 +300,6 @@ const selfPanelVM = computed<SelfPanelVM | null>(() => {
   };
 });
 
-const showRogueliteRewardCenterPrompt = computed(() => Boolean(roguelitePanelVM.value.enabled && roguelitePanelVM.value.rewardPhase));
-const showRogueliteCompactStatus = computed(() => Boolean(roguelitePanelVM.value.enabled && !roguelitePanelVM.value.rewardPhase));
-
 function buildSelfStatusTags(player: Player): string[] {
   const tags: string[] = [];
   tags.push(`${playerStatus(player)} · ${selfActionStateText.value}`);
@@ -346,258 +323,6 @@ function selfEmote() {
   const e = lookupEmote(me.value?.id ?? "");
   return e ? { key: e.key, emoji: e.emoji } : undefined;
 }
-
-/** Pre-computed display data for all roguelite-mode UI panels. */
-const roguelitePanelVM = computed<RoguelitePanelVM>(() => ({
-  enabled: isRogueliteMode.value,
-  stage: rogueliteState.value?.stage ?? 1,
-  round: currentRogueliteRound.value,
-  stageType: rogueliteStageType.value,
-  stageTypeLabel: rogueliteStageTypeLabel.value,
-  phaseText: roguelitePhaseText(),
-  fatigue: room.value.phase === "battle" ? {
-    battleRound: rogueliteState.value?.battleRound ?? 1,
-    bonus: rogueliteState.value?.fatigueBonus ?? 0
-  } : undefined,
-
-  boss: buildRogueliteBossVM(),
-  enemy: buildRogueliteEnemyVM(),
-  perks: buildRoguelitePerksVM(),
-  resources: buildRogueliteResourcesVM(),
-  enemyTraits: buildRogueliteEnemyTraitsVM(),
-
-  rewardPhase: room.value.phase === "reward" ? buildRogueliteRewardPhaseVM() : undefined,
-  continuePhase: isRogueliteContinuePhase.value ? buildRogueliteContinuePhaseVM() : undefined
-}));
-
-function roguelitePhaseText(): string {
-  if (room.value.phase === "reward") return isBossRewardPhase.value ? "选择Boss能力" : "选择奖励";
-  if (room.value.phase === "roguelite_continue") return "选择结束或继续";
-  if (room.value.phase === "gameOver") return winnerText.value;
-  return "挑战中";
-}
-
-function buildRogueliteBossVM(): RoguelitePanelVM["boss"] {
-  if (!currentBossPlayer.value) return undefined;
-  const chips: RogueliteBossStateChip[] = [];
-  const state = currentBossPlayer.value.rogueliteBossState;
-  if (state) {
-    if ((state.charge as number) > 0) chips.push({ text: `蓄力层数：${state.charge}`, kind: "normal" });
-    if (state.enraged) chips.push({ text: "狂暴中", kind: "enraged" });
-    if (state.guarding) chips.push({ text: "架盾中", kind: "guarding" });
-    if (state.bloodSacrificeUsed) chips.push({ text: "血祭已触发", kind: "normal" });
-    if (currentBossPlayer.value.rogueliteBossId === "boss_god_berserker") {
-      chips.push({ text: state.t15 ? "阈值 15" : "阈值 15 已破", kind: state.t15 ? "normal" : "broken" });
-      chips.push({ text: state.t10 ? "阈值 10" : "阈值 10 已破", kind: state.t10 ? "normal" : "broken" });
-      chips.push({ text: state.t5 ? "阈值 5" : "阈值 5 已破", kind: state.t5 ? "normal" : "broken" });
-      chips.push({ text: state.t1 ? "阈值 1" : "阈值 1 已破", kind: state.t1 ? "normal" : "broken" });
-      if (state.dyingAfterAttack) chips.push({ text: "濒死一击中", kind: "enraged" });
-    }
-  }
-  return {
-    name: currentBossPlayer.value.nickname,
-    typeLabel: rogueliteEnemyTypeLabel(currentBossPlayer.value),
-    hp: currentBossPlayer.value.hp,
-    maxHp: currentBossPlayer.value.maxHp,
-    shield: currentBossPlayer.value.shield,
-    skills: currentBossSkills.value,
-    stateChips: chips
-  };
-}
-
-function buildRogueliteEnemyVM(): RoguelitePanelVM["enemy"] {
-  const info = rogueliteEnemyInfo.value;
-  if (!info || currentBossPlayer.value || room.value.phase !== "battle") return undefined;
-  const bot = room.value.players.find((p) => p.isBot);
-  return {
-    name: bot?.nickname ?? "敌人",
-    typeLabel: rogueliteEnemyTypeLabel(bot),
-    hpBonus: info.hpBonus,
-    shieldBonus: info.shieldBonus ?? 0,
-    damageBonus: info.damageBonus ?? 0,
-    description: info.description,
-    skills: info.skillNames ?? []
-  };
-}
-
-function buildRogueliteResourcesVM(): RoguelitePanelVM["resources"] {
-  const m = me.value;
-  if (!m || room.value.phase !== "battle") return undefined;
-  const res: NonNullable<RoguelitePanelVM["resources"]> = {};
-  const hasFateTokens = m.roguelitePerkStacks?.["fate_tokens"];
-  if (hasFateTokens) res.fateTokens = { current: m.rogueliteFateTokens ?? 0, max: 3 };
-  if ((m.roguelitePerkStacks?.["low_roll_charge"])) res.lowRollCharge = m.rogueliteLowRollCharge ?? 0;
-  if (m.roguelitePerkStacks?.["lucky_floor"]) res.consecutiveLowRolls = { current: m.rogueliteConsecutiveLowRolls ?? 0, max: 2 };
-  if (m.roguelitePerkStacks?.["shield_overload"]) res.shieldOverloadUsed = m.rogueliteShieldOverloadUsed ?? false;
-  return Object.keys(res).length > 0 ? res : undefined;
-}
-
-function buildRogueliteEnemyTraitsVM(): string[] | undefined {
-  if (room.value.phase !== "battle") return undefined;
-  const bot = room.value.players.find(p => p.isBot);
-  if (!bot) return undefined;
-  const stateSkills = bot.rogueliteEnemyInfo?.skillNames?.filter(Boolean) ?? [];
-  if (stateSkills.length > 0) return stateSkills;
-  if (!bot.rogueliteBossId) return undefined;
-  const balanceSkills = rogueliteEnemyMechanicSkills(bot.rogueliteBossId);
-  return balanceSkills.length > 0 ? balanceSkills : undefined;
-}
-
-function buildRoguelitePerksVM(): RoguelitePanelVM["perks"] {
-  return {
-    growth: rogueliteGrowthPerks.value.map((p) => ({
-      id: p.perkId, name: p.def.name, level: p.level, description: p.def.perLevelDesc, category: "growth" as const
-    })),
-    skills: rogueliteCharacterSkills.value.map((s) => ({
-      id: s.skillId, name: s.def.name, level: s.level, description: s.def.perLevelDesc, category: "skill" as const
-    })),
-    boss: rogueliteBossPerks.value.map((p) => ({
-      id: p.perkId, name: p.def.name, level: p.level, description: p.def.perLevelDesc, category: "boss" as const
-    }))
-  };
-}
-
-function buildRogueliteRewardPhaseVM(): NonNullable<RoguelitePanelVM["rewardPhase"]> {
-  const summary = rogueliteState.value?.lastStageSummary;
-  return {
-    isBoss: isBossRewardPhase.value,
-    title: isBossRewardPhase.value ? "选择 Boss 能力" : "选择奖励",
-    hint: isBossRewardPhase.value ? "选择 1 个 Boss 能力，完成挑战" : "选择 1 个奖励后进入下一关",
-    summary: summary ? {
-      defeatedName: summary.defeatedEnemyName,
-      postBattleHeal: summary.postBattleHeal ?? 0,
-      hpAfterHeal: summary.hpAfterHeal,
-      maxHp: summary.maxHp,
-      isBoss: summary.isBoss ?? false
-    } : undefined,
-    options: rogueliteRewardChoices.value.map((r) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      isBoss: isBossRewardType(r.type),
-      rarity: rogueliteRewardRarity(r.type),
-      tags: rogueliteRewardTags(r.type),
-      icon: rogueliteRewardIcon(r.type)
-    }))
-  };
-}
-
-function buildRogueliteContinuePhaseVM(): NonNullable<RoguelitePanelVM["continuePhase"]> {
-  return {
-    hint: `你已击败第 ${rogueliteState.value?.stage ?? 1} 关 Boss！选择结束挑战或继续前进。`,
-    nextStage: rogueliteState.value?.stage ?? 1
-  };
-}
-
-const rogueliteStageType = computed(() => {
-  const liveStageType = rogueliteEnemyInfo.value?.stageType;
-  if (liveStageType) return liveStageType;
-  const stage = rogueliteState.value?.stage ?? 1;
-  if (stage % ROGUELITE_STAGE_SCALING.bossInterval === 0) return "boss";
-  if (stage % ROGUELITE_STAGE_SCALING.bossInterval === 2 && stage >= 5) return "elite";
-  return "normal";
-});
-
-const rogueliteStageTypeLabel = computed(() => {
-  if (rogueliteStageType.value === "boss") return "Boss 战";
-  if (rogueliteStageType.value === "elite") return "精英关";
-  return "普通关";
-});
-
-const rogueliteEnemyInfo = computed(() => {
-  if (!isRogueliteMode.value || room.value.phase !== "battle") return undefined;
-  return room.value.players.find((p) => p.isBot)?.rogueliteEnemyInfo;
-});
-
-type RogueliteDisplayDraft = {
-  type: string;
-  name: string;
-  description: string;
-};
-type PerkDisplay = { name: string; category: "growth" | "boss"; perLevelDesc: string };
-type SkillDisplay = { name: string; perLevelDesc: string };
-
-const ROGUELITE_GROWTH_DISPLAY_DRAFTS: readonly RogueliteDisplayDraft[] = [
-  ...ROGUELITE_GROWTH_REWARDS,
-  ...ROGUELITE_STARTER_REWARDS
-];
-const ROGUELITE_BOSS_DISPLAY_DRAFTS: readonly RogueliteDisplayDraft[] = ROGUELITE_BOSS_ABILITY_REWARDS;
-const ROGUELITE_SKILL_DISPLAY_DRAFTS: readonly RogueliteDisplayDraft[] = ROGUELITE_CHARACTER_SKILL_REWARDS;
-const ROGUELITE_GROWTH_REWARD_TYPES = new Set<string>(ROGUELITE_GROWTH_DISPLAY_DRAFTS.map((reward) => reward.type));
-const ROGUELITE_BOSS_REWARD_TYPES = new Set<string>(ROGUELITE_BOSS_DISPLAY_DRAFTS.map((reward) => reward.type));
-const ROGUELITE_SKILL_REWARD_TYPES = new Set<string>(ROGUELITE_SKILL_DISPLAY_DRAFTS.map((reward) => reward.type));
-
-function createPerkDisplay(): Record<string, PerkDisplay> {
-  const result: Record<string, PerkDisplay> = {};
-  for (const reward of ROGUELITE_GROWTH_DISPLAY_DRAFTS) {
-    result[reward.type] = { name: reward.name, category: "growth", perLevelDesc: reward.description };
-  }
-  for (const reward of ROGUELITE_BOSS_DISPLAY_DRAFTS) {
-    result[reward.type] = { name: reward.name, category: "boss", perLevelDesc: reward.description };
-  }
-  const heavyPunch = result.heavy_punch_training;
-  if (heavyPunch) result.heavy_punch = heavyPunch;
-  return result;
-}
-
-function createSkillDisplay(): Record<string, SkillDisplay> {
-  const result: Record<string, SkillDisplay> = {};
-  for (const reward of ROGUELITE_SKILL_DISPLAY_DRAFTS) {
-    result[reward.type] = { name: reward.name, perLevelDesc: reward.description };
-  }
-  return result;
-}
-
-const PERK_DISPLAY = createPerkDisplay();
-const SKILL_DISPLAY = createSkillDisplay();
-
-const rogueliteGrowthPerks = computed(() => {
-  const stacks = me.value?.roguelitePerkStacks ?? {};
-  return Object.entries(stacks)
-    .filter(([perkId]) => PERK_DISPLAY[perkId]?.category === "growth")
-    .map(([perkId, level]) => ({ perkId, level, def: PERK_DISPLAY[perkId]! }))
-    .filter((p) => p.def)
-    .sort((a, b) => a.def.name.localeCompare(b.def.name));
-});
-
-const rogueliteBossPerks = computed(() => {
-  const stacks = me.value?.roguelitePerkStacks ?? {};
-  return Object.entries(stacks)
-    .filter(([perkId]) => PERK_DISPLAY[perkId]?.category === "boss")
-    .map(([perkId, level]) => ({ perkId, level, def: PERK_DISPLAY[perkId]! }))
-    .filter((p) => p.def)
-    .sort((a, b) => a.def.name.localeCompare(b.def.name));
-});
-
-const rogueliteCharacterSkills = computed(() => {
-  const stacks = me.value?.rogueliteSkillStacks ?? {};
-  return Object.entries(stacks)
-    .filter(([skillId]) => SKILL_DISPLAY[skillId])
-    .map(([skillId, level]) => ({ skillId, level, def: SKILL_DISPLAY[skillId]! }))
-    .sort((a, b) => a.def.name.localeCompare(b.def.name));
-});
-
-const hasAnyRoguelitePerks = computed(() => rogueliteGrowthPerks.value.length > 0 || rogueliteCharacterSkills.value.length > 0 || rogueliteBossPerks.value.length > 0);
-
-function rogueliteEnemyMechanicSkills(id: string): string[] {
-  const boss = ROGUELITE_BOSSES.find((item) => item.id === id);
-  if (boss) return [...boss.skills];
-  const enemy = ROGUELITE_ENEMIES.find((item) => item.id === id);
-  if (!enemy || enemy.id === "normal") return [];
-  return [...enemy.skills];
-}
-
-const currentBossPlayer = computed(() => {
-  if (!isRogueliteMode.value || room.value.phase !== "battle") return undefined;
-  return room.value.players.find((p) => p.isBot && p.rogueliteEnemyInfo?.stageType === "boss");
-});
-
-const currentBossSkills = computed(() => {
-  if (!currentBossPlayer.value) return [];
-  if (currentBossPlayer.value.rogueliteEnemyInfo?.skillNames?.length) return currentBossPlayer.value.rogueliteEnemyInfo.skillNames;
-  if (!currentBossPlayer.value.rogueliteBossId) return [];
-  return rogueliteEnemyMechanicSkills(currentBossPlayer.value.rogueliteBossId);
-});
 const activeControllerId = computed(() => room.value.activeControllerId);
 const isMyDuoControllerTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId);
 const selectedActor = computed(() => room.value.players.find((player) => player.id === room.value.selectedActorId));
@@ -608,6 +333,45 @@ const duoTeams = computed(() => [
 const isMyTurn = computed(() => !isDuoMode.value && activePlayer.value?.id === props.playerId && room.value.phase === "battle");
 const isMyDuoActionTurn = computed(() => isDuoMode.value && room.value.phase === "battle" && activeControllerId.value === props.playerId && Boolean(selectedActor.value));
 const me = computed(() => room.value.players.find((player) => player.id === props.playerId));
+
+const {
+  roguelitePanelVM,
+  isBossRewardPhase,
+  rogueliteRewardChoices,
+  rogueliteEnemyInfo,
+  showRogueliteRewardCenterPrompt,
+  showRogueliteCompactStatus,
+  rogueliteEnemyTypeLabel,
+  getRogueliteAlertText,
+} = useRogueliteViewModels(room, me, props.playerId);
+
+const {
+  characterName,
+  characterFor,
+  summonerSkillName,
+  hpPercent,
+  zhaoZilongHitText,
+  playerFallbackMark,
+  playerNumber,
+  displayCharacterName,
+  hasInvincible,
+  playerStatus,
+  lastRollText,
+  guardBadges,
+  isProtectedByGuardingMountainShield,
+  buildSeatTags,
+  buildDuoSeatTags,
+} = useBattlePlayerHelpers({
+  room,
+  characters: props.characters,
+  isDuoMode,
+  isRogueliteMode,
+  rogueliteEnemyTypeLabel,
+  activePlayer,
+  pendingRoll: computed(() => room.value.pendingRoll),
+  pendingRollDecision: computed(() => room.value.pendingRollDecision),
+});
+
 const selectedTargetId = computed(() => {
   if (isDuoMode.value) {
     return selectedActor.value?.selectedTargetId;
@@ -712,7 +476,6 @@ const rematchControllerIds = computed(() => {
 });
 const rematchReadyCount = computed(() => rematchParticipants.value.filter((participant) => rematchReadyIds.value.includes(participant.id)).length);
 const isAllRematchReady = computed(() => rematchParticipants.value.length > 0 && rematchReadyCount.value >= rematchParticipants.value.length);
-const detailPlayer = computed(() => room.value.players.find((player) => player.id === detailPlayerId.value));
 const selectedTargetText = computed(() => selectedTarget.value ? `当前目标：${selectedTarget.value.nickname}` : "当前目标：未选择");
 const actionStageText = computed(() => {
   if (room.value.phase === "reward") return isBossRewardPhase.value ? "请选择一个 Boss 能力" : "请选择一个奖励";
@@ -843,32 +606,6 @@ watch(
     }
   }
 );
-
-function getRogueliteAlertText(msg: string): string | null {
-  if (msg.includes("战后恢复至满血")) return `🎉 战后恢复！满血！`;
-  if (msg.includes("战后恢复")) return `💚 战后恢复！`;
-  if (msg.includes("Boss 出现")) return "⚠  Boss 出现！";
-  if (msg.includes("蓄力重拳")) return "💥 蓄力重拳！";
-  if (msg.includes("进入狂暴")) return "🔥 狂暴！";
-  if (msg.includes("凝聚血盾")) return "🛡 血盾！";
-  if (msg.includes("发动血祭")) return "🩸 血祭！";
-  if (msg.includes("吸取生命")) return "🩸 吸血！";
-  if (msg.includes("架起巨盾")) return "🛡 架盾！";
-  if (msg.includes("盾击反击")) return "⚔ 盾击反击！";
-  if (msg.includes("狂怒之血")) return "😡 狂怒之血！";
-  if (msg.includes("龙胆之力")) return "🐉 龙胆之力！";
-  if (msg.includes("枪手") && msg.includes("三倍")) return "💥 三倍射击！";
-  if (msg.includes("血祭回复")) return "🩸 血祭回复！";
-  if (msg.includes("自爆")) return "💣 自爆！";
-  if (msg.includes("处决")) return "⚔ 处决！";
-  if (msg.includes("碾压")) return "🪨 巨岩碾压！";
-  if (msg.includes("开始蓄力")) return "⚡ 蓄力！";
-  if (msg.includes("生命阈值")) return "🛡 生命阈值！";
-  if (msg.includes("濒死不倒")) return "💀 濒死一击！";
-  if (msg.includes("燃尽最后生命")) return "⚰ 神狂战倒下！";
-  if (msg.includes("狂战增伤")) return "💢 狂战增伤！";
-  return null;
-}
 
 const visibleRoll = computed(() => {
   if (rollMode.value === "guard") return undefined;
@@ -1044,91 +781,6 @@ const canRollForDuo = computed(() => {
   return false;
 });
 
-function characterName(id: string | undefined): string {
-  return props.characters.find((character) => character.id === id)?.name ?? "未知职业";
-}
-
-function displayCharacterName(player: Player): string {
-  if (isRogueliteMode.value && player.isBot && player.rogueliteEnemyInfo) return rogueliteEnemyTypeLabel(player);
-  return characterName(player.characterId);
-}
-
-function rogueliteEnemyTypeLabel(player: Player | undefined): string {
-  const stageType = player?.rogueliteEnemyInfo?.stageType;
-  if (stageType === "boss") return "Boss";
-  if (stageType === "elite") return "精英";
-  if (stageType === "normal") return "小怪";
-  return "敌人";
-}
-
-function characterFor(id: string | undefined): Character | undefined {
-  return props.characters.find((character) => character.id === id);
-}
-
-function summonerSkillName(id: SummonerSkillId | undefined): string {
-  if (id === "first_aid") return "急救术";
-  if (id === "iron_wall") return "铁壁";
-  if (id === "fate_reroll") return "命运重掷";
-  if (id === "last_stand") return "破釜";
-  return "幸运骰";
-}
-
-function hpPercent(player: Player): number {
-  if (player.maxHp <= 0) return 0;
-  return Math.max(0, Math.min(100, (player.hp / player.maxHp) * 100));
-}
-
-function playerStatus(player: Player): string {
-  if (!player.isOnline) return "离线";
-  if (player.isDead) return "死亡";
-  if (player.characterId === "mountain_shield" && player.guarding) return "架盾";
-  if (pendingRoll.value?.playerId === player.id) return "待继续";
-  if (player.id === activePlayer.value?.id) return "行动中";
-  if (hasInvincible(player)) return "无敌";
-  return "待机";
-}
-
-function guardBadges(player: Player): string[] {
-  if (player.characterId === "mountain_shield" && player.guarding) {
-    return ["架盾", "护甲+1", "团体护甲+2"];
-  }
-  if (isDuoMode.value && isProtectedByGuardingMountainShield(player)) {
-    return ["受架盾保护", "团体护甲+2"];
-  }
-  return [];
-}
-
-function isProtectedByGuardingMountainShield(player: Player): boolean {
-  if (!player.teamId || player.characterId === "mountain_shield") return false;
-  return room.value.players.some((item) => item.characterId === "mountain_shield" && item.guarding && !item.isDead && item.teamId === player.teamId);
-}
-
-function hasInvincible(player: Player): boolean {
-  return room.value.effects.some((effect) => effect.type === "invincible" && effect.sourcePlayerId === player.id);
-}
-
-function playerFallbackMark(player: Player): string {
-  const label = characterName(player.characterId).trim();
-  return Array.from(label)[0] ?? "?";
-}
-
-function playerNumber(player: Player): number {
-  const index = room.value.players.findIndex((item) => item.id === player.id);
-  return index < 0 ? 0 : index + 1;
-}
-
-function lastRollText(player: Player): string {
-  if (pendingRollDecision.value?.actorId === player.id) return `🎲 ${pendingRollDecision.value.currentRoll}`;
-  const rollEvent = room.value.battleLog.find((event) => event.type === "roll" && event.playerId === player.id && event.dice?.length);
-  if (!rollEvent?.dice?.length) return "";
-  return `🎲 ${rollEvent.dice.join("、")}`;
-}
-
-function zhaoZilongHitText(player: Player): string {
-  if (player.characterId !== "zhaoZilong") return "";
-  return `龙胆：${player.zhaoZilongHitCount ?? 0}/3`;
-}
-
 function canSelectTarget(player: Player): boolean {
   return isMyTurn.value && !pendingRoll.value && !pendingRollDecision.value && !pendingGuardCheck.value && player.id !== props.playerId && !player.isDead;
 }
@@ -1166,18 +818,6 @@ function handleDuoSeatClick(player: Player): void {
 function selectDuoActor(player: Player): void {
   if (!canSelectDuoActor(player)) return;
   emit("selectActor", player.id);
-}
-
-function openPlayerDetail(player: Player): void {
-  detailPlayerId.value = player.id;
-}
-
-function openPlayerDetailById(playerId: string): void {
-  detailPlayerId.value = playerId;
-}
-
-function closePlayerDetail(): void {
-  detailPlayerId.value = null;
 }
 
 function isRecentDamageTarget(player: Player): boolean {
@@ -1253,41 +893,6 @@ function confirmSelfDestructAmount(amount: number): void {
   confirmDecision("character_skill", undefined, amount);
 }
 
-function isBossRewardType(type: string): boolean {
-  return ROGUELITE_BOSS_REWARD_TYPES.has(type);
-}
-
-function isGrowthRewardType(type: string): boolean {
-  return ROGUELITE_GROWTH_REWARD_TYPES.has(type);
-}
-
-function isRogueliteSkillRewardType(type: string): boolean {
-  return ROGUELITE_SKILL_REWARD_TYPES.has(type);
-}
-
-function rogueliteRewardRarity(type: string): RogueliteRewardOptionVM["rarity"] {
-  if (isBossRewardType(type)) return "legendary";
-  if (isRogueliteSkillRewardType(type)) return "epic";
-  if (type.startsWith("starter_")) return "rare";
-  return "common";
-}
-
-function rogueliteRewardTags(type: string): string[] {
-  if (isBossRewardType(type)) return ["Boss", "Endgame"];
-  if (isRogueliteSkillRewardType(type)) return ["Skill", "Build"];
-  if (type.startsWith("starter_")) return ["Starter", "Core"];
-  if (isGrowthRewardType(type)) return ["Growth", "Boost"];
-  return ["Loot"];
-}
-
-function rogueliteRewardIcon(type: string): string {
-  if (isBossRewardType(type)) return "👑";
-  if (isRogueliteSkillRewardType(type)) return "✦";
-  if (type.startsWith("starter_")) return "◆";
-  if (isGrowthRewardType(type)) return "▲";
-  return "★";
-}
-
 function isSummonerSkillId(value: unknown): value is SummonerSkillId {
   return value === "lucky_plus_one" || value === "first_aid" || value === "iron_wall" || value === "fate_reroll" || value === "last_stand";
 }
@@ -1329,14 +934,6 @@ function onChooseRogueliteReward(rewardId: string): void {
   if (!reward) return;
   chooseRogueliteReward(reward);
   closeRogueliteDetails();
-}
-
-function openRogueliteDetails(): void {
-  showRogueliteDetails.value = true;
-}
-
-function closeRogueliteDetails(): void {
-  showRogueliteDetails.value = false;
 }
 
 function chooseRogueliteContinue(choice: "finish" | "continue"): void {
@@ -1504,8 +1101,8 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
     <div class="battle-phone-shell">
       <section class="battle-layout battle-layout-fixed">
         <section class="battle-tools">
-          <button class="ghost-btn small-btn" type="button" @click="showRuleGuide = true">规则 / 职业说明</button>
-          <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="showBattleLog = !showBattleLog">战斗日志</button>
+          <button class="ghost-btn small-btn" type="button" @click="openRuleGuide">规则 / 职业说明</button>
+          <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="toggleBattleLog">战斗日志</button>
         </section>
 
         <RogueliteStatusCompact
@@ -1700,13 +1297,13 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       @close="closePlayerDetail"
     />
 
-    <RuleGuideDialog v-if="showRuleGuide" :characters="characters" @close="showRuleGuide = false" />
+    <RuleGuideDialog v-if="showRuleGuide" :characters="characters" @close="closeRuleGuide" />
 
     <BattleLogDrawer
       :visible="showBattleLog"
       :log="room.battleLog"
       :newest-event-id="lastEvent?.id ?? ''"
-      @close="showBattleLog = false"
+      @close="closeBattleLog"
     />
 
     <transition name="alert-pop">

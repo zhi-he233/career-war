@@ -8,6 +8,7 @@
 // createMockProfile() with a fetch call and delete the mock helpers below.
 // ---------------------------------------------------------------------------
 
+import { characterList } from "@career-war/shared";
 import type {
   PlayerProfile,
   ProfileAchievement,
@@ -21,10 +22,6 @@ import type {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function pick<T>(items: readonly T[]): T {
-  return items[Math.floor(Math.random() * items.length)]!;
-}
 
 function seededFromUsername(username: string): number {
   // Simple hash so the same username produces stable mock data
@@ -53,20 +50,10 @@ const TITLES = [
   "无双骰王",
 ] as const;
 
-const CAREER_IDS = [
-  "boxer",
-  "gunslinger",
-  "vampire",
-  "zhaoZilong",
-  "assassin",
-  "paladin",
-  "berserker",
-  "stone_titan",
-  "mountain_shield",
-  "fire_lord",
-  "crescent_moon",
-  "war_knight",
-] as const;
+/** Career ID pool derived from the canonical character table (implemented only). */
+const CAREER_IDS: readonly string[] = characterList
+  .filter((c) => c.isImplemented)
+  .map((c) => c.id);
 
 const MOCK_ACHIEVEMENTS: ProfileAchievement[] = [
   {

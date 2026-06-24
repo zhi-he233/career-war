@@ -1199,8 +1199,8 @@ function applyRogueliteReward(player: Room["players"][number], reward: Roguelite
     return;
   }
   if (reward.type === "starter_recovery") {
-    player.maxHp += 4;
-    player.hp = Math.min(player.maxHp, player.hp + 4);
+    player.maxHp += 8;
+    player.hp = Math.min(player.maxHp, player.hp + 8);
     player.roguelitePostBattleHealBonus = (player.roguelitePostBattleHealBonus ?? 0) + 5;
     return;
   }
@@ -1233,7 +1233,7 @@ function applyRogueliteReward(player: Room["players"][number], reward: Roguelite
   }
   if (reward.type === "battle_instinct") {
     player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + 1;
-    player.roguelitePostBattleHealBonus = (player.roguelitePostBattleHealBonus ?? 0) + 3;
+    player.roguelitePostBattleHealBonus = (player.roguelitePostBattleHealBonus ?? 0) + 2;
     player.maxHp += 2;
     player.hp = Math.min(player.maxHp, player.hp + 2);
     return;
@@ -1246,12 +1246,13 @@ function applyRogueliteReward(player: Room["players"][number], reward: Roguelite
   }
   // New perks
   if (reward.type === "vitality_boost") {
-    player.maxHp += reward.value;
-    player.hp = Math.min(player.maxHp, player.hp + reward.value);
+    player.maxHp += 6;
+    player.hp = Math.min(player.maxHp, player.hp + 4);
     return;
   }
   if (reward.type === "shield_wall") {
-    player.rogueliteStartShield = (player.rogueliteStartShield ?? 0) + reward.value;
+    player.shield += 4;
+    player.rogueliteStartShield = (player.rogueliteStartShield ?? 0) + 4;
     return;
   }
   if (reward.type === "first_strike") {
@@ -1259,11 +1260,15 @@ function applyRogueliteReward(player: Room["players"][number], reward: Roguelite
     return;
   }
   if (reward.type === "low_hp_armor") {
-    player.rogueliteLowHpArmor = (player.rogueliteLowHpArmor ?? 0) + reward.value;
+    player.rogueliteLowHpArmor = (player.rogueliteLowHpArmor ?? 0) + 2;
     return;
   }
   if (reward.type === "kill_heal") {
-    player.rogueliteKillHeal = (player.rogueliteKillHeal ?? 0) + reward.value;
+    // Perk "战利品": on-kill upgrades a random growth perk (engine handles trigger)
+    return;
+  }
+  if (reward.type === "drink_blood") {
+    // Engine hook in finishAction: heal 3 on direct attack HP damage
     return;
   }
   if (reward.type === "comeback") {

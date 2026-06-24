@@ -243,7 +243,7 @@ export declare const ROGUELITE_BOSSES: readonly [{
 }];
 export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly name: "重拳训练";
-    readonly description: "伤害 +1，生命上限 +2，回复 2 生命。";
+    readonly description: "伤害 +1，生命上限 +2，回复 3。";
     readonly type: "heavy_punch_training";
     readonly value: 1;
     readonly tag: "burst";
@@ -255,7 +255,7 @@ export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly tag: "armor";
 }, {
     readonly name: "战斗喘息";
-    readonly description: "最大生命 +3，获得时回复最大生命 40%，最低 8 点。";
+    readonly description: "最大生命 +5，获得时回复最大生命 40%，最低 8 点。";
     readonly type: "breathing_recovery";
     readonly value: 40;
     readonly tag: "heal";
@@ -267,26 +267,26 @@ export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly tag: "heal";
 }, {
     readonly name: "战斗本能";
-    readonly description: "伤害 +1，生命上限 +2，战后额外恢复 +3。";
+    readonly description: "伤害 +1，生命上限 +2，战后额外恢复 +2。";
     readonly type: "battle_instinct";
     readonly value: 1;
     readonly tag: "burst";
 }, {
     readonly name: "防守训练";
-    readonly description: "生命上限 +4，之后每关开局护盾 +3。";
+    readonly description: "生命上限 +4，每关开始护盾 +3。";
     readonly type: "guard_training";
     readonly value: 4;
     readonly tag: "shield";
 }, {
     readonly name: "生命强化";
-    readonly description: "生命上限 +4，并回复 4 生命。";
+    readonly description: "生命上限 +6，并回复 4 生命。";
     readonly type: "vitality_boost";
-    readonly value: 4;
+    readonly value: 6;
     readonly tag: "armor";
     readonly maxStacks: 3;
 }, {
     readonly name: "护盾壁垒";
-    readonly description: "获得 4 护盾，之后每关开局护盾 +2。";
+    readonly description: "获得 4 护盾，每关开始护盾 +4。";
     readonly type: "shield_wall";
     readonly value: 4;
     readonly tag: "shield";
@@ -300,23 +300,23 @@ export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly maxStacks: 3;
 }, {
     readonly name: "绝境护甲";
-    readonly description: "生命低于一半时护甲 +1。";
+    readonly description: "生命低于一半时护甲 +2。";
     readonly type: "low_hp_armor";
-    readonly value: 1;
+    readonly value: 2;
     readonly tag: "low_hp";
     readonly maxStacks: 3;
 }, {
     readonly name: "战利品";
-    readonly description: "击败敌人后回复 3 生命。";
+    readonly description: "击败敌人后升级一个成长。";
     readonly type: "kill_heal";
-    readonly value: 3;
+    readonly value: 1;
     readonly tag: "heal";
     readonly maxStacks: 3;
 }, {
     readonly name: "饮血";
-    readonly description: "每次造成直接攻击伤害后，回复 1 点生命。";
+    readonly description: "直接攻击造成生命伤害后回复 3 生命。";
     readonly type: "drink_blood";
-    readonly value: 1;
+    readonly value: 3;
     readonly tag: "heal";
     readonly maxStacks: 3;
 }, {
@@ -328,9 +328,9 @@ export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly maxStacks: 2;
 }, {
     readonly name: "低点防御";
-    readonly description: "投到 1 或 2 时获得 2 护盾。";
+    readonly description: "投到 1 或 2 时获得 3 护盾。";
     readonly type: "low_roll_defense";
-    readonly value: 2;
+    readonly value: 3;
     readonly tag: "shield";
     readonly maxStacks: 3;
 }, {
@@ -342,7 +342,7 @@ export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly maxStacks: 3;
 }, {
     readonly name: "护盾过载";
-    readonly description: "每关一次，攻击时消耗最多 6 护盾并追加一半为伤害。";
+    readonly description: "每关一次，攻击时消耗最多 10 护盾并追加一半为伤害。";
     readonly type: "shield_overload";
     readonly value: 1;
     readonly tag: "shield";
@@ -356,7 +356,7 @@ export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly maxStacks: 1;
 }, {
     readonly name: "命运筹码";
-    readonly description: "投到 1 获得筹码，3 个筹码可让骰点 +1。";
+    readonly description: "投到 1/2 获得筹码，3 个筹码可让骰点 +1。";
     readonly type: "fate_tokens";
     readonly value: 1;
     readonly tag: "dice";
@@ -370,7 +370,7 @@ export declare const ROGUELITE_GROWTH_REWARDS: readonly [{
     readonly maxStacks: 1;
 }, {
     readonly name: "孤注一掷";
-    readonly description: "危险时获得重投机会。";
+    readonly description: "预留/显示型奖励。";
     readonly type: "desperate_reroll";
     readonly value: 1;
     readonly tag: "dice";
@@ -444,9 +444,9 @@ export declare const ROGUELITE_STARTER_REWARDS: readonly [{
     readonly tag: "shield";
 }, {
     readonly name: "续航开局";
-    readonly description: "生命上限 +4，每关胜利后额外恢复 5 生命。";
+    readonly description: "生命上限 +8，每关胜利后额外恢复 5 生命。";
     readonly type: "starter_recovery";
-    readonly value: 4;
+    readonly value: 8;
     readonly tag: "heal";
 }];
 export declare const ROGUELITE_REWARD_RHYTHM: readonly [{

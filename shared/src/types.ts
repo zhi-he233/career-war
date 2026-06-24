@@ -190,6 +190,7 @@ export type RogueliteRewardType =
   | "first_strike"
   | "low_hp_armor"
   | "kill_heal"
+  | "drink_blood"
   | "comeback"
   | "low_roll_defense"
   | "shield_strike"

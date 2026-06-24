@@ -47,6 +47,48 @@ type SkillHintDraft = Pick<SkillHint, "text" | "valueText"> & {
   key: string;
 };
 
+/** Per-level stat effects for growth perks (used by 战利品 on-kill upgrade). */
+const GROWTH_PERK_UPGRADE: Record<string, (p: Player) => void> = {
+  heavy_punch: (p) => { p.rogueliteDamageBonus = (p.rogueliteDamageBonus ?? 0) + 1; p.maxHp += 2; p.hp = Math.min(p.maxHp, p.hp + 2); },
+  iron_body: (p) => { p.rogueliteArmorBonus = (p.rogueliteArmorBonus ?? 0) + 1; p.rogueliteStartShield = (p.rogueliteStartShield ?? 0) + 2; },
+  breathing_recovery: (p) => { p.maxHp += 5; p.hp = Math.min(p.maxHp, p.hp + 5); },
+  blood_punch: (p) => { p.rogueliteDamageBonus = (p.rogueliteDamageBonus ?? 0) + 1; },
+  battle_instinct: (p) => { p.rogueliteDamageBonus = (p.rogueliteDamageBonus ?? 0) + 1; p.roguelitePostBattleHealBonus = (p.roguelitePostBattleHealBonus ?? 0) + 2; p.maxHp += 2; p.hp = Math.min(p.maxHp, p.hp + 2); },
+  guard_training: (p) => { p.maxHp += 4; p.hp = Math.min(p.maxHp, p.hp + 4); p.rogueliteStartShield = (p.rogueliteStartShield ?? 0) + 3; },
+  vitality_boost: (p) => { p.maxHp += 6; p.hp = Math.min(p.maxHp, p.hp + 4); },
+  shield_wall: (p) => { p.shield += 4; p.rogueliteStartShield = (p.rogueliteStartShield ?? 0) + 4; },
+  first_strike: (p) => { p.rogueliteDamageBonus = (p.rogueliteDamageBonus ?? 0) + 3; },
+  low_hp_armor: (p) => { p.rogueliteLowHpArmor = (p.rogueliteLowHpArmor ?? 0) + 2; },
+  comeback: (p) => { p.rogueliteComebackDamage = (p.rogueliteComebackDamage ?? 0) + 3; },
+  low_roll_defense: (p) => { p.rogueliteLowRollDefenseShield = (p.rogueliteLowRollDefenseShield ?? 0) + 3; },
+  shield_strike: (p) => { p.rogueliteShieldStrikeBonus = (p.rogueliteShieldStrikeBonus ?? 0) + 2; },
+  drink_blood: (_p) => { /* per-level heal handled in finishAction via perkStacks */ },
+};
+
+/** Max stacks for growth perks (mirrors balance doc). */
+const GROWTH_PERK_MAX: Record<string, number> = {
+  vitality_boost: 3, shield_wall: 3, first_strike: 3, low_hp_armor: 3,
+  kill_heal: 3, drink_blood: 3, comeback: 2, low_roll_defense: 3,
+  shield_strike: 3, shield_overload: 1, sturdy_bulwark: 1,
+  fate_tokens: 1, low_roll_charge: 1, desperate_reroll: 1, lucky_floor: 1,
+};
+
+function tryUpgradeRogueliteGrowthPerk(player: Player, _events: GameEvent[], _ctx: Pick<EngineContext, "now" | "makeId">): string | null {
+  const stacks = player.roguelitePerkStacks ?? {};
+  const eligible = Object.keys(stacks).filter((perkId) => {
+    if (!(perkId in GROWTH_PERK_UPGRADE)) return false;
+    const max = GROWTH_PERK_MAX[perkId];
+    if (max && (stacks[perkId] ?? 0) >= max) return false;
+    return true;
+  });
+  if (eligible.length === 0) return null;
+  const picked = eligible[Math.floor(Math.random() * eligible.length)];
+  player.roguelitePerkStacks ??= {};
+  player.roguelitePerkStacks[picked] = (player.roguelitePerkStacks[picked] ?? 0) + 1;
+  GROWTH_PERK_UPGRADE[picked]?.(player);
+  return `${picked} 升级至 Lv.${player.roguelitePerkStacks[picked]}`;
+}
+
 export function createPlayer(id: string, clientId: string, nickname: string, isHost: boolean): Player {
   return { id, clientId, nickname, isHost, isOnline: true, summonerSkillId: "lucky_plus_one", summonerSkillCooldown: 0, hp: 0, maxHp: 0, shield: 0, zhaoZilongHitCount: 0, flameMarks: 0, guarding: false, isDead: false };
 }
@@ -337,8 +379,8 @@ export function rollForActivePlayer(room: Room, playerId: string, ctx: EngineCon
 
   // ── Roguelite dice perks ──
   if (room.gameMode === "pve_roguelite" && !actor.isBot) {
-    // 命运筹码: roll 1 → gain token; 3 tokens → auto +1
-    if (first === 1) {
+    // 命运筹码: roll 1/2 → gain token; 3 tokens → auto +1
+    if (first === 1 || first === 2) {
       actor.rogueliteFateTokens = (actor.rogueliteFateTokens ?? 0) + 1;
       events.push(makeEvent(ctx.now, ctx.makeId, "skill", `命运筹码 +1（${actor.rogueliteFateTokens}/3）`, actor.id));
     }
@@ -1109,7 +1151,7 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
   }
   // Perk: 护盾过载 — once per stage, first attack with shield
   if (actor.roguelitePerkStacks?.["shield_overload"] && !actor.rogueliteShieldOverloadUsed && actor.shield > 0 && outcome.damage > 0 && !actor.isBot) {
-    const consumed = Math.min(6, actor.shield);
+    const consumed = Math.min(10, actor.shield);
     actor.shield -= consumed;
     const extraDamage = Math.floor(consumed / 2);
     if (extraDamage > 0) {
@@ -1216,12 +1258,14 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
 
       if (target.isDead) {
         events.push(makeEvent(ctx.now, ctx.makeId, "death", `${target.nickname} 已死亡`, target.id));
-        // Perk: 战利品 — heal on kill
-        const killHealAmount = actor.rogueliteKillHeal ?? 0;
-        if (killHealAmount > 0 && !actor.isBot) {
-          const healed = applyHpHealing(actor, killHealAmount);
-          if (healed > 0) {
-            events.push(makeEvent(ctx.now, ctx.makeId, "heal", `战利品触发，回复 ${healed} 点生命`, actor.id, undefined, outcome.dice, undefined, healed));
+        // Perk: 战利品 — upgrade a random non-maxed growth perk on kill
+        const killHealStacks = actor.roguelitePerkStacks?.["kill_heal"] ?? 0;
+        if (killHealStacks > 0 && !actor.isBot) {
+          for (let i = 0; i < killHealStacks; i++) {
+            const upgraded = tryUpgradeRogueliteGrowthPerk(actor, events, ctx);
+            if (upgraded) {
+              events.push(makeEvent(ctx.now, ctx.makeId, "skill", `战利品触发：${upgraded}`, actor.id, undefined, outcome.dice));
+            }
           }
         }
       }
@@ -1292,6 +1336,15 @@ function finishAction(room: Room, actor: Player, target: Player, outcome: SkillO
     const hpGain = applyHpHealing(actor, bloodPunchLevel);
     if (hpGain > 0) {
       events.push(makeEvent(ctx.now, ctx.makeId, "heal", `${actor.nickname} 吸血拳法 Lv.${bloodPunchLevel} 回复 ${hpGain} 点血`, actor.id, undefined, outcome.dice, undefined, hpGain));
+    }
+  }
+
+  // Perk: 饮血 — heal 3 per level on direct attack HP damage
+  const drinkBloodLevel = actor.roguelitePerkStacks?.["drink_blood"] ?? 0;
+  if (drinkBloodLevel > 0 && hpDamage > 0 && !actor.isBot) {
+    const hpGain = applyHpHealing(actor, drinkBloodLevel * 3);
+    if (hpGain > 0) {
+      events.push(makeEvent(ctx.now, ctx.makeId, "heal", `饮血 Lv.${drinkBloodLevel} 回复 ${hpGain} 点血`, actor.id, undefined, outcome.dice, undefined, hpGain));
     }
   }
 

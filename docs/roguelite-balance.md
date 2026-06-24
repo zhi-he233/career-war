@@ -56,8 +56,8 @@
 | 启用 | 2 | 小怪 | 固定 12 HP | 0 | 普通拳手 |
 | 启用 | 3 | Boss | 使用 Boss 配置 | 使用 Boss 配置 | 不吃普通缩放 |
 | 启用 | 4 | 小怪 | +10 | +2 | 开始有明显成长 |
-| 启用 | 5 | 精英 | +15 | +4 | 精英节点 |
-| 启用 | 6 | Boss | +25 | +8 | Boss 节点，fixedHp Boss 不吃生命缩放 |
+| 启用 | 5 | 精英 | +12 | +4 | 精英节点 |
+| 启用 | 6 | Boss | +15 | +6 | Boss 节点，fixedHp Boss 不吃生命缩放 |
 | 启用 | 7+ | 小怪/精英/Boss | `stage * 5`，Boss 关额外 +10，精英关额外 +3 | `floor(stage / 2) * 2`，Boss 关额外 +4，精英关额外 +2 | 通用后期缩放 |
 
 ## 小怪配置
@@ -92,24 +92,24 @@
 
 | 状态 | type | 名称 | tag | 数值 | 最大层数 | 当前效果 |
 | --- | --- | --- | --- | ---: | ---: | --- |
-| 启用 | heavy_punch_training | 重拳训练 | burst | 1 | - | 伤害 +1，生命上限 +2，回复 2 |
+| 启用 | heavy_punch_training | 重拳训练 | burst | 1 | - | 伤害 +1，生命上限 +2，回复 3 |
 | 启用 | iron_body | 铁布衫 | armor | 1 | - | 护甲 +1，每关开始护盾 +2 |
-| 启用 | breathing_recovery | 战斗喘息 | heal | 40 | - | 最大生命 +3，获得时回复最大生命 40%，最低 8 |
+| 启用 | breathing_recovery | 战斗喘息 | heal | 40 | - | 最大生命 +5，获得时回复最大生命 40%，最低 8 |
 | 启用 | blood_punch | 吸血拳法 | heal | 1 | - | 伤害 +1，造成生命伤害后回复 1 |
-| 启用 | battle_instinct | 战斗本能 | burst | 1 | - | 伤害 +1，生命上限 +2，战后额外恢复 +3 |
+| 启用 | battle_instinct | 战斗本能 | burst | 1 | - | 伤害 +1，生命上限 +2，战后额外恢复 +2 |
 | 启用 | guard_training | 防守训练 | shield | 4 | - | 生命上限 +4，每关开始护盾 +3 |
-| 启用 | vitality_boost | 生命强化 | armor | 4 | 3 | 生命上限 +4，回复 4 |
-| 启用 | shield_wall | 护盾壁垒 | shield | 4 | 3 | 获得 4 护盾，开局护盾 +2 |
+| 启用 | vitality_boost | 生命强化 | armor | 4 | 3 | 生命上限 +6，回复 4 |
+| 启用 | shield_wall | 护盾壁垒 | shield | 4 | 3 | 获得 4 护盾，开局护盾 +4 |
 | 启用 | first_strike | 先手优势 | burst | 3 | 3 | 攻击伤害 +3 |
-| 启用 | low_hp_armor | 绝境护甲 | low_hp | 1 | 3 | 低于半血时护甲 +1 |
-| 启用 | kill_heal | 战利品 | heal | 3 | 3 | 击败敌人后回复 3 |
-| 启用 | drink_blood | 饮血 | heal | 1 | 3 | 直接攻击造成生命伤害后回复 1 |
+| 启用 | low_hp_armor | 绝境护甲 | low_hp | 1 | 3 | 低于半血时护甲 +2 |
+| 启用 | kill_heal | 战利品 | heal | 3 | 3 | 升级一个成长 |
+| 启用 | drink_blood | 饮血 | heal | 1 | 3 | 直接攻击造成生命伤害后回复 3 |
 | 启用 | comeback | 翻盘之力 | low_hp | 3 | 2 | 低于半血时伤害 +3 |
-| 启用 | low_roll_defense | 低点防御 | shield | 2 | 3 | 投 1/2 获得 2 护盾 |
+| 启用 | low_roll_defense | 低点防御 | shield | 2 | 3 | 投 1/2 获得 3 护盾 |
 | 启用 | shield_strike | 盾击 | shield | 2 | 3 | 有护盾时攻击伤害 +2 |
-| 启用 | shield_overload | 护盾过载 | shield | 1 | 1 | 每关一次，消耗最多 6 护盾并追加一半为伤害 |
+| 启用 | shield_overload | 护盾过载 | shield | 1 | 1 | 每关一次，消耗最多 10 护盾并追加一半为伤害 |
 | 启用 | sturdy_bulwark | 稳固壁垒 | shield | 1 | 1 | 有护盾时护甲 +1 |
-| 启用 | fate_tokens | 命运筹码 | dice | 1 | 1 | 投 1 获得筹码，3 个筹码可让骰点 +1 |
+| 启用 | fate_tokens | 命运筹码 | dice | 1 | 1 | 投 1/2 获得筹码，3 个筹码可让骰点 +1 |
 | 启用 | low_roll_charge | 低点蓄力 | dice | 1 | 1 | 投 1/2/3 获得蓄力，投 5/6 时每层 +2 伤害 |
 | 启用 | desperate_reroll | 孤注一掷 | dice | 1 | 1 | 当前为预留/显示型奖励 |
 | 启用 | lucky_floor | 幸运保底 | dice | 1 | 1 | 连续低点后下一次至少为 4 |
@@ -133,7 +133,7 @@
 | --- | --- | --- | ---: | --- |
 | 启用 | berserker_blood | 狂怒之血 | 0 | 攻击额外造成已损失生命一半的伤害 |
 | 启用 | vampire_instinct | 吸血本能 | 2 | 造成生命伤害后回复 2，溢出会转护盾 |
-| 启用 | dragon_courage | 龙胆之力 | 0 | 攻击无视护盾和护甲 |
+| 启用 | dragon_courage | 龙胆之力 | 0 | 伤害+1且无视护盾和护甲 |
 
 ## 开局/旧版奖励
 
@@ -142,7 +142,7 @@
 | 启用 | starter_heavy_punch | 重拳开局 | 2 | 伤害 +2，生命上限 +4，回复 4 |
 | 启用 | starter_blood_punch | 吸血开局 | 1 | 伤害 +1，造成生命伤害后回复 2 |
 | 启用 | starter_iron_wall | 铁壁开局 | 1 | 护甲 +1，生命上限 +6，每关开始护盾 +3 |
-| 启用 | starter_recovery | 续航开局 | 4 | 生命上限 +4，每关胜利后额外恢复 5 |
+| 启用 | starter_recovery | 续航开局 | 4 | 生命上限 +8，每关胜利后额外恢复 5 |
 
 ## 特殊机制
 

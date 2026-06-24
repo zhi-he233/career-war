@@ -296,26 +296,26 @@ export const ROGUELITE_BOSSES = [
 ] as const satisfies readonly RogueliteBossBalance[];
 
 export const ROGUELITE_GROWTH_REWARDS = [
-  { name: "重拳训练", description: "伤害 +1，生命上限 +2，回复 2 生命。", type: "heavy_punch_training", value: 1, tag: "burst" },
+  { name: "重拳训练", description: "伤害 +1，生命上限 +2，回复 3。", type: "heavy_punch_training", value: 1, tag: "burst" },
   { name: "铁布衫", description: "护甲 +1，每关开始护盾 +2。", type: "iron_body", value: 1, tag: "armor" },
-  { name: "战斗喘息", description: "最大生命 +3，获得时回复最大生命 40%，最低 8 点。", type: "breathing_recovery", value: 40, tag: "heal" },
+  { name: "战斗喘息", description: "最大生命 +5，获得时回复最大生命 40%，最低 8 点。", type: "breathing_recovery", value: 40, tag: "heal" },
   { name: "吸血拳法", description: "伤害 +1，造成生命伤害后回复 1 生命。", type: "blood_punch", value: 1, tag: "heal" },
-  { name: "战斗本能", description: "伤害 +1，生命上限 +2，战后额外恢复 +3。", type: "battle_instinct", value: 1, tag: "burst" },
-  { name: "防守训练", description: "生命上限 +4，之后每关开局护盾 +3。", type: "guard_training", value: 4, tag: "shield" },
-  { name: "生命强化", description: "生命上限 +4，并回复 4 生命。", type: "vitality_boost", value: 4, tag: "armor", maxStacks: 3 },
-  { name: "护盾壁垒", description: "获得 4 护盾，之后每关开局护盾 +2。", type: "shield_wall", value: 4, tag: "shield", maxStacks: 3 },
+  { name: "战斗本能", description: "伤害 +1，生命上限 +2，战后额外恢复 +2。", type: "battle_instinct", value: 1, tag: "burst" },
+  { name: "防守训练", description: "生命上限 +4，每关开始护盾 +3。", type: "guard_training", value: 4, tag: "shield" },
+  { name: "生命强化", description: "生命上限 +6，并回复 4 生命。", type: "vitality_boost", value: 6, tag: "armor", maxStacks: 3 },
+  { name: "护盾壁垒", description: "获得 4 护盾，每关开始护盾 +4。", type: "shield_wall", value: 4, tag: "shield", maxStacks: 3 },
   { name: "先手优势", description: "攻击伤害 +3。", type: "first_strike", value: 3, tag: "burst", maxStacks: 3 },
-  { name: "绝境护甲", description: "生命低于一半时护甲 +1。", type: "low_hp_armor", value: 1, tag: "low_hp", maxStacks: 3 },
-  { name: "战利品", description: "击败敌人后回复 3 生命。", type: "kill_heal", value: 3, tag: "heal", maxStacks: 3 },
-  { name: "饮血", description: "每次造成直接攻击伤害后，回复 1 点生命。", type: "drink_blood", value: 1, tag: "heal", maxStacks: 3 },
+  { name: "绝境护甲", description: "生命低于一半时护甲 +2。", type: "low_hp_armor", value: 2, tag: "low_hp", maxStacks: 3 },
+  { name: "战利品", description: "击败敌人后升级一个成长。", type: "kill_heal", value: 1, tag: "heal", maxStacks: 3 },
+  { name: "饮血", description: "直接攻击造成生命伤害后回复 3 生命。", type: "drink_blood", value: 3, tag: "heal", maxStacks: 3 },
   { name: "翻盘之力", description: "生命低于一半时，攻击伤害 +3。", type: "comeback", value: 3, tag: "low_hp", maxStacks: 2 },
-  { name: "低点防御", description: "投到 1 或 2 时获得 2 护盾。", type: "low_roll_defense", value: 2, tag: "shield", maxStacks: 3 },
+  { name: "低点防御", description: "投到 1 或 2 时获得 3 护盾。", type: "low_roll_defense", value: 3, tag: "shield", maxStacks: 3 },
   { name: "盾击", description: "拥有护盾时攻击伤害 +2。", type: "shield_strike", value: 2, tag: "shield", maxStacks: 3 },
-  { name: "护盾过载", description: "每关一次，攻击时消耗最多 6 护盾并追加一半为伤害。", type: "shield_overload", value: 1, tag: "shield", maxStacks: 1 },
+  { name: "护盾过载", description: "每关一次，攻击时消耗最多 10 护盾并追加一半为伤害。", type: "shield_overload", value: 1, tag: "shield", maxStacks: 1 },
   { name: "稳固壁垒", description: "有护盾时护甲 +1。", type: "sturdy_bulwark", value: 1, tag: "shield", maxStacks: 1 },
-  { name: "命运筹码", description: "投到 1 获得筹码，3 个筹码可让骰点 +1。", type: "fate_tokens", value: 1, tag: "dice", maxStacks: 1 },
+  { name: "命运筹码", description: "投到 1/2 获得筹码，3 个筹码可让骰点 +1。", type: "fate_tokens", value: 1, tag: "dice", maxStacks: 1 },
   { name: "低点蓄力", description: "投到 1/2/3 获得蓄力，投到 5/6 时每层 +2 伤害。", type: "low_roll_charge", value: 1, tag: "dice", maxStacks: 1 },
-  { name: "孤注一掷", description: "危险时获得重投机会。", type: "desperate_reroll", value: 1, tag: "dice", maxStacks: 1 },
+  { name: "孤注一掷", description: "预留/显示型奖励。", type: "desperate_reroll", value: 1, tag: "dice", maxStacks: 1 },
   { name: "幸运保底", description: "连续低点后，下一次投骰至少为 4。", type: "lucky_floor", value: 1, tag: "dice", maxStacks: 1 },
 ] as const satisfies readonly RogueliteRewardDraft[];
 
@@ -336,7 +336,7 @@ export const ROGUELITE_STARTER_REWARDS = [
   { name: "重拳开局", description: "伤害 +2，生命上限 +4，回复 4 生命。", type: "starter_heavy_punch", value: 2, tag: "burst" },
   { name: "吸血开局", description: "伤害 +1，造成生命伤害后回复 2 生命。", type: "starter_blood_punch", value: 1, tag: "heal" },
   { name: "铁壁开局", description: "护甲 +1，生命上限 +6，每关开始护盾 +3。", type: "starter_iron_wall", value: 1, tag: "shield" },
-  { name: "续航开局", description: "生命上限 +4，每关胜利后额外恢复 5 生命。", type: "starter_recovery", value: 4, tag: "heal" },
+  { name: "续航开局", description: "生命上限 +8，每关胜利后额外恢复 5 生命。", type: "starter_recovery", value: 8, tag: "heal" },
 ] as const satisfies readonly RogueliteRewardDraft[];
 
 export const ROGUELITE_REWARD_RHYTHM = [

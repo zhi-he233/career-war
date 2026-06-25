@@ -20,6 +20,7 @@ import { characters } from "@career-war/shared";
 const emit = defineEmits<{
   back: [];
   openAuth: [];
+  logout: [];
 }>();
 
 // ---------------------------------------------------------------------------
@@ -355,6 +356,10 @@ function handleRetry() {
           </div>
         </div>
       </section>
+
+      <section class="profile-account-actions" aria-label="账号操作">
+        <button class="profile-logout-btn" type="button" @click="emit('logout')">退出登录</button>
+      </section>
     </template>
 
     <!-- ================================================================ -->
@@ -564,6 +569,29 @@ function handleRetry() {
 .login-cta-btn:active {
   transform: translateY(3px);
   box-shadow: 0 1px 0 rgba(17, 17, 17, 0.28);
+}
+
+.profile-account-actions {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 4px;
+}
+
+.profile-logout-btn {
+  min-height: 36px;
+  border: 1px solid rgba(17, 17, 17, 0.28);
+  border-radius: 10px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #475569;
+  font-family: var(--font-pixel, "Trebuchet MS", "Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.profile-logout-btn:active {
+  transform: translateY(1px);
 }
 
 /* =====================================================================

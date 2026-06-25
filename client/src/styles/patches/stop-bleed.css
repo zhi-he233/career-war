@@ -371,22 +371,6 @@
   font-size: 16px !important;
 }
 
-.home-rule-note {
-  grid-column: 1 / -1 !important;
-  margin: 0 !important;
-  min-height: 38px !important;
-  max-height: 46px !important;
-  padding: 7px 10px !important;
-  overflow: hidden !important;
-  border: 1px solid #111111 !important;
-  border-radius: 10px !important;
-  background: #fffdf6 !important;
-  color: #333333 !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  line-height: 1.25 !important;
-}
-
 .home-sub-actions {
   grid-column: 1 / -1 !important;
   display: grid !important;

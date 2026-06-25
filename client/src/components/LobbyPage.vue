@@ -154,7 +154,8 @@ watch(
 
 function autoConfirmLeaveClick(event: MouseEvent): void {
   const button = (event.target as HTMLElement | null)?.closest("button");
-  if (!button || button.textContent?.trim() !== "离开") return;
+  const buttonText = button?.textContent?.trim();
+  if (!button || (buttonText !== "离开" && buttonText !== "离开房间")) return;
   if (pendingLeaveAutoConfirm) return;
   pendingLeaveAutoConfirm = true;
   window.setTimeout(() => {

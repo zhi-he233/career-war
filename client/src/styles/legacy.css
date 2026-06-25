@@ -957,52 +957,75 @@ h2 {
   z-index: 70;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: 10px;
   background: rgba(15, 23, 42, 0.46);
 }
 
 .rule-guide-dialog {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(100%, 520px);
-  max-height: min(86vh, 720px);
+  width: min(100%, 430px);
+  max-height: calc(100svh - 20px);
   overflow: hidden;
-  border-radius: var(--radius-md);
-  background: var(--color-bg-surface);
-  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.3);
+  border: 2px solid #111111;
+  border-radius: 16px;
+  background: #fffaf0;
+  box-shadow: 0 6px 0 rgba(17, 17, 17, 0.24), 0 22px 54px rgba(15, 23, 42, 0.3);
 }
 
 .rule-guide-header {
   display: flex;
-  align-items: start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 16px;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.18);
+  padding: 12px 14px;
 }
 
 .rule-guide-header h2 {
   margin-bottom: 0;
+  color: #111111;
   font-size: 22px;
+}
+
+.rule-guide-close-btn {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid rgba(17, 17, 17, 0.42);
+  border-radius: 10px;
+  padding: 7px 12px;
+  background: #ffffff;
+  color: #111111;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .rule-guide-body {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 10px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
 
 .rule-section {
   display: grid;
-  gap: 8px;
+  gap: 7px;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.12);
+  padding: 0 0 10px;
+  background: transparent;
+}
+
+.rule-section:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .rule-section h3 {
   margin: 0;
-  color: var(--color-text-primary);
+  color: #111111;
   font-size: 15px;
 }
 
@@ -1012,7 +1035,7 @@ h2 {
   gap: 6px;
   margin: 0;
   padding-left: 18px;
-  color: var(--color-text-secondary);
+  color: #3f3f3a;
   font-size: 13px;
   line-height: 1.45;
 }
@@ -1050,9 +1073,9 @@ h2 {
 }
 
 .rule-guide-footer {
-  border-top: 1px solid #e2e8f0;
-  padding: 12px 16px;
-  background: var(--color-bg-surface);
+  border-top: 1px solid rgba(17, 17, 17, 0.18);
+  padding: 10px 14px 12px;
+  background: #fffaf0;
 }
 
 .rule-guide-footer .primary-btn {
@@ -3307,10 +3330,6 @@ body.battle-locked .top-bar h1 {
   font-size: 14px !important;
   background: #ffffff !important;
   color: #111111 !important;
-}
-
-.home-rule-note {
-  grid-column: 1 !important;
 }
 
 .home-sub-actions {

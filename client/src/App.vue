@@ -477,12 +477,11 @@ function getTransportName(transport: unknown): string {
         <template v-if="!authLoading">
           <template v-if="isLoggedIn">
             <span class="user-nickname">{{ currentUser?.username }}</span>
-            <button class="ghost-btn small-btn" type="button" @click="handleLogout">退出</button>
           </template>
-          <button v-else class="secondary-btn small-btn" type="button" @click="showAuthDialog = true">登录</button>
+          <button v-else-if="!room" class="secondary-btn small-btn" type="button" @click="showAuthDialog = true">登录</button>
         </template>
       </div>
-      <button v-if="room" class="ghost-btn" type="button" @click="showLeaveConfirm = true">离开</button>
+      <button v-if="room" class="ghost-btn" type="button" @click="showLeaveConfirm = true">离开房间</button>
     </header>
 
     <p v-if="errorMessage" class="toast">{{ errorMessage }}</p>
@@ -504,6 +503,7 @@ function getTransportName(transport: unknown): string {
       v-else-if="route.name === 'profile'"
       @back="backToHome"
       @open-auth="showAuthDialog = true"
+      @logout="handleLogout"
     />
     <PvpModePage
       v-else-if="route.name === 'modes'"

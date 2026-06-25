@@ -1,3 +1,5 @@
 @import "./styles/legacy.css";
 @import "./styles/patches/stop-bleed.css";
+@import "./styles/patches/border-fix.css";
+@import "./styles/battle.css";
 @import "./styles/lobby-mobile-fixes.css";

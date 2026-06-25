@@ -1,0 +1,361 @@
+/* ============================================================
+   UI BORDER FIX — page-scoped concrete values
+   Page scope: .home-page / .pvp-page / .lobby-page — never touches battle.
+   ============================================================ */
+
+/* ================================================================
+   PAGE BACKGROUNDS — warm off-white, not bright white
+   ================================================================ */
+.home-page,
+.pvp-page,
+.lobby-page {
+  background: #f4efe3 !important;
+}
+.home-page .home-title-card,
+.pvp-page .pvp-mode-card,
+.lobby-page .character-picker,
+.lobby-page .room-settings-panel,
+.lobby-page .summoner-select-panel {
+  background: #fffaf0 !important;
+}
+
+/* ================================================================
+   NORMAL CARDS — visible warm card with medium-gray inset border
+   ================================================================ */
+
+/* character cards */
+.lobby-page .character-choice {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 2px 4px rgba(17,17,17,0.08) !important;
+  border-radius: 16px !important;
+}
+/* summoner skill cards */
+.lobby-page .summoner-option {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 2px 4px rgba(17,17,17,0.08) !important;
+  border-radius: 16px !important;
+}
+/* player cards */
+.lobby-page .player-card,
+.lobby-page .lobby-player-card {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 2px 4px rgba(17,17,17,0.08) !important;
+  border-radius: 16px !important;
+}
+/* duo slot cards — light card boundary */
+.lobby-page .duo-slot-card {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.45), 0 1px 3px rgba(17,17,17,0.06) !important;
+  border-radius: 16px !important;
+}
+/* duo team panels — layout only, no heavy border */
+.lobby-page .duo-team-panel {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+/* lobby start bar */
+.lobby-page .lobby-start-bar {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 2px 4px rgba(17,17,17,0.08) !important;
+  border-radius: 16px !important;
+}
+/* settings / summoner / character picker panels */
+.lobby-page .room-settings-panel,
+.lobby-page .summoner-select-panel,
+.lobby-page .character-picker {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62) !important;
+  border-radius: 16px !important;
+}
+/* pager */
+.lobby-page .character-pager {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 2px 4px rgba(17,17,17,0.08) !important;
+  border-radius: 16px !important;
+}
+/* pvp mode cards */
+.pvp-page .pvp-mode-card,
+.pvp-page .public-room-card {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 2px 4px rgba(17,17,17,0.08) !important;
+  border-radius: 16px !important;
+}
+/* home hero card */
+.home-page .home-title-card {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 2px 4px rgba(17,17,17,0.08) !important;
+  border-radius: 24px !important;
+}
+
+/* ================================================================
+   SELECTED / ACTIVE STATE — black bg white text, or strong black inset
+   ================================================================ */
+
+/* active tab */
+.lobby-page .lobby-tab-btn.active {
+  background: #111 !important;
+  color: #fff !important;
+  box-shadow: inset 0 0 0 2px #111, 0 2px 4px rgba(17,17,17,0.12) !important;
+}
+/* selected character card */
+.lobby-page .character-choice.selected {
+  box-shadow: inset 0 0 0 2px #111, 0 2px 4px rgba(17,17,17,0.12) !important;
+}
+/* selected summoner card */
+.lobby-page .summoner-option.selected {
+  box-shadow: inset 0 0 0 2px #111, 0 2px 4px rgba(17,17,17,0.12) !important;
+}
+/* active filter chip */
+.lobby-page .filter-chip.active {
+  background: #111 !important;
+  color: #fff !important;
+  box-shadow: inset 0 0 0 2px #111 !important;
+}
+/* room code */
+.lobby-page .room-code,
+.pvp-page .room-code {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 2px #111, 0 2px 4px rgba(17,17,17,0.12) !important;
+}
+
+/* ================================================================
+   PRIMARY BUTTONS — black bg white text
+   ================================================================ */
+.home-page .primary-btn,
+.pvp-page .primary-btn,
+.lobby-page .primary-btn {
+  background: #111 !important;
+  color: #fff !important;
+  box-shadow: inset 0 0 0 2px #111, 0 2px 4px rgba(17,17,17,0.12) !important;
+}
+
+/* ================================================================
+   NORMAL BUTTONS — warm card bg, medium inset border
+   ================================================================ */
+.home-page .secondary-btn,
+.home-page .ghost-btn,
+.pvp-page .secondary-btn,
+.pvp-page .ghost-btn,
+.lobby-page .secondary-btn,
+.lobby-page .ghost-btn {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 1px 3px rgba(17,17,17,0.08) !important;
+  border-radius: 14px !important;
+  color: #111 !important;
+}
+
+/* ================================================================
+   TAB BAR
+   ================================================================ */
+.lobby-page .lobby-tabs {
+  background: #e8e1d2 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.68) !important;
+  border-radius: 16px !important;
+}
+.lobby-page .lobby-tab-btn {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 1px 3px rgba(17,17,17,0.08) !important;
+  border-radius: 999px !important;
+  color: #111 !important;
+}
+
+/* ================================================================
+   INFO i BUTTONS — round, visible border
+   ================================================================ */
+.lobby-page .seat-info-btn,
+.lobby-page .summoner-info-btn,
+.lobby-page .character-info-btn {
+  background: #fffaf0 !important;
+  border-radius: 999px !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.7) !important;
+}
+
+/* ================================================================
+   STATUS LABELS — capsule with subtle border
+   ================================================================ */
+.lobby-page .character-choice .character-status,
+.lobby-page .character-status,
+.lobby-page .badge {
+  background: #f2f7ee !important;
+  border-radius: 999px !important;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.38) !important;
+  color: rgba(17,17,17,0.75) !important;
+}
+
+/* ================================================================
+   FILTER CHIPS (inactive)
+   ================================================================ */
+.lobby-page .filter-chip {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62), 0 1px 3px rgba(17,17,17,0.08) !important;
+  border-radius: 999px !important;
+  color: #111 !important;
+}
+
+/* ================================================================
+   SEARCH / INPUT / SELECT
+   ================================================================ */
+.lobby-page .character-search,
+.lobby-page input,
+.lobby-page select,
+.pvp-page input {
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.62) !important;
+  border-radius: 14px !important;
+  color: #111 !important;
+}
+
+/* ================================================================
+   DISABLED STATE
+   ================================================================ */
+.home-page button:disabled,
+.pvp-page button:disabled,
+.lobby-page button:disabled {
+  background: #e8e2d6 !important;
+  color: rgba(17,17,17,0.45) !important;
+  box-shadow: inset 0 0 0 1.5px rgba(17,17,17,0.28) !important;
+}
+
+/* ================================================================
+   DUO 2V2 — wait strip & compact header
+   ================================================================ */
+.duo-wait-strip {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 14px;
+  background: #f2efe8;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.28);
+  border-radius: 12px;
+}
+.duo-wait-label {
+  color: rgba(17,17,17,0.55);
+  font-size: 13px;
+  font-weight: 800;
+}
+.duo-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.duo-slot-header strong {
+  font-size: 12px;
+  font-weight: 900;
+  color: #111;
+}
+.duo-slot-summary {
+  margin-top: 0;
+}
+
+/* ================================================================
+   DUO 2V2 — mobile single-column + compaction
+   ================================================================ */
+@media (max-width: 520px) {
+  .duo-team-grid {
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+  .duo-slot-picker {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    padding-bottom: 100px !important;
+  }
+  .duo-slot-card {
+    padding: 8px 10px !important;
+    gap: 4px !important;
+  }
+  .duo-slot-card .compact-field {
+    gap: 2px !important;
+  }
+  .duo-slot-card select {
+    min-height: 34px !important;
+    padding: 4px 6px !important;
+    font-size: 12px !important;
+  }
+  .duo-wait-strip {
+    min-height: 40px !important;
+    padding: 8px 12px !important;
+  }
+}
+
+/* ================================================================
+   SECTION DIVIDERS
+   ================================================================ */
+.lobby-page .settings-title,
+.lobby-page .picker-heading {
+  border-bottom: 1.5px solid rgba(17,17,17,0.55);
+}
+
+/* ================================================================
+   DUO 2V2 — self slots grid + compact cards
+   ================================================================ */
+.duo-self-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 0;
+}
+
+.duo-slot-picker .duo-slot-card {
+  min-width: 0;
+  padding: 8px 10px !important;
+  gap: 4px !important;
+  border-radius: 14px !important;
+  background: #fffaf0 !important;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.45), 0 1px 3px rgba(17,17,17,0.06) !important;
+  border: none !important;
+}
+
+.duo-slot-picker .duo-slot-card select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px !important;
+  padding: 3px 5px !important;
+  font-size: 13px;
+}
+
+.duo-slot-picker .duo-slot-card .compact-field {
+  gap: 2px;
+}
+
+.duo-wait-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  max-height: 56px;
+  padding: 8px 12px;
+  background: #f2efe8;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.28);
+  border-radius: 12px;
+}
+
+.duo-slot-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 120px;
+  gap: 8px;
+}
+
+@media (max-width: 380px) {
+  .duo-self-slots-grid {
+    gap: 6px;
+  }
+  .duo-slot-picker .duo-slot-card {
+    padding: 6px 7px;
+    gap: 3px;
+  }
+  .duo-slot-picker .duo-slot-card select {
+    min-height: 28px;
+    font-size: 12px;
+    padding: 2px 4px;
+  }
+}

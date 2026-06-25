@@ -532,6 +532,7 @@ body .lobby-page .lobby-summary > .room-code strong {
 }
 
 .home-rule-btn {
+  grid-column: 1 / -1 !important;
   background: #ffffff !important;
   color: #111111 !important;
 }

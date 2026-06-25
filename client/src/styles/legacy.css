@@ -588,22 +588,15 @@ h2 {
   position: sticky;
   top: 8px;
   z-index: 15;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
+  display: flex;
+  justify-content: center;
   align-items: center;
+  gap: 10px;
   border: 1px solid #bfdbfe;
   border-radius: var(--radius-md);
   padding: 10px;
   background: var(--color-primary-lightest);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
-}
-
-.lobby-start-bar strong {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--color-text-primary);
-  font-size: 14px;
 }
 
 .lobby-start-bar .primary-btn {
@@ -2888,8 +2881,8 @@ body:has(.lobby-page) {
 
 .lobby-start-bar {
   position: static !important;
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
+  display: flex !important;
+  justify-content: center !important;
   align-items: center !important;
   gap: 8px !important;
   min-height: 54px !important;
@@ -2900,19 +2893,6 @@ body:has(.lobby-page) {
   background: #fffdf6 !important;
   box-shadow: none !important;
   overflow: hidden !important;
-}
-
-.lobby-start-bar strong,
-.lobby-start-bar .hint {
-  display: block !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.lobby-start-bar strong {
-  font-size: 12px !important;
 }
 
 .lobby-start-bar .primary-btn {
@@ -3437,20 +3417,15 @@ body .lobby-tab-characters > .room-code {
   top: auto !important;
   bottom: auto !important;
   transform: none !important;
-  grid-column: 1 / -1 !important;
-  justify-self: stretch !important;
   width: 100% !important;
   max-width: 100% !important;
   margin: 0 !important;
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  justify-items: center !important;
-  align-content: center !important;
+  display: flex !important;
+  justify-content: center !important;
   align-items: center !important;
   gap: 6px !important;
-  grid-template-rows: auto 48px !important;
-  min-height: 92px !important;
-  height: 94px !important;
+  min-height: 54px !important;
+  max-height: 60px !important;
   padding: 6px 10px !important;
   text-align: center !important;
 }

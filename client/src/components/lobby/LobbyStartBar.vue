@@ -13,10 +13,6 @@ const emit = defineEmits<{
 
 <template>
   <section class="lobby-start-bar">
-    <div>
-      <strong>{{ statusLabel }}</strong>
-      <p class="hint">{{ hintText }}</p>
-    </div>
     <button
       class="primary-btn"
       type="button"

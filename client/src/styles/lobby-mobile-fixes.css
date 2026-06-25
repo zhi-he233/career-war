@@ -1,6 +1,12 @@
 @media (max-width: 760px) {
   .lobby-page {
-    overflow: hidden !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .lobby-tab-characters {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto auto auto !important;
   }
 
   .lobby-summary {
@@ -16,21 +22,26 @@
   .lobby-tab-characters .character-picker.duo-slot-picker,
   .lobby-tab-characters .character-picker.roguelite-intro {
     display: block !important;
+    grid-column: 1 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
     min-height: 0 !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
+    overflow: visible !important;
     overscroll-behavior: contain !important;
-    padding-bottom: 180px !important;
+    padding-bottom: 100px !important;
   }
 
   .lobby-tab-characters .lobby-summary {
     display: flex !important;
     flex-direction: column !important;
-    height: 100% !important;
+    grid-row: auto !important;
+    height: auto !important;
     min-height: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     overscroll-behavior: contain !important;
-    gap: 0 !important;
+    gap: 4px !important;
   }
 
   .lobby-tab-characters .lobby-summary > .room-code,
@@ -241,6 +252,24 @@
 
   .duo-slot-picker {
     align-content: start !important;
+    gap: 6px !important;
+  }
+
+  .duo-slot-picker .picker-heading {
+    padding-bottom: 4px !important;
+  }
+
+  .duo-slot-picker .picker-heading h2 {
+    font-size: 15px !important;
+  }
+
+  .duo-slot-picker .picker-heading .hint {
+    font-size: 10px !important;
+  }
+
+  .duo-self-slots-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 6px !important;
   }
 
   .duo-team-grid {
@@ -292,8 +321,8 @@
 
   .duo-slot-card {
     min-width: 0 !important;
-    padding: 10px !important;
-    scroll-margin-bottom: 150px !important;
+    padding: 8px 10px !important;
+    gap: 4px !important;
   }
 
   .duo-slot-card .compact-field {

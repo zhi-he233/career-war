@@ -259,6 +259,9 @@
     grid-template-columns: 1fr !important;
     gap: 6px !important;
   }
+  .duo-self-slots-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
   .duo-slot-picker {
     display: flex !important;
     flex-direction: column !important;
@@ -271,12 +274,30 @@
     gap: 4px !important;
   }
   .duo-slot-card .compact-field {
-    gap: 2px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+  .duo-slot-card .compact-field span {
+    flex: 0 0 auto !important;
+    min-width: 28px !important;
+    font-size: 11px !important;
+  }
+  .duo-slot-card .compact-field select {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
   }
   .duo-slot-card select {
     min-height: 34px !important;
     padding: 4px 6px !important;
     font-size: 12px !important;
+  }
+  .duo-slot-summary {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 11px !important;
   }
   .duo-wait-strip {
     min-height: 40px !important;

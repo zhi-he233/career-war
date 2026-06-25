@@ -21,6 +21,7 @@ import SelfPanel from "./battle/SelfPanel.vue";
 import RoguelitePanel from "./battle/RoguelitePanel.vue";
 import RogueliteRewardChoice from "./battle/RogueliteRewardChoice.vue";
 import RogueliteStatusCompact from "./battle/RogueliteStatusCompact.vue";
+import RogueliteRunMap from "./battle/RogueliteRunMap.vue";
 import type { SeatViewModel, DicePanelProps, ActionSlotVM, SelfDestructOption, SelfPanelVM } from "./battle/types";
 
 const props = defineProps<{
@@ -89,6 +90,11 @@ const activeHighlight = ref<CharacterHighlight | null>(null);
 const activeSkillHints = ref<SkillHint[]>([]);
 const rogueliteAlert = ref<{ text: string; key: string } | null>(null);
 let rogueliteAlertTimer: number | undefined;
+
+// ── Roguelite map gate: show map before each new stage ──
+const rogueliteMapGateVisible = ref(false);
+const lastMapStageShown = ref<number | null>(null);
+
 const {
   showRuleGuide,
   showBattleLog,
@@ -115,6 +121,10 @@ const activePlayer = computed(() => room.value.players[room.value.activePlayerIn
 const isDuoMode = computed(() => room.value.gameMode === "duo_2v2");
 const isPveMode = computed(() => room.value.gameMode === "pve_1v1");
 const isRogueliteMode = computed(() => room.value.gameMode === "pve_roguelite");
+const showRogueliteMap = computed(() =>
+  isRogueliteMode.value &&
+  (rogueliteMapGateVisible.value || room.value.phase === "roguelite_continue")
+);
 const isSinglePlayerPveMode = computed(() => isPveMode.value || isRogueliteMode.value);
 const isBotTurn = computed(() => isSinglePlayerPveMode.value && Boolean(activePlayer.value?.isBot) && room.value.phase === "battle");
 const isBossStage = computed(() => room.value.phase === "battle" && rogueliteEnemyInfo.value?.stageType === "boss");
@@ -165,6 +175,82 @@ const classicSeats = computed<SeatViewModel[]>(() =>
     emote: seatEmote(player)
   }))
 );
+
+/** Stage seats for roguelite mode: self (ally) on left, enemy on right. */
+const rogueliteStageSeats = computed<SeatViewModel[]>(() => {
+  if (!isRogueliteMode.value) return [];
+  const seats: SeatViewModel[] = [];
+
+  // Ally seat (self, left side)
+  if (me.value) {
+    seats.push({
+      playerId: me.value.id,
+      playerNumber: 0,
+      nickname: me.value.nickname,
+      isDead: me.value.isDead,
+      isActive: me.value.id === activePlayer.value?.id,
+      isSelectable: false,
+      isSelected: false,
+      isHit: isRecentDamageTarget(me.value),
+      isHealed: isRecentHealTarget(me.value),
+      isBlocked: isNoDamageTarget(me.value),
+      avatarEmoji: playerFallbackMark(me.value),
+      avatarSrc: getCharacterArt(me.value.characterId)?.avatar,
+      spriteSrc: getCharacterArt(me.value.characterId)?.sprite,
+      statusText: playerStatus(me.value),
+      hp: me.value.hp,
+      maxHp: me.value.maxHp,
+      shield: me.value.shield,
+      lastRollText: lastRollText(me.value) || (zhaoZilongHitText(me.value) || ""),
+      characterName: displayCharacterName(me.value),
+      seatTags: [],
+      attackableLabel: "",
+      targetLabel: "",
+      isHost: false,
+      hasInvincible: hasInvincible(me.value),
+      damageEffect: seatDamageEffect(me.value),
+      healEffect: seatHealEffect(me.value),
+      noEffect: seatNoEffect(me.value),
+      emote: seatEmote(me.value),
+    });
+  }
+
+  // Enemy seats (right side)
+  for (const player of battlePlayers.value) {
+    seats.push({
+      playerId: player.id,
+      playerNumber: playerNumber(player),
+      nickname: player.nickname,
+      isDead: player.isDead,
+      isActive: false,
+      isSelectable: canSelectTarget(player) && !shouldShowSelectedTarget(player),
+      isSelected: shouldShowSelectedTarget(player),
+      isHit: isRecentDamageTarget(player),
+      isHealed: isRecentHealTarget(player),
+      isBlocked: isNoDamageTarget(player),
+      avatarEmoji: playerFallbackMark(player),
+      avatarSrc: getCharacterArt(player.characterId)?.avatar,
+      spriteSrc: getCharacterArt(player.characterId)?.sprite,
+      statusText: playerStatus(player),
+      hp: player.hp,
+      maxHp: player.maxHp,
+      shield: player.shield,
+      lastRollText: lastRollText(player) || (zhaoZilongHitText(player) || ""),
+      characterName: displayCharacterName(player),
+      seatTags: buildSeatTags(player),
+      attackableLabel: "可攻击",
+      targetLabel: "目标",
+      isHost: player.id === room.value.hostId,
+      hasInvincible: hasInvincible(player),
+      damageEffect: seatDamageEffect(player),
+      healEffect: seatHealEffect(player),
+      noEffect: seatNoEffect(player),
+      emote: seatEmote(player),
+    });
+  }
+
+  return seats;
+});
 
 /** Pre-computed seat data for each duo team column. */
 const duoTeamSeats = computed<Record<string, SeatViewModel[]>>(() => {
@@ -562,6 +648,25 @@ watch(
   { deep: false }
 );
 
+// ── Roguelite map gate: open when entering a new stage in battle phase ──
+watch(
+  () => {
+    const s = props.room.roguelite?.stage;
+    const p = props.room.phase;
+    return { stage: s ?? 0, phase: p };
+  },
+  ({ stage, phase }) => {
+    if (!isRogueliteMode.value) return;
+    // Never gate during reward or gameOver
+    if (phase === "reward" || phase === "gameOver") return;
+    // Open gate when entering battle phase with a new stage we haven't accepted yet
+    if (phase === "battle" && stage > 0 && lastMapStageShown.value !== stage) {
+      rogueliteMapGateVisible.value = true;
+    }
+  },
+  { immediate: true }
+);
+
 watch(
   () => props.lastEmote,
   (event) => {
@@ -578,6 +683,16 @@ onUnmounted(() => {
   clearHighlightTimer();
   clearSkillHintTimer();
   window.clearTimeout(rogueliteAlertTimer);
+  rogueliteMapGateVisible.value = false;
+  lastMapStageShown.value = null;
+});
+
+// Reset roguelite map gate when leaving roguelite mode
+watch(isRogueliteMode, (val) => {
+  if (!val) {
+    rogueliteMapGateVisible.value = false;
+    lastMapStageShown.value = null;
+  }
 });
 
 watch(
@@ -657,6 +772,23 @@ const {
   currentDiceMode,
   selectedTargetText,
   actionStageText,
+});
+
+/** Cute wait hint for roguelite idle/thinking states — UI-only, no game logic. */
+const rogueliteWaitHint = computed(() => {
+  if (isBotTurn.value) return "训练拳手正在憋坏招...";
+  if (isRolling.value) return "命运在旋转...";
+  if (pendingGuardCheck.value && !isGuardCheckMine.value) return "对手正在检查护甲...";
+  if (pendingRollDecision.value && !isDecisionMine.value) return "对手正在琢磨用什么招...";
+  if (room.value.phase === "reward") return "挑个奖励，继续变强！";
+  if (room.value.phase === "roguelite_continue") return "见好就收，还是继续闯？";
+  if (room.value.phase === "gameOver") return "";
+  if (me.value?.isDead) return "躺平观战中，等待下一局...";
+  if (!isMyTurn.value) return "对手正在思考战术...";
+  if (!selectedTargetId.value) return "先挑一个想揍的家伙 👆";
+  if (pendingRoll.value && isPendingMine.value) return "技能触发！再投一次...";
+  if (pendingRollDecision.value) return "选个行动卡，给对手好看！";
+  return "骰子已经在手里发抖了 🎲";
 });
 
 const turnGuideText = computed(() => {
@@ -904,6 +1036,32 @@ function chooseRogueliteContinue(choice: "finish" | "continue"): void {
   socket.emit("chooseRogueliteContinue", { choice });
 }
 
+function handleRogueliteMapChallenge(): void {
+  if (!isRogueliteMode.value) return;
+
+  // Case 1: roguelite_continue phase — use existing socket flow
+  if (room.value.phase === "roguelite_continue") {
+    lastMapStageShown.value = room.value.roguelite?.stage ?? null;
+    rogueliteMapGateVisible.value = false;
+    chooseRogueliteContinue("continue");
+    return;
+  }
+
+  // Case 2: battle phase gate — just close the gate, no socket emit
+  if (room.value.phase === "battle" && rogueliteMapGateVisible.value) {
+    lastMapStageShown.value = room.value.roguelite?.stage ?? null;
+    rogueliteMapGateVisible.value = false;
+    return;
+  }
+
+  // Safety: any other case, just close the gate
+  rogueliteMapGateVisible.value = false;
+}
+
+function handleRogueliteMapOpenBuild(): void {
+  openRogueliteDetails();
+}
+
 /** Kick off the roll animation, then delegate reveal to composable callback. */
 function startRollAnimation(mode: RollMode, _shouldEmit: boolean): void {
   // Reset game-side effects before starting animation
@@ -1062,7 +1220,17 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 <template>
   <section class="battle-page">
     <div class="battle-phone-shell">
-      <section class="battle-layout battle-layout-fixed">
+      <!-- ── Roguelite Run Map (pve_roguelite only, shown during lobby & roguelite_continue) ── -->
+      <RogueliteRunMap
+        v-if="showRogueliteMap"
+        :room="room"
+        :player-id="playerId"
+        @challenge="handleRogueliteMapChallenge"
+        @open-build="handleRogueliteMapOpenBuild"
+      />
+
+      <!-- ── Normal battle layout ── -->
+      <section v-else class="battle-layout battle-layout-fixed">
         <section class="battle-tools">
           <button class="ghost-btn small-btn" type="button" @click="openRuleGuide">规则 / 职业说明</button>
           <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="toggleBattleLog">战斗日志</button>
@@ -1134,7 +1302,18 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           </template>
         </section>
 
-        <section v-if="!isDuoMode" class="battle-zone">
+        <!-- Roguelite stage layout: self left, enemy right -->
+        <section v-if="isRogueliteMode && !isDuoMode" class="battle-zone roguelite-stage-zone">
+          <CombatBoard
+            :seats="rogueliteStageSeats"
+            inline-class="roguelite-stage-board"
+            @seat-click="handleSeatClick"
+            @info-click="openPlayerDetailById"
+          />
+        </section>
+
+        <!-- Classic battle zone: 1v1 / PVE (non-roguelite) -->
+        <section v-else-if="!isDuoMode" class="battle-zone">
           <div class="zone-heading">
             <strong>{{ opponentPanelTitle }}</strong>
             <span>{{ opponentPanelHint }}</span>
@@ -1146,8 +1325,16 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           />
         </section>
 
-        <section v-if="!isDuoMode" class="action-center" :class="[`turn-guide-${turnGuideTone}`, { 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive }]">
-          <div v-if="!isActionPanelActive" class="action-wait-strip">
+        <section v-if="!isDuoMode" class="action-center" :class="[`turn-guide-${turnGuideTone}`, { 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive, 'roguelite-action': isRogueliteMode }]">
+          <!-- Roguelite: cute wait card instead of thin strip -->
+          <div v-if="isRogueliteMode && !isActionPanelActive" class="roguelite-wait-card">
+            <span class="roguelite-wait-emoji" aria-hidden="true">{{ isBotTurn ? '🤖' : isRolling ? '🎲' : pendingGuardCheck ? '🛡' : isMyTurn ? '👆' : '🤔' }}</span>
+            <strong>{{ compactActionTitle }}</strong>
+            <p>{{ rogueliteWaitHint }}</p>
+            <small>{{ compactDiceText }}</small>
+          </div>
+          <!-- Classic: thin wait strip -->
+          <div v-else-if="!isActionPanelActive" class="action-wait-strip">
             <span>当前阶段</span>
             <strong>{{ compactActionTitle }}</strong>
             <small>{{ compactActorText }} · {{ compactDiceText }}</small>

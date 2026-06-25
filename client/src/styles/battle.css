@@ -37,6 +37,10 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
+.battle-layout-fixed .duo-battle-board {
+  overflow: visible;
+  overscroll-behavior: auto;
+}
 
 .battle-layout-fixed .battle-zone > .combat-board {
   overflow: visible;
@@ -48,9 +52,455 @@
 .duo-team-column { min-height: 0; overflow: hidden; border: 1px solid var(--color-border-divider); border-radius: var(--radius-md); background: var(--color-bg-shell); }
 .duo-team-column header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; border-bottom: 1px solid var(--color-border-divider); color: var(--color-text-primary); }
 .duo-team-column header span { color: var(--color-text-muted); font-size: 11px; font-weight: 800; }
-.duo-combat-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.duo-combat-board { grid-template-columns: minmax(0, 1fr); }
 .duo-actor-seat.selected .seat-button { border-color: var(--color-warning); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18); }
 .duo-action-center .action-summary { text-align: center; }
+
+/* ---- duo compact seats: horizontal mini-HUD ---- */
+/* constrain seat size */
+.duo-combat-board .battle-seat {
+  min-height: 0;
+  min-width: 0;
+  padding: 3px;
+}
+
+/* seat-button: shrink from legacy 88px→48px, horizontal content */
+.duo-combat-board .seat-button {
+  width: 48px !important;
+  height: 48px !important;
+  min-height: 48px;
+  padding: 2px;
+  overflow: hidden;
+}
+.duo-combat-board .battle-seat.active .seat-button {
+  width: 48px !important;
+  height: 48px !important;
+}
+
+/* avatar ring: shrink + clip overflow */
+.duo-combat-board .avatar-ring {
+  width: 44px !important;
+  height: 44px !important;
+  overflow: hidden;
+}
+.duo-combat-board .avatar-ring.has-sprite {
+  width: 48px !important;
+  height: 46px !important;
+}
+.duo-combat-board .battle-seat.active .avatar-ring.has-sprite {
+  width: 48px !important;
+  height: 46px !important;
+}
+
+/* sprite: override legacy absolute 96x88 → constrained to ring */
+.duo-combat-board .avatar-sprite {
+  width: 48px !important;
+  height: 46px !important;
+  max-width: 48px !important;
+  max-height: 46px !important;
+  object-fit: contain;
+}
+.duo-combat-board .battle-seat.active .avatar-sprite {
+  width: 48px !important;
+  height: 46px !important;
+}
+
+/* emoji fallback smaller */
+.duo-combat-board .avatar-emoji { font-size: 16px; }
+
+/* name row: compact */
+.duo-combat-board .seat-name-row {
+  font-size: 10px;
+  gap: 2px;
+}
+.duo-combat-board .seat-name-row strong {
+  font-size: 10px;
+  line-height: 1.15;
+}
+.duo-combat-board .seat-info-btn {
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+}
+
+/* stats: HP + shield inline */
+.duo-combat-board .seat-stats {
+  font-size: 10px;
+  gap: 4px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+.duo-combat-board .seat-stats span {
+  padding: 1px 4px;
+  border-radius: var(--radius-full);
+  background: #f1f5f9;
+}
+
+/* status chip */
+.duo-combat-board .seat-status {
+  font-size: 9px;
+  padding: 1px 4px;
+  line-height: 1.2;
+}
+
+/* hide tags + roll in duo */
+.duo-combat-board .seat-tags,
+.duo-combat-board .seat-roll { display: none; }
+
+/* remove team-column + battle-board scrolling */
+.duo-team-column { overflow: visible !important; }
+.battle-layout-fixed .duo-battle-board {
+  overflow: visible !important;
+  overscroll-behavior: auto;
+}
+
+/* ---- roguelite stage layout (pve_roguelite only) ---- */
+
+/* stage zone: compact fixed height — action area gets priority */
+.roguelite-stage-zone {
+  flex: 0 0 clamp(162px, 20vh, 200px) !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background:
+    linear-gradient(180deg, #f8f6f0 0%, #f0ead8 40%, #e8dfc8 100%) !important;
+}
+
+/* stage board: fills zone, characters sit on floor, tight padding */
+.roguelite-stage-board {
+  position: relative;
+  display: flex !important;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 28px;
+  height: 100%;
+  padding: 0 10px 14px !important;
+  min-height: 0;
+  grid-template-columns: none !important;
+  overflow: visible;
+}
+
+/* floor line — a thin platform beneath both characters */
+.roguelite-stage-board::after {
+  content: "";
+  position: absolute;
+  bottom: 8px;
+  left: 10%;
+  right: 10%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, #c4b99a 12%, #a8997a 50%, #c4b99a 88%, transparent 100%);
+}
+
+/* ---- stage seat: no card frame, compact foot HUD ---- */
+.roguelite-stage-board .battle-seat {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+  max-width: 144px;
+  min-height: 0;
+  padding: 0;
+  gap: 1px;
+}
+
+/* ---- unit HUD card: subtle panel below sprite ---- */
+.roguelite-stage-board .battle-seat .seat-name-row,
+.roguelite-stage-board .battle-seat .seat-stats,
+.roguelite-stage-board .battle-seat .seat-status {
+  width: 100%;
+  max-width: 132px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(2px);
+  box-sizing: border-box;
+}
+/* unify consecutive rows into one panel */
+.roguelite-stage-board .battle-seat .seat-name-row {
+  border-radius: 8px 8px 0 0;
+  padding-bottom: 1px;
+}
+.roguelite-stage-board .battle-seat .seat-stats {
+  border-radius: 0;
+  padding-top: 0;
+  padding-bottom: 1px;
+}
+.roguelite-stage-board .battle-seat .seat-status {
+  border-radius: 0 0 8px 8px;
+  padding-top: 0;
+}
+
+/* seat button → transparent, no card frame */
+.roguelite-stage-board .seat-button {
+  width: 96px !important;
+  height: 96px !important;
+  min-height: 96px;
+  padding: 0;
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: default;
+}
+.roguelite-stage-board .battle-seat.active .seat-button {
+  width: 104px !important;
+  height: 104px !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  animation: none;
+}
+/* selectable enemy: subtle click hint */
+.roguelite-stage-board .battle-seat.selectable .seat-button {
+  cursor: pointer;
+  filter: brightness(1.08);
+}
+.roguelite-stage-board .battle-seat.selectable .seat-button:hover,
+.roguelite-stage-board .battle-seat.selectable .seat-button:focus-visible {
+  filter: brightness(1.14) drop-shadow(0 0 6px rgba(245, 158, 11, 0.4));
+}
+.roguelite-stage-board .battle-seat.selected .seat-button {
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.5));
+}
+
+/* shield/hit/healed: keep animation but no card border */
+.roguelite-stage-board .battle-seat.shielded .seat-button { box-shadow: none !important; }
+.roguelite-stage-board .battle-seat.hit .seat-button { animation: card-shake 260ms ease; }
+.roguelite-stage-board .battle-seat.healed .seat-button { animation: card-glow 360ms ease; }
+.roguelite-stage-board .battle-seat.blocked .seat-button { animation: card-block 360ms ease; }
+
+/* ---- avatar / sprite: larger, shadow, no ring frame ---- */
+.roguelite-stage-board .avatar-ring {
+  width: 88px !important;
+  height: 88px !important;
+  overflow: visible;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.roguelite-stage-board .avatar-ring.has-sprite {
+  width: 96px !important;
+  height: 90px !important;
+}
+.roguelite-stage-board .battle-seat.active .avatar-ring.has-sprite {
+  width: 104px !important;
+  height: 96px !important;
+}
+
+/* sprite: larger + drop shadow beneath feet */
+.roguelite-stage-board .avatar-sprite {
+  width: 96px !important;
+  height: 90px !important;
+  max-width: 96px !important;
+  max-height: 90px !important;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.18)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.10));
+  transition: filter 140ms ease;
+}
+.roguelite-stage-board .battle-seat.active .avatar-sprite {
+  width: 104px !important;
+  height: 96px !important;
+}
+
+/* emoji fallback */
+.roguelite-stage-board .avatar-emoji {
+  font-size: 36px;
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.15));
+}
+
+/* ---- enemy faces left ---- */
+.roguelite-stage-board .battle-seat:nth-child(2) .avatar-ring.has-sprite,
+.roguelite-stage-board .battle-seat:nth-child(2) .avatar-sprite {
+  transform: scaleX(-1);
+}
+
+/* ---- marks: reposition for stage ---- */
+.roguelite-stage-board .attackable-mark,
+.roguelite-stage-board .target-mark {
+  font-size: 10px;
+  padding: 1px 4px;
+  top: -2px;
+}
+.roguelite-stage-board .invincible-mark,
+.roguelite-stage-board .seat-host-mark,
+.roguelite-stage-board .shield-mark {
+  font-size: 9px;
+  width: 18px;
+  height: 18px;
+}
+
+/* ---- simplified info HUD (name / HP / status below sprite) ---- */
+.roguelite-stage-board .seat-tags,
+.roguelite-stage-board .seat-roll {
+  display: none;
+}
+
+/* name row: centered, dark, compact */
+.roguelite-stage-board .seat-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  gap: 4px;
+  margin: 0;
+}
+.roguelite-stage-board .seat-name-row strong {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #3e2e1a;
+}
+.roguelite-stage-board .seat-info-btn {
+  display: none;
+}
+
+/* HP + shield: centered inline pills */
+.roguelite-stage-board .seat-stats {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 900;
+  margin: 0;
+}
+.roguelite-stage-board .seat-stats span {
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 245, 244, 0.85);
+  color: #5c3d1a;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* status chip: compact, no overflow, centered */
+.roguelite-stage-board .seat-status {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 800;
+  text-align: center;
+  color: #7a5c38;
+}
+
+/* ---- active player highlight (HUD + sprite glow) ---- */
+.roguelite-stage-board .battle-seat.active .seat-name-row,
+.roguelite-stage-board .battle-seat.active .seat-stats,
+.roguelite-stage-board .battle-seat.active .seat-status {
+  background: rgba(255, 248, 235, 0.78);
+}
+.roguelite-stage-board .battle-seat.active .seat-status {
+  color: #b45309;
+  font-weight: 900;
+}
+.roguelite-stage-board .battle-seat.active .seat-name-row strong {
+  color: #7c2d12;
+}
+
+/* ---- floating effects: prominent in center gap ---- */
+.roguelite-stage-board .float-number {
+  font-size: 17px;
+  font-weight: 900;
+  z-index: 10;
+}
+.roguelite-stage-board .float-number.big-hit {
+  font-size: 22px;
+}
+
+/* ---- dead seat: faint, no shadow ---- */
+.roguelite-stage-board .battle-seat.dead .avatar-sprite {
+  filter: grayscale(0.6) opacity(0.45);
+  transform: scaleX(-1); /* keep flip if enemy */
+}
+.roguelite-stage-board .battle-seat.dead:first-child .avatar-sprite {
+  transform: none; /* ally dead: no flip */
+}
+
+/* ---- roguelite action center: fills remaining space, scroll if needed ---- */
+.action-center.roguelite-action {
+  flex: 1 1 auto !important;
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+/* compact state: stable height for wait card */
+.action-center.roguelite-action.is-compact {
+  max-height: none !important;
+  min-height: 140px;
+  overflow-y: visible;
+}
+
+/* active state: no height clamp, internal dice-panel handles scroll */
+.action-center.roguelite-action.is-active {
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: visible;
+}
+
+/* ---- roguelite wait card: cute placeholder ---- */
+.roguelite-wait-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 140px;
+  padding: 16px 14px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(255,251,240,0.92) 0%, rgba(248,240,220,0.85) 100%);
+  border: 2px dashed #d4c8a8;
+  text-align: center;
+}
+
+.roguelite-wait-emoji {
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 2px;
+  animation: roguelite-wait-bounce 1.8s ease-in-out infinite;
+}
+
+@keyframes roguelite-wait-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.roguelite-wait-card strong {
+  font-size: 16px;
+  font-weight: 900;
+  color: #5c3d1a;
+  line-height: 1.2;
+}
+
+.roguelite-wait-card p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #8b6914;
+  line-height: 1.3;
+  max-width: 260px;
+}
+
+.roguelite-wait-card small {
+  font-size: 11px;
+  font-weight: 800;
+  color: #a8997a;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255,255,255,0.6);
+}
 
 /* ---- battle seat overrides ---- */
 .battle-seat { gap: 4px; }
@@ -294,8 +744,8 @@
   .zone-heading span { display: none; }
   .battle-zone .combat-board { padding: 6px; }
   .battle-layout-fixed .battle-zone > .combat-board { padding-top: 22px; }
-  .duo-battle-board { grid-template-columns: 1fr; gap: 6px; padding: 6px; }
-  .duo-combat-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .duo-battle-board { gap: 6px; padding: 6px; }
+  .duo-combat-board { grid-template-columns: minmax(0, 1fr); }
   .seat-button { min-height: 82px; padding: 5px; }
   .avatar-ring { width: 68px; height: 68px; }
   .avatar-ring.has-sprite { width: 90px; height: 82px; }
@@ -333,7 +783,253 @@
   .emote-btn small { display: none; }
   .self-info-btn { position: absolute; top: 8px; right: 8px; }
   .continue-actions { grid-template-columns: 1fr; }
+
+  /* roguelite stage: tighter on small screens */
+  .roguelite-stage-zone {
+    flex-basis: clamp(140px, 18vh, 170px) !important;
+  }
+  .roguelite-stage-board {
+    gap: 18px;
+    padding: 0 6px 12px !important;
+  }
+  .roguelite-stage-board::after {
+    left: 6%;
+    right: 6%;
+    bottom: 4px;
+  }
+  .roguelite-stage-board .battle-seat {
+    max-width: 110px;
+  }
+  .roguelite-stage-board .seat-button {
+    width: 64px !important;
+    height: 64px !important;
+    min-height: 64px;
+  }
+  .roguelite-stage-board .battle-seat.active .seat-button {
+    width: 68px !important;
+    height: 68px !important;
+  }
+  .roguelite-stage-board .avatar-ring {
+    width: 56px !important;
+    height: 56px !important;
+  }
+  .roguelite-stage-board .avatar-ring.has-sprite {
+    width: 62px !important;
+    height: 56px !important;
+  }
+  .roguelite-stage-board .battle-seat.active .avatar-ring.has-sprite {
+    width: 68px !important;
+    height: 62px !important;
+  }
+  .roguelite-stage-board .avatar-sprite {
+    width: 62px !important;
+    height: 56px !important;
+    max-width: 62px !important;
+    max-height: 56px !important;
+  }
+  .roguelite-stage-board .battle-seat.active .avatar-sprite {
+    width: 68px !important;
+    height: 62px !important;
+  }
+  .roguelite-stage-board .avatar-emoji { font-size: 22px; }
+
+  /* HUD: smaller on mobile */
+  .roguelite-stage-board .battle-seat .seat-name-row,
+  .roguelite-stage-board .battle-seat .seat-stats,
+  .roguelite-stage-board .battle-seat .seat-status {
+    max-width: 108px;
+    padding: 1px 5px;
+  }
+  .roguelite-stage-board .seat-name-row strong { font-size: 10px; max-width: 70px; }
+  .roguelite-stage-board .seat-stats { gap: 3px; }
+  .roguelite-stage-board .seat-stats span { font-size: 9px; padding: 1px 4px; }
+  .roguelite-stage-board .seat-status { font-size: 8px; }
+  .roguelite-stage-board .float-number { font-size: 14px; }
+  .roguelite-stage-board .float-number.big-hit { font-size: 18px; }
+
+  /* action center: tighter on mobile */
+  .action-center.roguelite-action.is-compact {
+    min-height: 110px;
+  }
+  .roguelite-wait-card {
+    min-height: 110px;
+    padding: 12px 10px;
+    gap: 4px;
+  }
+  .roguelite-wait-emoji { font-size: 28px; }
+  .roguelite-wait-card strong { font-size: 14px; }
+  .roguelite-wait-card p { font-size: 11px; }
 }
+
+/* ---- roguelite: very small / short screens (328-360px wide, ≤680px tall) ---- */
+@media (max-width: 370px), (max-height: 680px) {
+  /* stage: further compress */
+  .roguelite-stage-zone {
+    flex-basis: clamp(132px, 18vh, 155px) !important;
+  }
+  .roguelite-stage-board {
+    gap: 14px;
+    padding: 0 6px 10px !important;
+  }
+  .roguelite-stage-board::after {
+    bottom: 3px;
+    height: 2px;
+  }
+  .roguelite-stage-board .battle-seat {
+    max-width: 104px;
+  }
+  .roguelite-stage-board .seat-button {
+    width: 58px !important;
+    height: 58px !important;
+    min-height: 58px;
+  }
+  .roguelite-stage-board .battle-seat.active .seat-button {
+    width: 62px !important;
+    height: 62px !important;
+  }
+  .roguelite-stage-board .avatar-ring {
+    width: 50px !important;
+    height: 50px !important;
+  }
+  .roguelite-stage-board .avatar-ring.has-sprite {
+    width: 56px !important;
+    height: 50px !important;
+  }
+  .roguelite-stage-board .battle-seat.active .avatar-ring.has-sprite {
+    width: 60px !important;
+    height: 54px !important;
+  }
+  .roguelite-stage-board .avatar-sprite {
+    width: 56px !important;
+    height: 50px !important;
+    max-width: 56px !important;
+    max-height: 50px !important;
+  }
+  .roguelite-stage-board .battle-seat.active .avatar-sprite {
+    width: 60px !important;
+    height: 54px !important;
+  }
+  .roguelite-stage-board .avatar-emoji { font-size: 20px; }
+
+  /* HUD: ultra-compact */
+  .roguelite-stage-board .battle-seat .seat-name-row,
+  .roguelite-stage-board .battle-seat .seat-stats,
+  .roguelite-stage-board .battle-seat .seat-status {
+    max-width: 100px;
+    padding: 1px 4px;
+  }
+  .roguelite-stage-board .seat-name-row strong { font-size: 9px; max-width: 64px; }
+  .roguelite-stage-board .seat-stats { gap: 2px; }
+  .roguelite-stage-board .seat-stats span { font-size: 8px; padding: 1px 3px; }
+  .roguelite-stage-board .seat-status { font-size: 7px; }
+  .roguelite-stage-board .float-number { font-size: 12px; }
+  .roguelite-stage-board .float-number.big-hit { font-size: 15px; }
+
+  /* action center: tight */
+  .action-center.roguelite-action.is-compact {
+    min-height: 96px;
+  }
+  .action-center.roguelite-action.is-active {
+    min-height: 0;
+  }
+  .roguelite-wait-card {
+    min-height: 96px;
+    padding: 10px 8px;
+    gap: 3px;
+  }
+  .roguelite-wait-emoji { font-size: 24px; }
+  .roguelite-wait-card strong { font-size: 13px; }
+  .roguelite-wait-card p { font-size: 11px; }
+  .roguelite-wait-card small { font-size: 10px; }
+
+  /* dice panel: reduce internal spacing (roguelite only) */
+  .action-center.roguelite-action .dice-panel {
+    gap: 4px;
+    padding: 5px 7px;
+  }
+  .action-center.roguelite-action .dice-box span {
+    width: 38px;
+    height: 38px;
+    font-size: 22px;
+  }
+  .action-center.roguelite-action .dice-visual { gap: 4px; }
+
+  /* action phase heading: compact (roguelite only) */
+  .action-center.roguelite-action .action-phase {
+    padding: 4px 7px;
+    gap: 1px;
+  }
+  .action-center.roguelite-action .action-phase strong { font-size: 13px; }
+  .action-center.roguelite-action .action-phase small { font-size: 10px; }
+
+  /* action slots: smaller cards, ensure no overlap with button (roguelite only) */
+  .action-center.roguelite-action .dice-action-slots { margin-top: 2px; }
+  .action-center.roguelite-action .dice-action-slots .slot-heading {
+    font-size: 11px;
+    padding: 2px 0;
+  }
+  .action-center.roguelite-action .dice-action-slot {
+    flex-basis: 106px;
+    min-height: 52px;
+    padding: 4px 5px;
+  }
+  .action-center.roguelite-action .dice-action-slot strong { font-size: 11px; }
+  .action-center.roguelite-action .dice-action-slot small { font-size: 9px; }
+  .action-center.roguelite-action .dice-action-slot .slot-dice { font-size: 13px; }
+
+  /* roll button: compact but clickable (roguelite only) */
+  .action-center.roguelite-action .roll-btn {
+    min-height: 36px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+
+  /* self-destruct panel: compact (roguelite only) */
+  .action-center.roguelite-action .self-destruct-panel {
+    gap: 4px;
+    margin-bottom: 4px;
+    padding: 5px 6px;
+  }
+  .action-center.roguelite-action .self-destruct-panel .self-destruct-title strong { font-size: 11px; }
+  .action-center.roguelite-action .self-destruct-panel .self-destruct-btn {
+    min-height: 34px;
+    padding: 3px 4px;
+  }
+  .action-center.roguelite-action .self-destruct-btn strong { font-size: 14px; }
+  .action-center.roguelite-action .self-destruct-btn small { font-size: 8px; }
+
+  /* roguelite status: constrain height, limit visible traits */
+  .roguelite-compact {
+    height: 52px;
+    min-height: 44px;
+    max-height: 56px;
+    gap: 2px 4px;
+    padding: 3px 6px;
+  }
+  .roguelite-compact-main { gap: 3px; }
+  .roguelite-compact-stage { font-size: 11px; }
+  .roguelite-compact-stage i { display: none; }
+  .roguelite-compact-enemy {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .roguelite-compact-traits {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .roguelite-compact-perks {
+    gap: 2px;
+    max-height: 18px;
+    overflow: hidden;
+  }
+  .roguelite-compact-perks span { font-size: 9px; padding: 1px 3px; }
+  .roguelite-compact-details { font-size: 10px; padding: 2px 5px; }
+}
+
 .battle-tools {
   display: flex;
   justify-content: space-between;

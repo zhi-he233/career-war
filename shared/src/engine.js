@@ -1110,10 +1110,11 @@ function finishAction(room, actor, target, outcome, events, ctx) {
         outcome.skillMessages.push(`三倍结算：（技能骰基础 ${baseWithBonuses}）×3 = ${outcome.damage}${gunnerLevel >= 2 ? `（含 Lv.${gunnerLevel} 额外 +3）` : ""}`);
         skillHintDrafts.push({ key: "gunner-triple-shot", text: "三倍射击！", valueText: `-${outcome.damage}` });
     }
-    if (outcome.rogueliteSkillId === "zhaoyun_pierce" && outcome.damage > 0) {
-        const zhaoyunLevel = actor.roguelitePerkStacks?.["zhaoyun_pierce"] ?? actor.rogueliteSkillStacks?.["zhaoyun_pierce"] ?? 0;
+    // Zhao Zilong roguelite passive: pierce shield/armor on all attacks
+    const zhaoyunPierceLevel = actor.roguelitePerkStacks?.["zhaoyun_pierce"] ?? actor.rogueliteSkillStacks?.["zhaoyun_pierce"] ?? 0;
+    if ((outcome.rogueliteSkillId === "zhaoyun_pierce" || zhaoyunPierceLevel > 0) && outcome.damage > 0) {
         outcome.ignoresShield = true;
-        const extraDamage = Math.max(0, Math.min(2, zhaoyunLevel - 1));
+        const extraDamage = Math.max(0, Math.min(2, zhaoyunPierceLevel - 1));
         outcome.damage += extraDamage;
         outcome.skillMessages.push("赵子龙技能发动：破阵！本次攻击无视护盾和护甲。");
         if (extraDamage > 0)

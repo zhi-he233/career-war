@@ -48,7 +48,7 @@ const currentStage = computed(() => Math.max(localStage.value, serverStage.value
 const activeRoomMode = ref<RogueliteRoomFlow>("map");
 const gold = computed(() => {
   const g = (p.room.roguelite as any)?.runGold;
-  return typeof g === "number" && g > 0 ? g : null;
+  return typeof g === "number" ? g : 0;
 });
 const bText = computed(() => {
   const d = bossDist(currentStage.value);
@@ -427,7 +427,7 @@ onUnmounted(() => {
     <!-- ═══ resource bar ═══ -->
     <header class="m-res">
       <span class="chip c-red"><i>❤️</i>{{ hpVal }}/{{ maxHpVal }}</span>
-      <span class="chip c-amber" :class="{ off: gold === null }"><i>🪙</i>{{ gold ?? "—" }}</span>
+      <span class="chip c-amber"><i>🪙</i>{{ gold }}</span>
       <span class="chip c-blue"><i>🚪</i>第{{ currentStage }}关</span>
       <span class="chip c-pink"><i>👑</i>{{ bText }}</span>
     </header>
@@ -508,10 +508,9 @@ onUnmounted(() => {
 
 /* ══════ VIEWPORT ══════ */
 .map-viewport {
-  flex:1 1 auto; min-height:520px;
+  flex:1 1 auto; min-height:380px; max-height:560px;
   position:relative; width:100%; max-width:460px;
-  height:min(620px, calc(100dvh - 250px));
-  margin:18px auto 0; border-radius:14px; overflow:hidden;
+  margin:12px auto 0; border-radius:14px; overflow:hidden;
   touch-action:none; overscroll-behavior:contain; cursor:grab;
   background: radial-gradient(circle at 18% 30%,rgba(210,190,150,.10) 0%,transparent 55%),
               radial-gradient(circle at 82% 68%,rgba(200,175,135,.08) 0%,transparent 55%),
@@ -545,7 +544,7 @@ onUnmounted(() => {
 .m-sel { z-index:7; filter:brightness(1.08) drop-shadow(0 0 8px rgba(245,158,11,.45)); }
 
 /* ══════ BOTTOM ══════ */
-.m-bot { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:10px 14px; min-height:60px; background:rgba(255,255,255,.88); backdrop-filter:blur(6px); border-top:1px solid rgba(180,155,120,.18); }
+.m-bot { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); min-height:60px; background:rgba(255,255,255,.88); backdrop-filter:blur(6px); border-top:1px solid rgba(180,155,120,.18); }
 .m-bot-info { flex:1; min-width:0; text-align:center; font-size:13px; font-weight:800; color:#5c4a2a; }
 .m-bot-back { flex:0 0 auto; min-width:72px; min-height:42px; padding:8px 14px; border:1.5px solid #d9ccb2; border-radius:18px; background:#fffaf0; color:#6f5a34; font-size:14px; font-weight:900; cursor:pointer; }
 .m-bot-back:active{transform:translateY(2px)}
@@ -558,13 +557,13 @@ onUnmounted(() => {
 
 /* ══════ RESPONSIVE ══════ */
 @media(max-width:430px){
-  .map-viewport{min-height:500px;height:min(600px,calc(100dvh - 232px));margin-top:16px}
+  .map-viewport{min-height:340px;max-height:460px;margin-top:10px}
   .m-res{gap:3px;padding:5px 7px} .chip{font-size:10px;padding:3px 7px} .chip i{font-size:11px}
   .m-info{margin:4px 8px 0;padding:8px 10px} .m-info-l h2{font-size:14px} .m-info-l p{font-size:10px}
-  .m-bot{padding:8px 10px;min-height:52px;gap:7px} .m-bot-go{min-width:92px;min-height:44px;padding:8px 14px;font-size:16px} .m-bot-back{min-width:60px;min-height:38px;padding:7px 10px;font-size:13px}
+  .m-bot{padding:8px 10px calc(8px + env(safe-area-inset-bottom, 0px));min-height:52px;gap:7px} .m-bot-go{min-width:92px;min-height:44px;padding:8px 14px;font-size:16px} .m-bot-back{min-width:60px;min-height:38px;padding:7px 10px;font-size:13px}
 }
 @media(max-width:370px),(max-height:680px){
-  .map-viewport{min-height:460px;height:min(560px,calc(100dvh - 216px));margin-top:12px}
+  .map-viewport{min-height:300px;max-height:400px;margin-top:8px}
   .m-res{gap:2px;padding:4px 5px} .chip{font-size:9px;padding:2px 5px} .chip i{font-size:10px}
   .m-bot-info{font-size:12px}.m-bot-go{min-width:80px;min-height:38px;padding:6px 10px;font-size:14px}.m-bot-back{min-width:54px;min-height:34px;padding:5px 8px;font-size:12px}
 }

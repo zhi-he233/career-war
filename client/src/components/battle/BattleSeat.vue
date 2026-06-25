@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { SeatViewModel } from "./types";
 export type { SeatViewModel };
 
@@ -10,6 +11,9 @@ const emit = defineEmits<{
   seatClick: [playerId: string];
   infoClick: [playerId: string];
 }>();
+
+/** Enemy = NOT self. Defaults to false (safe) when isSelf is undefined. */
+const isEnemy = computed(() => props.seat.isSelf === false);
 </script>
 
 <template>
@@ -39,14 +43,16 @@ const emit = defineEmits<{
       <span v-if="props.seat.isHost" class="seat-host-mark">房</span>
       <span v-if="props.seat.shield > 0" class="shield-mark" aria-label="护盾">🛡</span>
 
+      <!-- ═══ SPRITE: wrap in flip shell so enemy sprites face the player ═══ -->
       <span class="avatar-ring" :class="{ 'has-sprite': props.seat.spriteSrc }">
-        <img
-          v-if="props.seat.spriteSrc"
-          class="avatar-sprite"
-          :src="props.seat.spriteSrc"
-          :alt="props.seat.characterName"
-          draggable="false"
-        />
+        <span v-if="props.seat.spriteSrc" class="sprite-flip-shell" :class="{ 'is-enemy': isEnemy }">
+          <img
+            class="avatar-sprite"
+            :src="props.seat.spriteSrc"
+            :alt="props.seat.characterName"
+            draggable="false"
+          />
+        </span>
         <span v-else class="avatar-emoji">{{ props.seat.avatarEmoji }}</span>
       </span>
 
@@ -89,3 +95,15 @@ const emit = defineEmits<{
     <span class="seat-status">{{ props.seat.statusText }}</span>
   </article>
 </template>
+
+<style scoped>
+/* Flip shell: flips the sprite image for enemy seats.
+   IMPORTANT: do NOT use display:contents — transforms don't apply to it. */
+.sprite-flip-shell {
+  display: inline-block;
+  line-height: 0;
+}
+.sprite-flip-shell.is-enemy {
+  transform: scaleX(-1) !important;
+}
+</style>

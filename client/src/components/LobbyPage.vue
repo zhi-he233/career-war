@@ -105,7 +105,8 @@ const startHint = computed(() => {
   if (isDuoModeDevelopment.value && props.room.players.length !== 2) return "2V2 需要 2 名玩家后才能开始。";
   if (isDuoModeDevelopment.value && !isDuoReadyToStart.value) return "请完成 4 个角色槽位和召唤师技能选择。";
   if (isDuoModeDevelopment.value) return "将进入 2V2 双角色测试版：每名玩家控制两个角色进行战斗。";
-  if (isRogueliteMode.value) return `肉鸽挑战：初始拳手，不使用召唤师技能，胜利后按阶段获得奖励。`;
+  if (isRogueliteMode.value && !me.value?.characterId) return "请选择职业。";
+  if (isRogueliteMode.value) return "准备开始肉鸽挑战。";
   if (isSinglePlayerPveMode.value && !me.value?.characterId) return "请选择 1 个职业。";
   if (isSinglePlayerPveMode.value && !me.value?.summonerSkillId) return "请选择 1 个召唤师技能。";
   if (isPveMode.value) return `准备开始人机练习：${characterName(me.value?.characterId)} vs AI`;

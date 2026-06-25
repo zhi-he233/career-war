@@ -2,6 +2,7 @@
 import { createClientId } from "./utils/id";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { characterList } from "@career-war/shared";
 import type { Character, CharacterId, GameEvent, GameMode, PlayerEmoteEvent, RollActionType, RollDecisionChoice, Room, RoomListItem, RoomSettings, SummonerSkillId } from "@career-war/shared";
 import { getClientId, socket, type Ack } from "./socket";
 
@@ -20,7 +21,7 @@ const PLAYER_ID_KEY = "career-war-player-id";
 const isDev = import.meta.env.DEV;
 
 const room = ref<Room | null>(null);
-const characters = ref<Character[]>([]);
+const characters = ref<Character[]>([...characterList]);
 const playerId = ref("");
 const roomId = ref("");
 const roomList = ref<RoomListItem[]>([]);
@@ -80,7 +81,7 @@ onMounted(() => {
   socket.on("disconnect", handleSocketDisconnected);
   socket.on("clientPong", handleClientPong);
   socket.on("characters", (items: Character[]) => {
-    characters.value = items;
+    characters.value = items.length > 0 ? items : [...characterList];
   });
   socket.on("gameStateUpdated", (nextRoom: Room) => {
     room.value = nextRoom;

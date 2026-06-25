@@ -311,11 +311,7 @@
   filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.15));
 }
 
-/* ---- enemy faces left ---- */
-.roguelite-stage-board .battle-seat:nth-child(2) .avatar-ring.has-sprite,
-.roguelite-stage-board .battle-seat:nth-child(2) .avatar-sprite {
-  transform: scaleX(-1);
-}
+/* ---- enemy sprite flip is now handled in BattleSeat.vue via .sprite-flip-shell.is-enemy ---- */
 
 /* ---- marks: reposition for stage ---- */
 .roguelite-stage-board .attackable-mark,
@@ -421,10 +417,10 @@
 /* ---- dead seat: faint, no shadow ---- */
 .roguelite-stage-board .battle-seat.dead .avatar-sprite {
   filter: grayscale(0.6) opacity(0.45);
-  transform: scaleX(-1); /* keep flip if enemy */
+  /* flip is handled by .sprite-flip-shell.is-enemy in BattleSeat.vue */
 }
 .roguelite-stage-board .battle-seat.dead:first-child .avatar-sprite {
-  transform: none; /* ally dead: no flip */
+  /* ally dead: flip already excluded by isSelf check in BattleSeat */
 }
 
 /* ---- roguelite action center: fills remaining space, scroll if needed ---- */

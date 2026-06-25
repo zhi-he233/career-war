@@ -16,6 +16,15 @@ export interface RogueliteRoomTypeConfig {
   isRouteChoice: boolean;
 }
 
+export interface RogueliteMapNodeSelection {
+  id: string;
+  stage: number;
+  type: RogueliteMapRoomType;
+  enemyTemplateId?: string;
+  bossTemplateId?: string;
+  rewardTier?: string;
+}
+
 export const ROGUELITE_ROOM_TYPES = {
   normal: {
     type: "normal",

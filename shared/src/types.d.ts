@@ -1,3 +1,4 @@
+import type { RogueliteMapNodeSelection } from "./data/rogueliteRoomTypes.js";
 export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin" | "self_destructor" | "war_knight" | "crescent_moon" | "fire_lord" | "mountain_shield";
 export type RoomPhase = "lobby" | "battle" | "reward" | "roguelite_continue" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
@@ -141,6 +142,7 @@ export interface RogueliteReward {
 export interface RogueliteRunState {
     stage: number;
     maxStage: number;
+    currentMapNode?: RogueliteMapNodeSelection;
     battleRound?: number;
     fatigueBonus?: number;
     fatigueAnnouncedBonus?: number;

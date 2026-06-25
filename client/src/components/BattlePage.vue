@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
+import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteMapNodeSelection, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import { getCharacterArt } from "../assets/art/characters";
 import { useDiceAnimation } from "../composables/useDiceAnimation";
@@ -1031,19 +1031,19 @@ function onChooseRogueliteReward(rewardId: string): void {
   closeRogueliteDetails();
 }
 
-function chooseRogueliteContinue(choice: "finish" | "continue"): void {
+function chooseRogueliteContinue(choice: "finish" | "continue", mapNode?: RogueliteMapNodeSelection): void {
   if (!isRogueliteMode.value || room.value.phase !== "roguelite_continue") return;
-  socket.emit("chooseRogueliteContinue", { choice });
+  socket.emit("chooseRogueliteContinue", { choice, mapNode });
 }
 
-function handleRogueliteMapChallenge(): void {
+function handleRogueliteMapChallenge(mapNode: RogueliteMapNodeSelection): void {
   if (!isRogueliteMode.value) return;
 
   // Case 1: roguelite_continue phase — use existing socket flow
   if (room.value.phase === "roguelite_continue") {
     lastMapStageShown.value = room.value.roguelite?.stage ?? null;
     rogueliteMapGateVisible.value = false;
-    chooseRogueliteContinue("continue");
+    chooseRogueliteContinue("continue", mapNode);
     return;
   }
 
@@ -1463,4 +1463,3 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
     </transition>
   </section>
 </template>
-

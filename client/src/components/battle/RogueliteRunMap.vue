@@ -6,6 +6,7 @@ const routeByRun = new Map<string, Map<number, string>>();
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ROGUELITE_MAP_RULES,
+  ROGUELITE_ROOM_TYPES,
   ROGUELITE_ROOM_TYPE_LABELS,
   createRogueliteMapLayer,
   getRogueliteConnectedNodeIds,
@@ -13,12 +14,15 @@ import {
   getRogueliteMapStagePrimaryType,
   getRogueliteMapWorldY,
 } from "@career-war/shared";
-import type { RogueliteMapRoomType, Room } from "@career-war/shared";
+import type { RogueliteMapNodeSelection, RogueliteMapRoomType, Room } from "@career-war/shared";
 import RogueliteMapNode from "./RogueliteMapNode.vue";
+import RogueliteRoomPanel from "./RogueliteRoomPanel.vue";
 import type { NodeStatus } from "./RogueliteMapNode.vue";
 
 const p = defineProps<{ room: Room; playerId: string }>();
-const emit = defineEmits<{ challenge: []; openBuild: []; back: [] }>();
+const emit = defineEmits<{ challenge: [node: RogueliteMapNodeSelection]; openBuild: []; back: [] }>();
+
+type RogueliteRoomFlow = "map" | "battle" | "event" | "shop" | "rest" | "reward";
 
 function isMega(s: number) { return s % 15 === 0; }
 function bossDist(c: number) { let t = c; while (getRogueliteMapStagePrimaryType(t) !== "boss") t++; return t - c; }
@@ -39,13 +43,16 @@ const me = computed(() => p.room.players.find((pl) => pl.id === p.playerId));
 const hpVal = computed(() => me.value?.hp ?? 0);
 const maxHpVal = computed(() => me.value?.maxHp ?? 40);
 const serverStage = computed(() => Math.max(p.room.roguelite?.stage ?? 1, 1));
+const localStage = ref(serverStage.value);
+const currentStage = computed(() => Math.max(localStage.value, serverStage.value));
+const activeRoomMode = ref<RogueliteRoomFlow>("map");
 const gold = computed(() => {
   const g = (p.room.roguelite as any)?.runGold;
   return typeof g === "number" && g > 0 ? g : null;
 });
 const bText = computed(() => {
-  const d = bossDist(serverStage.value);
-  if (d === 0) return isMega(serverStage.value) ? "大Boss关" : "Boss关";
+  const d = bossDist(currentStage.value);
+  if (d === 0) return isMega(currentStage.value) ? "大Boss关" : "Boss关";
   return `Boss还有${d}关`;
 });
 
@@ -107,6 +114,8 @@ function setRoute(stage: number, id: string): void {
 watch(
   () => [runKey.value, serverStage.value] as const,
   ([, stage]) => {
+    localStage.value = stage;
+    activeRoomMode.value = "map";
     rememberPastRoute(stage);
     if (stage === 1) {
       setRoute(1, nodeId(1, 0));
@@ -122,11 +131,11 @@ watch(
 
 const routeChoicePending = computed(() => {
   routeVersion.value;
-  return serverStage.value > 1 && !routes().has(serverStage.value);
+  return currentStage.value > 1 && !routes().has(currentStage.value);
 });
-const anchorStage = computed(() => routeChoicePending.value ? serverStage.value - 1 : serverStage.value);
+const anchorStage = computed(() => routeChoicePending.value ? currentStage.value - 1 : currentStage.value);
 const visFrom = computed(() => Math.max(1, anchorStage.value - LOOK_BACK));
-const visTo = computed(() => serverStage.value + PREGEN_AHEAD);
+const visTo = computed(() => currentStage.value + PREGEN_AHEAD);
 
 function worldY(stage: number): number {
   return getRogueliteMapWorldY(stage);
@@ -171,19 +180,19 @@ const nodes = computed<N[]>(() => {
     byStage.get(node.stage)!.push(node);
   }
 
-  const previousLayer = byStage.get(serverStage.value - 1) ?? [];
-  const previousRouteId = rs.get(serverStage.value - 1) ?? nodeId(serverStage.value - 1, 0);
+  const previousLayer = byStage.get(currentStage.value - 1) ?? [];
+  const previousRouteId = rs.get(currentStage.value - 1) ?? nodeId(currentStage.value - 1, 0);
   const previousRouteNode = previousLayer.find((node) => node.id === previousRouteId);
   const availableIds = previousRouteNode
-    ? connectedTargets(previousRouteNode, byStage.get(serverStage.value) ?? [])
+    ? connectedTargets(previousRouteNode, byStage.get(currentStage.value) ?? [])
     : new Set<string>();
 
   for (const node of out) {
     const chosenAtStage = rs.get(node.stage);
-    if (node.stage < serverStage.value) {
+    if (node.stage < currentStage.value) {
       node.status = chosenAtStage === node.id ? "cleared" : "locked";
-    } else if (node.stage === serverStage.value) {
-      if (serverStage.value === 1 || chosenAtStage) {
+    } else if (node.stage === currentStage.value) {
+      if (currentStage.value === 1 || chosenAtStage) {
         node.status = (chosenAtStage ?? nodeId(1, 0)) === node.id ? "current" : "locked";
       } else if (pendingNodeId.value === node.id) {
         node.status = "pending";
@@ -223,6 +232,7 @@ const edges = computed<E[]>(() => {
     let edgeBudget = ROGUELITE_MAP_RULES.maxConnectionsBetweenLayers;
     for (const cn of curLayer) {
       if (edgeBudget <= 0) break;
+      if (cn.status === "locked") continue;
       const targetIds = connectedTargets(cn, nextLayer);
       const targets = nextLayer.filter((node) => targetIds.has(node.id));
       for (const tn of targets) {
@@ -249,7 +259,7 @@ const visibleEdges = computed(() => edges.value.filter((edge) => {
 
 function onSelect(nd: N) {
   if (nd.status !== "available" && nd.status !== "pending" && nd.status !== "current") return;
-  if (nd.stage !== serverStage.value) return;
+  if (nd.stage !== currentStage.value) return;
   if (nd.status === "current") {
     selectedNodeId.value = nd.id;
     return;
@@ -259,20 +269,54 @@ function onSelect(nd: N) {
 
 function confirmPendingRoute() {
   const node = pendingNode.value;
-  if (!node || node.stage !== serverStage.value) return;
+  if (!node || node.stage !== currentStage.value) return;
   setRoute(node.stage, node.id);
   selectedNodeId.value = node.id;
   pendingNodeId.value = null;
 }
 
-function startCurrentRoom() {
+function startBattleForCurrentNode() {
   const node = currentNode.value;
-  if (!node || node.stage !== serverStage.value) return;
-  emit("challenge");
+  if (!node || node.stage !== currentStage.value) return;
+  if (!ROGUELITE_ROOM_TYPES[node.type].entersBattle) return;
+  activeRoomMode.value = "battle";
+  emit("challenge", { id: node.id, stage: node.stage, type: node.type });
+}
+
+function enterCurrentRoom() {
+  const node = currentNode.value;
+  if (!node || node.stage !== currentStage.value) return;
+  switch (node.type) {
+    case "normal":
+    case "elite":
+    case "boss":
+      startBattleForCurrentNode();
+      break;
+    case "event":
+    case "shop":
+    case "rest":
+    case "reward":
+      activeRoomMode.value = node.type;
+      break;
+  }
+}
+
+function completeCurrentRoom(_result: { type: RogueliteMapRoomType; action: string }) {
+  const node = currentNode.value;
+  if (!node || node.stage !== currentStage.value) return;
+  activeRoomMode.value = "map";
+  localStage.value = currentStage.value + 1;
+  pendingNodeId.value = null;
+  selectedNodeId.value = routes().get(localStage.value) ?? null;
+  routeVersion.value++;
 }
 
 function handleBack() {
   emit("back");
+}
+
+function closeRoomPanel() {
+  activeRoomMode.value = "map";
 }
 
 const curNode = computed(() => nodes.value.find((n) => n.status === "current"));
@@ -281,7 +325,7 @@ const pendingNode = computed(() => nodes.value.find((n) => n.status === "pending
 const cameraAnchorNode = computed(() => {
   if (currentNode.value) return currentNode.value;
   if (pendingNode.value) return pendingNode.value;
-  const previousRouteId = routes().get(serverStage.value - 1) ?? nodeId(serverStage.value - 1, 0);
+  const previousRouteId = routes().get(currentStage.value - 1) ?? nodeId(currentStage.value - 1, 0);
   return nodes.value.find((n) => n.id === previousRouteId) ?? nodes.value.find((n) => n.stage === anchorStage.value);
 });
 const cameraY = computed(() => currentAnchorY.value - (cameraAnchorNode.value?.worldY ?? worldY(anchorStage.value)));
@@ -293,12 +337,22 @@ const worldStyle = computed(() => ({
 const minDragY = computed(() => Math.max(NODE_HALF_H - currentAnchorY.value, -260));
 const maxDragY = computed(() => Math.min(viewportHeight.value + NODE_HALF_H - currentAnchorY.value, 360));
 const clampedDragY = computed(() => Math.min(maxDragY.value, Math.max(minDragY.value, dragY.value)));
-const primaryButtonText = computed(() => pendingNode.value ? "确认路线" : "开打");
+const ENTER_BUTTON_TEXT: Record<RogueliteMapRoomType, string> = {
+  normal: "开打",
+  elite: "挑战精英",
+  boss: "挑战 Boss",
+  event: "查看事件",
+  shop: "进入商店",
+  rest: "休息一下",
+  reward: "领取奖励",
+};
+const primaryButtonText = computed(() => pendingNode.value ? "确认路线" : currentNode.value ? ENTER_BUTTON_TEXT[currentNode.value.type] : "开打");
 const primaryDisabled = computed(() => !pendingNode.value && !currentNode.value);
 const bottomText = computed(() => {
   if (pendingNode.value) return `待选第${pendingNode.value.stage}关 · ${LABEL[pendingNode.value.type]}`;
-  if (!currentNode.value) return `选择第${serverStage.value}关路线`;
-  return `第${currentNode.value.stage}关 · ${LABEL[currentNode.value.type]}战斗`;
+  if (!currentNode.value) return `选择第${currentStage.value}关路线`;
+  const suffix = ROGUELITE_ROOM_TYPES[currentNode.value.type].entersBattle ? "战斗" : "房间";
+  return `第${currentNode.value.stage}关 · ${LABEL[currentNode.value.type]}${suffix}`;
 });
 
 function handlePrimaryAction() {
@@ -306,7 +360,7 @@ function handlePrimaryAction() {
     confirmPendingRoute();
     return;
   }
-  startCurrentRoom();
+  enterCurrentRoom();
 }
 
 function syncViewportHeight(): void {
@@ -348,7 +402,7 @@ function handleWheel(event: WheelEvent): void {
 }
 
 watch(
-  () => [runKey.value, serverStage.value] as const,
+  () => [runKey.value, currentStage.value] as const,
   () => {
     dragY.value = 0;
   }
@@ -374,13 +428,13 @@ onUnmounted(() => {
     <header class="m-res">
       <span class="chip c-red"><i>❤️</i>{{ hpVal }}/{{ maxHpVal }}</span>
       <span class="chip c-amber" :class="{ off: gold === null }"><i>🪙</i>{{ gold ?? "—" }}</span>
-      <span class="chip c-blue"><i>🚪</i>第{{ serverStage }}关</span>
+      <span class="chip c-blue"><i>🚪</i>第{{ currentStage }}关</span>
       <span class="chip c-pink"><i>👑</i>{{ bText }}</span>
     </header>
 
     <!-- ═══ info card ═══ -->
     <section class="m-info">
-      <div class="m-info-l"><h2>{{ phase(serverStage) }}</h2><p>选择路线，击败敌人，拿奖励成长。</p></div>
+      <div class="m-info-l"><h2>{{ phase(currentStage) }}</h2><p>选择路线，击败敌人，拿奖励成长。</p></div>
       <button class="m-info-btn" type="button" @click.stop.prevent="emit('openBuild')">构筑</button>
     </section>
 
@@ -418,6 +472,14 @@ onUnmounted(() => {
           />
         </div>
       </div>
+
+      <RogueliteRoomPanel
+        v-if="activeRoomMode === 'event' || activeRoomMode === 'shop' || activeRoomMode === 'rest' || activeRoomMode === 'reward'"
+        :type="activeRoomMode"
+        :stage="currentStage"
+        @complete="completeCurrentRoom"
+        @close="closeRoomPanel"
+      />
     </div>
 
     <!-- ═══ bottom ═══ -->

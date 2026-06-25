@@ -7,6 +7,14 @@ export interface RogueliteRoomTypeConfig {
     entersBattle: boolean;
     isRouteChoice: boolean;
 }
+export interface RogueliteMapNodeSelection {
+    id: string;
+    stage: number;
+    type: RogueliteMapRoomType;
+    enemyTemplateId?: string;
+    bossTemplateId?: string;
+    rewardTier?: string;
+}
 export declare const ROGUELITE_ROOM_TYPES: {
     readonly normal: {
         readonly type: "normal";

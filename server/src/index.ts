@@ -15,6 +15,7 @@ import {
   ROGUELITE_CHARACTER_SKILL_REWARDS,
   ROGUELITE_ENEMIES,
   ROGUELITE_GROWTH_REWARDS,
+  ROGUELITE_ROOM_TYPES,
   ROGUELITE_MAX_STAGE,
   ROGUELITE_PLAYER_START,
   ROGUELITE_REWARD_RHYTHM,
@@ -38,6 +39,8 @@ import {
   type GameMode,
   type GameEvent,
   type PlayerEmoteEvent,
+  type RogueliteMapNodeSelection,
+  type RogueliteMapRoomType,
   type Room,
   type RoomListItem,
   type RoomListStatus,
@@ -67,6 +70,7 @@ const ROGUELITE_BOSS_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELIT
 const ROGUELITE_STARTER_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_STARTER_REWARDS;
 const ROGUELITE_BOSS_POOL = ROGUELITE_BOSSES.map((boss) => boss.id);
 type RogueliteBossId = BalanceRogueliteBossId;
+type CombatRogueliteRoomType = Extract<RogueliteMapRoomType, "normal" | "elite" | "boss">;
 
 interface RogueliteBossConfig {
   id: RogueliteBossId;
@@ -157,6 +161,22 @@ function getRogueliteBossForStage(stage: number): RogueliteBossConfig {
 
 function getRogueliteBossHp(config: RogueliteBossConfig, hpBonus: number): number {
   return config.fixedHp ?? config.baseHp + hpBonus;
+}
+
+function isCombatRogueliteRoomType(type: RogueliteMapRoomType): type is CombatRogueliteRoomType {
+  return type === "normal" || type === "elite" || type === "boss";
+}
+
+function normalizeRogueliteMapNode(input: unknown, fallbackStage: number): RogueliteMapNodeSelection {
+  const raw = input && typeof input === "object" ? input as Partial<RogueliteMapNodeSelection> : {};
+  const stage = typeof raw.stage === "number" && Number.isFinite(raw.stage) && raw.stage > 0 ? Math.floor(raw.stage) : fallbackStage;
+  const type = raw.type && raw.type in ROGUELITE_ROOM_TYPES ? raw.type : "normal";
+  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : `n${stage}-0`;
+  const node: RogueliteMapNodeSelection = { id, stage, type };
+  if (typeof raw.enemyTemplateId === "string") node.enemyTemplateId = raw.enemyTemplateId;
+  if (typeof raw.bossTemplateId === "string") node.bossTemplateId = raw.bossTemplateId;
+  if (typeof raw.rewardTier === "string") node.rewardTier = raw.rewardTier;
+  return node;
 }
 
 function getRogueliteEarlyStage(stage: number): (typeof ROGUELITE_STAGE_SCALING.earlyStages)[number] | undefined {
@@ -743,22 +763,15 @@ io.on("connection", (socket) => {
         addEvent(room, "system", `${verb}角色技能：${reward.name} Lv.${currentLevel}`);
       }
 
-      if (isBossRewardType(reward.type)) {
-        room.phase = "roguelite_continue";
-        const event = addEvent(room, "system", `${player.nickname} 选择了 Boss 能力：${reward.name}`);
-        broadcastRoom(room, [event]);
-        return { ok: true };
-      }
-
-      prepareNextRogueliteStage(room, player);
-      const event = addEvent(room, "system", `${player.nickname} 选择奖励：${reward.name}，进入第 ${room.roguelite.stage} 关`);
+      room.phase = "roguelite_continue";
+      room.roguelite.currentMapNode = undefined;
+      const event = addEvent(room, "system", `${player.nickname} 选择奖励：${reward.name}，请选择第 ${room.roguelite.stage} 关路线`);
       broadcastRoom(room, [event]);
-      scheduleBotTurnIfNeeded(room);
       return { ok: true };
     });
   });
 
-  socket.on("chooseRogueliteContinue", (payload: { choice?: "finish" | "continue" }, reply?: Ack) => {
+  socket.on("chooseRogueliteContinue", (payload: { choice?: "finish" | "continue"; mapNode?: unknown }, reply?: Ack) => {
     handle(socket.id, reply, () => {
       const room = getSocketRoom(socket.id);
       if (ensureRoomGameMode(room) !== "pve_roguelite") throw new Error("当前房间不是肉鸽挑战");
@@ -777,9 +790,14 @@ io.on("connection", (socket) => {
         return { ok: true };
       }
 
+      const roguelite = ensureRogueliteState(room);
+      const mapNode = normalizeRogueliteMapNode(payload.mapNode, roguelite.stage);
+      if (mapNode.stage !== roguelite.stage) throw new Error("地图节点关卡与当前肉鸽关卡不一致");
+      if (!isCombatRogueliteRoomType(mapNode.type)) throw new Error("当前地图节点不是战斗房间");
+
       // continue
-      prepareNextRogueliteStage(room, player);
-      const event = addEvent(room, "system", `${player.nickname} 继续挑战，进入第 ${room.roguelite?.stage ?? 1} 关`);
+      prepareNextRogueliteStage(room, player, mapNode);
+      const event = addEvent(room, "system", `${player.nickname} 继续挑战，进入第 ${mapNode.stage} 关 · ${ROGUELITE_ROOM_TYPES[mapNode.type].label}`);
       broadcastRoom(room, [event]);
       scheduleBotTurnIfNeeded(room);
       return { ok: true };
@@ -1316,8 +1334,14 @@ function applyRogueliteReward(player: Room["players"][number], reward: Roguelite
   }
 }
 
-function prepareNextRogueliteStage(room: Room, player: Room["players"][number]): void {
+function prepareNextRogueliteStage(room: Room, player: Room["players"][number], mapNode?: RogueliteMapNodeSelection): void {
   const roguelite = ensureRogueliteState(room);
+  if (mapNode) {
+    roguelite.stage = mapNode.stage;
+    roguelite.currentMapNode = mapNode;
+  } else {
+    roguelite.currentMapNode = normalizeRogueliteMapNode(undefined, roguelite.stage);
+  }
   room.phase = "battle";
   room.effects = [];
   room.snapshots = [];
@@ -1350,7 +1374,8 @@ function prepareNextRogueliteStage(room: Room, player: Room["players"][number]):
   ensurePveBot(room);
   const playerIndex = room.players.findIndex((item) => item.id === player.id);
   room.activePlayerIndex = Math.max(0, playerIndex);
-  addEvent(room, "turn", `第 ${room.roguelite?.stage ?? 1} 关开始，轮到 ${player.nickname} 行动`);
+  const roomTypeLabel = ROGUELITE_ROOM_TYPES[roguelite.currentMapNode.type].label;
+  addEvent(room, "turn", `第 ${roguelite.stage} 关 · ${roomTypeLabel}开始，轮到 ${player.nickname} 行动`);
   trimBattleLog(room);
 }
 
@@ -1653,11 +1678,42 @@ function ensurePveBot(room: Room): void {
   const botCharacterId = ensureRoomGameMode(room) === "pve_roguelite" ? ROGUELITE_BOT_BASE.characterId : "boxer";
   const character = characterList.find((item) => item.id === botCharacterId);
   if (!character) throw new Error("AI 职业配置不存在");
-  const stage = ensureRoomGameMode(room) === "pve_roguelite" ? ensureRogueliteState(room).stage : 1;
+  const roguelite = ensureRoomGameMode(room) === "pve_roguelite" ? ensureRogueliteState(room) : undefined;
+  const stage = roguelite?.stage ?? 1;
+  const mapNode = roguelite?.currentMapNode;
+  const forcedRoomType = mapNode && isCombatRogueliteRoomType(mapNode.type) ? mapNode.type : undefined;
 
   // Stages 1-3: fixed beginner-friendly difficulty from roguelite balance.
   const earlyStage = getRogueliteEarlyStage(stage);
-  if (earlyStage && "enemyId" in earlyStage && earlyStage.enemyId && typeof earlyStage.hp === "number" && typeof earlyStage.shield === "number") {
+  if (forcedRoomType === "boss" || earlyStage?.hp === "boss_config") {
+    const bossConfig = mapNode?.bossTemplateId && mapNode.bossTemplateId in ROGUELITE_BOSS_CONFIGS
+      ? ROGUELITE_BOSS_CONFIGS[mapNode.bossTemplateId as RogueliteBossId]
+      : getRogueliteBossForStage(stage);
+    const bonus = forcedRoomType === "boss" ? getRogueliteStageBonus(stage) : { hpBonus: 0, shieldBonus: 0 };
+    const bossHp = getRogueliteBossHp(bossConfig, bonus.hpBonus);
+    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, bossConfig.name, false);
+    bot.isBot = true;
+    bot.isOnline = true;
+    bot.controllerId = PVE_BOT_ID;
+    bot.characterId = botCharacterId;
+    bot.summonerSkillId = "first_aid";
+    bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
+    bot.maxHp = bossHp;
+    bot.hp = bossHp;
+    bot.shield = bossConfig.baseShield + bonus.shieldBonus;
+    bot.rogueliteBossId = bossConfig.id;
+    bot.rogueliteBossState = bossConfig.id === "boss_god_berserker"
+      ? { t15: true, t10: true, t5: true, t1: true, dyingAfterAttack: false }
+      : bossConfig.id === "boss_gambler_dealer"
+      ? { lowHpMode: false }
+      : {};
+    bot.rogueliteEnemyInfo = { stageType: "boss", hpBonus: Math.max(0, bossHp - bossConfig.baseHp), shieldBonus: bonus.shieldBonus, damageBonus: 0, skillNames: bossConfig.skills };
+    room.players.push(bot);
+    addEvent(room, "system", `Boss 出现：${bossConfig.name}！${bossConfig.skills.join("；")}`);
+    return;
+  }
+
+  if (!forcedRoomType && earlyStage && "enemyId" in earlyStage && earlyStage.enemyId && typeof earlyStage.hp === "number" && typeof earlyStage.shield === "number") {
     const enemyConfig = getRogueliteEnemyConfig(earlyStage.enemyId);
     const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, earlyStage.description, false);
     bot.isBot = true;
@@ -1680,35 +1736,11 @@ function ensurePveBot(room: Room): void {
     room.players.push(bot);
     return;
   }
-  if (earlyStage?.hp === "boss_config") {
-    const bossConfig = getRogueliteBossForStage(stage);
-    const bossHp = getRogueliteBossHp(bossConfig, 0);
-    const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, bossConfig.name, false);
-    bot.isBot = true;
-    bot.isOnline = true;
-    bot.controllerId = PVE_BOT_ID;
-    bot.characterId = botCharacterId;
-    bot.summonerSkillId = "first_aid";
-    bot.summonerSkillCooldown = getSummonerSkillInitialCooldown(bot.summonerSkillId);
-    bot.maxHp = bossHp;
-    bot.hp = bossHp;
-    bot.shield = bossConfig.baseShield;
-    bot.rogueliteBossId = bossConfig.id;
-    bot.rogueliteBossState = bossConfig.id === "boss_god_berserker"
-      ? { t15: true, t10: true, t5: true, t1: true, dyingAfterAttack: false }
-      : bossConfig.id === "boss_gambler_dealer"
-      ? { lowHpMode: false }
-      : {};
-    bot.rogueliteEnemyInfo = { stageType: "boss", hpBonus: Math.max(0, bossHp - character.maxHp), shieldBonus: bossConfig.baseShield, damageBonus: 0, skillNames: bossConfig.skills };
-    room.players.push(bot);
-    addEvent(room, "system", `Boss 出现：${bossConfig.name}！${bossConfig.skills.join("；")}`);
-    return;
-  }
 
   // Stages 4+: formula-based scaling from roguelite balance.
   const { hpBonus: bonusHp, shieldBonus: bonusShield } = getRogueliteStageBonus(stage);
 
-  if (isRogueliteBossStage(stage)) {
+  if (!forcedRoomType && isRogueliteBossStage(stage)) {
     // Boss stage (6+): use boss config with scaling
     const bossConfig = getRogueliteBossForStage(stage);
     const bossHp = getRogueliteBossHp(bossConfig, bonusHp);
@@ -1734,8 +1766,12 @@ function ensurePveBot(room: Room): void {
     return;
   }
 
-  const isElite = isRogueliteEliteStage(stage);
-  const enemyConfig = getRogueliteEnemyForStage(stage);
+  const isElite = forcedRoomType === "elite" || (!forcedRoomType && isRogueliteEliteStage(stage));
+  const enemyConfig = forcedRoomType === "normal"
+    ? getRogueliteEnemyConfig("normal")
+    : forcedRoomType === "elite"
+    ? getRogueliteEnemyConfig("elite_iron_skin")
+    : getRogueliteEnemyForStage(stage);
 
   const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, enemyConfig.name, false);
   bot.isBot = true;

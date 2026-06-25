@@ -29,7 +29,7 @@ export const ROGUELITE_MAP_RULES = {
         ["normal", "shop", "boss"],
     ],
     maxConnectionsFromNode: 2,
-    maxConnectionsBetweenLayers: 5,
+    maxConnectionsBetweenLayers: 4,
 };
 export function getRogueliteMapNodeId(stage, branch) {
     return `n${stage}-${branch}`;

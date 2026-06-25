@@ -1,3 +1,5 @@
+import type { RogueliteMapNodeSelection } from "./data/rogueliteRoomTypes.js";
+
 export type CharacterId =
   | "boxer"
   | "gunslinger"
@@ -215,6 +217,7 @@ export interface RogueliteReward {
 export interface RogueliteRunState {
   stage: number;
   maxStage: number;
+  currentMapNode?: RogueliteMapNodeSelection;
   battleRound?: number;
   fatigueBonus?: number;
   fatigueAnnouncedBonus?: number;

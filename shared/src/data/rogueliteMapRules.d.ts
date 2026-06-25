@@ -42,7 +42,7 @@ export declare const ROGUELITE_MAP_RULES: {
     readonly typePattern: ("normal" | "elite" | "boss" | "event" | "shop" | "rest" | "reward")[];
     readonly routePools: (("normal" | "elite" | "event")[] | ("normal" | "elite" | "rest")[] | ("normal" | "elite" | "shop")[] | ("normal" | "event" | "reward")[] | ("normal" | "boss" | "shop")[])[];
     readonly maxConnectionsFromNode: 2;
-    readonly maxConnectionsBetweenLayers: 5;
+    readonly maxConnectionsBetweenLayers: 4;
 };
 export declare function getRogueliteMapNodeId(stage: number, branch: number): string;
 export declare function getRogueliteMapWorldY(stage: number): number;

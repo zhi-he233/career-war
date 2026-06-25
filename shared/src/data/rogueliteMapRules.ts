@@ -50,7 +50,7 @@ export const ROGUELITE_MAP_RULES = {
     ["normal", "shop", "boss"],
   ] satisfies readonly (readonly RogueliteMapRoomType[])[],
   maxConnectionsFromNode: 2,
-  maxConnectionsBetweenLayers: 5,
+  maxConnectionsBetweenLayers: 4,
 } as const;
 
 export function getRogueliteMapNodeId(stage: number, branch: number): string {

@@ -43,8 +43,13 @@ const me = computed(() => p.room.players.find((pl) => pl.id === p.playerId));
 const hpVal = computed(() => me.value?.hp ?? 0);
 const maxHpVal = computed(() => me.value?.maxHp ?? 40);
 const serverStage = computed(() => Math.max(p.room.roguelite?.stage ?? 1, 1));
-const localStage = ref(serverStage.value);
-const currentStage = computed(() => Math.max(localStage.value, serverStage.value));
+const currentStage = computed(() => serverStage.value);
+const serverRouteKey = computed(() =>
+  Object.entries(p.room.roguelite?.mapRoute ?? {})
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([stage, id]) => `${stage}:${id}`)
+    .join("|")
+);
 const activeRoomMode = ref<RogueliteRoomFlow>("map");
 const gold = computed(() => {
   const g = (p.room.roguelite as any)?.runGold;
@@ -112,11 +117,18 @@ function setRoute(stage: number, id: string): void {
 }
 
 watch(
-  () => [runKey.value, serverStage.value] as const,
+  () => [runKey.value, serverStage.value, serverRouteKey.value, p.room.roguelite?.currentMapNode?.id ?? ""] as const,
   ([, stage]) => {
-    localStage.value = stage;
     activeRoomMode.value = "map";
     rememberPastRoute(stage);
+    for (const [routeStage, id] of Object.entries(p.room.roguelite?.mapRoute ?? {})) {
+      routes().set(Number(routeStage), id);
+    }
+    const serverNode = p.room.roguelite?.currentMapNode;
+    if (serverNode && serverNode.stage <= stage) {
+      routes().set(serverNode.stage, serverNode.id);
+    }
+    routeVersion.value++;
     if (stage === 1) {
       setRoute(1, nodeId(1, 0));
       selectedNodeId.value = nodeId(1, 0);
@@ -305,9 +317,9 @@ function completeCurrentRoom(_result: { type: RogueliteMapRoomType; action: stri
   const node = currentNode.value;
   if (!node || node.stage !== currentStage.value) return;
   activeRoomMode.value = "map";
-  localStage.value = currentStage.value + 1;
+  emit("challenge", { id: node.id, stage: node.stage, type: node.type });
   pendingNodeId.value = null;
-  selectedNodeId.value = routes().get(localStage.value) ?? null;
+  selectedNodeId.value = routes().get(currentStage.value) ?? null;
   routeVersion.value++;
 }
 

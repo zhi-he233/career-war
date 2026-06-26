@@ -1,4 +1,5 @@
 import type { RogueliteMapRoomType } from "./rogueliteRoomTypes.js";
+import { ROGUELITE_STAGE_SCALING } from "./rogueliteBalance.js";
 
 export interface RogueliteMapLayerRule {
   stageModulo: number;
@@ -47,7 +48,7 @@ export const ROGUELITE_MAP_RULES = {
     ["normal", "rest", "elite"],
     ["elite", "normal", "shop"],
     ["normal", "event", "reward"],
-    ["normal", "shop", "boss"],
+    ["normal", "shop", "rest"],
   ] satisfies readonly (readonly RogueliteMapRoomType[])[],
   maxConnectionsFromNode: 2,
   maxConnectionsBetweenLayers: 4,
@@ -62,6 +63,7 @@ export function getRogueliteMapWorldY(stage: number): number {
 }
 
 export function getRogueliteMapLayerCount(stage: number): 1 | 2 | 3 | 4 {
+  if (stage > 0 && stage % ROGUELITE_STAGE_SCALING.bossInterval === 0) return 1;
   if (stage <= 1) return 1;
   const modulo = stage % ROGUELITE_MAP_RULES.layerPattern.length;
   return ROGUELITE_MAP_RULES.layerPattern.find((item) => item.stageModulo === modulo)?.nodeCount ?? 2;
@@ -72,11 +74,13 @@ export function getRogueliteMapNodeX(branch: number, total: 1 | 2 | 3 | 4): numb
 }
 
 export function getRogueliteMapStagePrimaryType(stage: number): RogueliteMapRoomType {
+  if (stage > 0 && stage % ROGUELITE_STAGE_SCALING.bossInterval === 0) return "boss";
   const pattern = ROGUELITE_MAP_RULES.typePattern;
   return pattern[(stage - 1) % pattern.length] ?? "normal";
 }
 
 export function getRogueliteMapNodeType(stage: number, branch: number, total: number): RogueliteMapRoomType {
+  if (stage > 0 && stage % ROGUELITE_STAGE_SCALING.bossInterval === 0) return "boss";
   if (stage <= 1 || total <= 1) return getRogueliteMapStagePrimaryType(stage);
   const pools = ROGUELITE_MAP_RULES.routePools;
   const pool = pools[stage % pools.length] ?? pools[0]!;

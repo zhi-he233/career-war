@@ -1631,6 +1631,11 @@ function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMax
         return outcome;
     }
     if (characterId === "self_destructor") {
+        if (first === 1) {
+            outcome.damage = 0;
+            outcome.skillMessages.push("自爆人 1 点无伤");
+            return outcome;
+        }
         if (first === 6 && options.useOptionalCharacterSkill) {
             const selfDamageAmount = typeof options.selfDamageAmount === "number" ? options.selfDamageAmount : 0;
             if (!Number.isInteger(selfDamageAmount) || selfDamageAmount < 1 || selfDamageAmount > 9)

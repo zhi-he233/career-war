@@ -1222,7 +1222,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
 </script>
 
 <template>
-  <section class="battle-page">
+  <section class="battle-page" :class="{ 'is-duo-page': isDuoMode }">
     <div class="battle-phone-shell">
       <!-- ── Roguelite Run Map (pve_roguelite only, shown during lobby & roguelite_continue) ── -->
       <RogueliteRunMap
@@ -1234,7 +1234,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
       />
 
       <!-- ── Normal battle layout ── -->
-      <section v-else class="battle-layout battle-layout-fixed">
+      <section v-else class="battle-layout battle-layout-fixed" :class="{ 'is-duo-layout': isDuoMode }">
         <section class="battle-tools">
           <button class="ghost-btn small-btn" type="button" @click="openRuleGuide">规则 / 职业说明</button>
           <button class="ghost-btn small-btn battle-log-trigger" type="button" @click="toggleBattleLog">战斗日志</button>
@@ -1246,65 +1246,75 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           @open-details="openRogueliteDetails"
         />
 
-        <section v-if="isDuoMode" class="battle-zone duo-battle-zone">
-          <div class="zone-heading">
-            <strong>2V2 双角色模式</strong>
-            <span>{{ selectedActor ? `当前行动角色：${selectedActor.nickname}` : isMyDuoControllerTurn ? "请选择你的一个角色行动" : "等待对方选择行动角色" }}</span>
-          </div>
-          <div class="duo-battle-board" aria-label="2V2 阵营战场">
-            <article v-for="team in duoTeams" :key="team.id" class="duo-team-column" :class="`team-${team.id.toLowerCase()}`">
-              <header>
-                <strong>{{ team.label }}</strong>
-                <span>{{ team.players[0]?.controllerId === props.playerId ? "你的队伍" : "对方队伍" }}</span>
-              </header>
-              <CombatBoard
-                :seats="duoTeamSeats[team.id] ?? []"
-                inline-class="duo-combat-board"
-                @seat-click="handleSeatClick"
-                @info-click="openPlayerDetailById"
-              />
-            </article>
-          </div>
-        </section>
+        <template v-if="isDuoMode">
+          <section class="duo-content-scroll-area">
+            <section class="battle-zone duo-battle-zone">
+              <div class="zone-heading">
+                <strong>2V2 双角色模式</strong>
+                <span>{{ selectedActor ? `当前行动角色：${selectedActor.nickname}` : isMyDuoControllerTurn ? "请选择你的一个角色行动" : "等待对方选择行动角色" }}</span>
+              </div>
+              <div class="duo-battle-board" aria-label="2V2 阵营战场">
+                <article v-for="team in duoTeams" :key="team.id" class="duo-team-column" :class="`team-${team.id.toLowerCase()}`">
+                  <header>
+                    <strong>{{ team.label }}</strong>
+                    <span>{{ team.players[0]?.controllerId === props.playerId ? "你的队伍" : "对方队伍" }}</span>
+                  </header>
+                  <CombatBoard
+                    :seats="duoTeamSeats[team.id] ?? []"
+                    inline-class="duo-combat-board"
+                    @seat-click="handleSeatClick"
+                    @info-click="openPlayerDetailById"
+                  />
+                </article>
+              </div>
+            </section>
+          </section>
 
-        <section v-if="isDuoMode" class="action-center duo-action-center" :class="{ 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive }">
-          <div v-if="!isActionPanelActive" class="action-wait-strip">
-            <span>当前阶段</span>
-            <strong>{{ compactActionTitle }}</strong>
-            <small>{{ compactActorText }} · {{ compactDiceText }}</small>
-          </div>
+          <section class="battle-bottom-dock duo-bottom-dock">
+            <section class="action-center duo-action-center" :class="{ 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive }">
+              <div v-if="!isActionPanelActive" class="action-wait-strip">
+                <span>当前阶段</span>
+                <strong>{{ compactActionTitle }}</strong>
+                <small>{{ compactActorText }} · {{ compactDiceText }}</small>
+              </div>
 
-          <template v-else>
-          <div class="action-phase">
-            <span>当前阶段</span>
-            <strong v-if="pendingGuardCheck && isGuardCheckMine">架盾判定</strong>
-            <strong v-else-if="pendingGuardCheck">对方正在进行架盾判定</strong>
-            <strong v-else-if="selectedActor && !selectedActor.selectedTargetId">已选角色：{{ selectedActor.nickname }}，请选择攻击目标</strong>
-            <strong v-else-if="selectedActor && selectedActor.selectedTargetId">已选目标，可以投骰</strong>
-            <strong v-else-if="isMyDuoControllerTurn">请选择你的一个角色行动</strong>
-            <strong v-else>等待对方选择行动角色</strong>
-            <small v-if="pendingGuardCheck && isGuardCheckMine">1-4 架盾继续，5-6 架盾结束。</small>
-            <small v-else-if="pendingGuardCheck">等待判定完成。</small>
-            <small v-else-if="isMyDuoControllerTurn && !selectedActor">只能选择自己队伍中存活的角色。</small>
-            <small v-else-if="selectedActor && !selectedActor.selectedTargetId">点击敌方角色头像选择目标。</small>
-            <small v-else-if="selectedActor && selectedActor.selectedTargetId">点击投骰按钮进行骰子投掷。</small>
-          </div>
-            <DicePanel
-              v-bind="dicePanelCommon"
-              :is-ready="isMyDuoControllerTurn"
-              :can-roll="pendingGuardCheck ? canRollGuardCheck : canRollForDuo"
-              @roll="rollMainDice"
-            >
-              <template #action-slots>
-                <ActionSlots
-                  v-bind="actionSlotsCommon"
-                  @select-action="onSelectAction"
-                  @select-self-destruct="onSelectSelfDestruct"
-                />
+              <template v-else>
+              <div class="action-phase">
+                <span>当前阶段</span>
+                <strong v-if="pendingGuardCheck && isGuardCheckMine">架盾判定</strong>
+                <strong v-else-if="pendingGuardCheck">对方正在进行架盾判定</strong>
+                <strong v-else-if="selectedActor && !selectedActor.selectedTargetId">已选角色：{{ selectedActor.nickname }}，请选择攻击目标</strong>
+                <strong v-else-if="selectedActor && selectedActor.selectedTargetId">已选目标，可以投骰</strong>
+                <strong v-else-if="isMyDuoControllerTurn">请选择你的一个角色行动</strong>
+                <strong v-else>等待对方选择行动角色</strong>
+                <small v-if="pendingGuardCheck && isGuardCheckMine">1-4 架盾继续，5-6 架盾结束。</small>
+                <small v-else-if="pendingGuardCheck">等待判定完成。</small>
+                <small v-else-if="isMyDuoControllerTurn && !selectedActor">只能选择自己队伍中存活的角色。</small>
+                <small v-else-if="selectedActor && !selectedActor.selectedTargetId">点击敌方角色头像选择目标。</small>
+                <small v-else-if="selectedActor && selectedActor.selectedTargetId">点击投骰按钮进行骰子投掷。</small>
+              </div>
+                <DicePanel
+                  v-bind="dicePanelCommon"
+                  :is-ready="isMyDuoControllerTurn"
+                  :can-roll="pendingGuardCheck ? canRollGuardCheck : canRollForDuo"
+                  @roll="rollMainDice"
+                >
+                  <template #action-slots>
+                    <ActionSlots
+                      v-bind="actionSlotsCommon"
+                      @select-action="onSelectAction"
+                      @select-self-destruct="onSelectSelfDestruct"
+                    />
+                  </template>
+                </DicePanel>
               </template>
-            </DicePanel>
-          </template>
-        </section>
+            </section>
+
+            <section class="battle-bottom-bar">
+              <EmotePanel :locked="emoteLocked" compact @send-emote="sendEmote" />
+            </section>
+          </section>
+        </template>
 
         <!-- Roguelite stage layout: self left, enemy right -->
         <section v-if="isRogueliteMode && !isDuoMode" class="battle-zone roguelite-stage-zone">
@@ -1368,7 +1378,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           </template>
         </section>
 
-        <section class="battle-bottom-bar" :class="{ 'has-self-panel': !isDuoMode && selfPanelVM }">
+        <section v-if="!isDuoMode" class="battle-bottom-bar" :class="{ 'has-self-panel': !isDuoMode && selfPanelVM }">
           <SelfPanel v-if="!isDuoMode && selfPanelVM" :data="selfPanelVM" compact @show-detail="openPlayerDetail(me!)" />
           <EmotePanel :locked="emoteLocked" compact @send-emote="sendEmote" />
         </section>

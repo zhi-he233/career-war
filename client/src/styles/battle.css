@@ -94,15 +94,15 @@
 
 /* sprite: override legacy absolute 96x88 → constrained to ring */
 .duo-combat-board .avatar-sprite {
-  width: 48px !important;
-  height: 46px !important;
-  max-width: 48px !important;
-  max-height: 46px !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   object-fit: contain;
 }
 .duo-combat-board .battle-seat.active .avatar-sprite {
-  width: 48px !important;
-  height: 46px !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* emoji fallback smaller */
@@ -152,6 +152,79 @@
 .battle-layout-fixed .duo-battle-board {
   overflow: visible !important;
   overscroll-behavior: auto;
+}
+
+.battle-layout-fixed.is-duo-layout {
+  overflow: hidden;
+}
+
+.battle-page.is-duo-page,
+.battle-page.is-duo-page .battle-phone-shell {
+  height: 100%;
+}
+
+.battle-layout-fixed.is-duo-layout .battle-tools,
+.battle-layout-fixed.is-duo-layout .battle-bottom-dock {
+  flex: 0 0 auto;
+}
+
+.battle-layout-fixed.is-duo-layout .duo-content-scroll-area {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.battle-layout-fixed.is-duo-layout .duo-battle-zone {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.battle-layout-fixed.is-duo-layout .battle-bottom-dock {
+  display: grid;
+  gap: 7px;
+  min-height: 0;
+  overflow: visible;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.battle-layout-fixed.is-duo-layout .battle-bottom-dock .duo-action-center,
+.battle-layout-fixed.is-duo-layout .battle-bottom-dock .battle-bottom-bar {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.battle-layout-fixed.is-duo-layout .duo-battle-board {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+  align-items: stretch;
+  -webkit-overflow-scrolling: touch;
+}
+
+.battle-layout-fixed.is-duo-layout .duo-team-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden !important;
+}
+
+.battle-layout-fixed.is-duo-layout .duo-team-column header {
+  flex: 0 0 auto;
+}
+
+.battle-layout-fixed.is-duo-layout .duo-combat-board {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ---- roguelite stage layout (pve_roguelite only) ---- */
@@ -276,7 +349,7 @@
 .roguelite-stage-board .avatar-ring {
   width: 88px !important;
   height: 88px !important;
-  overflow: visible;
+  overflow: hidden;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -292,17 +365,17 @@
 
 /* sprite: larger + drop shadow beneath feet */
 .roguelite-stage-board .avatar-sprite {
-  width: 96px !important;
-  height: 90px !important;
-  max-width: 96px !important;
-  max-height: 90px !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   object-fit: contain;
   filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.18)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.10));
   transition: filter 140ms ease;
 }
 .roguelite-stage-board .battle-seat.active .avatar-sprite {
-  width: 104px !important;
-  height: 96px !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* emoji fallback */
@@ -630,6 +703,10 @@
   grid-template-columns: 1fr;
   gap: 6px;
   min-height: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  -webkit-overflow-scrolling: touch;
 }
 
 .battle-bottom-bar.has-self-panel {
@@ -640,6 +717,7 @@
 .battle-bottom-bar .self-panel,
 .battle-bottom-bar .emote-panel {
   min-height: 0;
+  overflow-y: visible;
 }
 
 .self-panel.compact {
@@ -714,14 +792,21 @@
 .emote-btn small { font-size: 10px; }
 .emote-panel.compact {
   grid-template-columns: repeat(6, 34px);
+  width: max-content;
+  max-width: 100%;
   gap: 4px;
   align-content: center;
   min-height: 48px;
-  max-height: 52px;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
   padding: 5px;
+  -webkit-overflow-scrolling: touch;
 }
 .emote-panel.compact .emote-btn {
+  flex: 0 0 auto;
   width: 34px;
+  height: 36px;
   min-height: 36px;
   padding: 3px;
 }
@@ -775,6 +860,10 @@
   .dice-action-slot small { font-size: 11px; }
   .self-panel { grid-template-columns: minmax(0, 1fr); padding: 7px 8px; }
   .emote-panel { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .emote-panel.compact {
+    grid-template-columns: repeat(6, 34px);
+    width: max-content;
+  }
   .emote-btn { min-height: 34px; }
   .emote-btn small { display: none; }
   .self-info-btn { position: absolute; top: 8px; right: 8px; }

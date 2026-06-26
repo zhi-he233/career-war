@@ -100,8 +100,12 @@ const isEnemy = computed(() => props.seat.isSelf === false);
 /* Flip shell: flips the sprite image for enemy seats.
    IMPORTANT: do NOT use display:contents — transforms don't apply to it. */
 .sprite-flip-shell {
-  display: inline-block;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
   line-height: 0;
+  transform-origin: center;
 }
 .sprite-flip-shell.is-enemy {
   transform: scaleX(-1) !important;

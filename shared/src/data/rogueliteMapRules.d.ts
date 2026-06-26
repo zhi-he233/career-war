@@ -39,8 +39,8 @@ export declare const ROGUELITE_MAP_RULES: {
         nodeCount: 3;
         notes: string;
     })[];
-    readonly typePattern: ("normal" | "elite" | "boss" | "event" | "shop" | "rest" | "reward")[];
-    readonly routePools: (("normal" | "elite" | "event")[] | ("normal" | "elite" | "rest")[] | ("normal" | "elite" | "shop")[] | ("normal" | "event" | "reward")[] | ("normal" | "boss" | "shop")[])[];
+    readonly typePattern: ("normal" | "elite" | "boss" | "reward" | "event" | "shop" | "rest")[];
+    readonly routePools: (("normal" | "elite" | "event")[] | ("normal" | "elite" | "rest")[] | ("normal" | "elite" | "shop")[] | ("normal" | "reward" | "event")[] | ("normal" | "shop" | "rest")[])[];
     readonly maxConnectionsFromNode: 2;
     readonly maxConnectionsBetweenLayers: 4;
 };

@@ -24,8 +24,11 @@ import {
   beginControllerGuardCheckIfNeeded,
   characterList,
   chooseCharacter,
+  createRogueliteMapLayer,
   confirmRollDecision,
   createPlayer,
+  getRogueliteConnectedNodeIds,
+  getRogueliteMapNodeId,
   getSummonerSkillInitialCooldown,
   resetToLobbyForRematch,
   resolveGuardCheck,
@@ -177,6 +180,60 @@ function normalizeRogueliteMapNode(input: unknown, fallbackStage: number): Rogue
   if (typeof raw.bossTemplateId === "string") node.bossTemplateId = raw.bossTemplateId;
   if (typeof raw.rewardTier === "string") node.rewardTier = raw.rewardTier;
   return node;
+}
+
+function getCanonicalRogueliteMapNode(input: unknown, expectedStage: number): RogueliteMapNodeSelection {
+  const raw = normalizeRogueliteMapNode(input, expectedStage);
+  if (raw.stage !== expectedStage) throw new Error("地图节点关卡与当前肉鸽关卡不一致");
+
+  const draft = createRogueliteMapLayer(expectedStage).find((node) => node.id === raw.id);
+  if (!draft) throw new Error("地图节点不存在");
+
+  return {
+    id: draft.id,
+    stage: draft.stage,
+    type: draft.type,
+    enemyTemplateId: raw.enemyTemplateId,
+    bossTemplateId: raw.bossTemplateId,
+    rewardTier: raw.rewardTier
+  };
+}
+
+function ensureRogueliteRouteState(roguelite: NonNullable<Room["roguelite"]>): void {
+  roguelite.mapRoute ??= {};
+  roguelite.consumedMapNodeIds ??= [];
+}
+
+function validateRogueliteNextNode(roguelite: NonNullable<Room["roguelite"]>, mapNode: RogueliteMapNodeSelection): void {
+  ensureRogueliteRouteState(roguelite);
+  if (mapNode.stage !== roguelite.stage) throw new Error("地图节点关卡与当前肉鸽关卡不一致");
+  if (roguelite.consumedMapNodeIds?.includes(mapNode.id)) throw new Error("地图节点已处理");
+
+  if (mapNode.stage <= 1) {
+    if (mapNode.id !== getRogueliteMapNodeId(1, 0)) throw new Error("只能选择当前层相连节点");
+    return;
+  }
+
+  const previousStage = mapNode.stage - 1;
+  const previousNodeId = roguelite.mapRoute?.[previousStage] ?? getRogueliteMapNodeId(previousStage, 0);
+  const previousNode = createRogueliteMapLayer(previousStage).find((node) => node.id === previousNodeId);
+  const currentLayer = createRogueliteMapLayer(mapNode.stage);
+  if (!previousNode || !currentLayer.some((node) => node.id === mapNode.id)) throw new Error("只能选择当前层相连节点");
+
+  const connectedIds = getRogueliteConnectedNodeIds(previousNode, currentLayer);
+  if (!connectedIds.has(mapNode.id)) throw new Error("只能选择当前层相连节点");
+}
+
+function rememberRogueliteMapNode(roguelite: NonNullable<Room["roguelite"]>, mapNode: RogueliteMapNodeSelection): void {
+  ensureRogueliteRouteState(roguelite);
+  roguelite.mapRoute![mapNode.stage] = mapNode.id;
+}
+
+function consumeRogueliteMapNode(roguelite: NonNullable<Room["roguelite"]>, mapNode: RogueliteMapNodeSelection): void {
+  ensureRogueliteRouteState(roguelite);
+  if (!roguelite.consumedMapNodeIds!.includes(mapNode.id)) {
+    roguelite.consumedMapNodeIds!.push(mapNode.id);
+  }
 }
 
 function getRogueliteEarlyStage(stage: number): (typeof ROGUELITE_STAGE_SCALING.earlyStages)[number] | undefined {
@@ -764,7 +821,6 @@ io.on("connection", (socket) => {
       }
 
       room.phase = "roguelite_continue";
-      room.roguelite.currentMapNode = undefined;
       const event = addEvent(room, "system", `${player.nickname} 选择奖励：${reward.name}，请选择第 ${room.roguelite.stage} 关路线`);
       broadcastRoom(room, [event]);
       return { ok: true };
@@ -791,9 +847,19 @@ io.on("connection", (socket) => {
       }
 
       const roguelite = ensureRogueliteState(room);
-      const mapNode = normalizeRogueliteMapNode(payload.mapNode, roguelite.stage);
-      if (mapNode.stage !== roguelite.stage) throw new Error("地图节点关卡与当前肉鸽关卡不一致");
-      if (!isCombatRogueliteRoomType(mapNode.type)) throw new Error("当前地图节点不是战斗房间");
+      const mapNode = getCanonicalRogueliteMapNode(payload.mapNode, roguelite.stage);
+      validateRogueliteNextNode(roguelite, mapNode);
+
+      if (!isCombatRogueliteRoomType(mapNode.type)) {
+        rememberRogueliteMapNode(roguelite, mapNode);
+        consumeRogueliteMapNode(roguelite, mapNode);
+        roguelite.currentMapNode = mapNode;
+        roguelite.stage = Math.min(roguelite.stage + 1, roguelite.maxStage || ROGUELITE_MAX_STAGE);
+        room.phase = "roguelite_continue";
+        const event = addEvent(room, "system", `${player.nickname} 完成第 ${mapNode.stage} 关 · ${ROGUELITE_ROOM_TYPES[mapNode.type].label}，请选择第 ${roguelite.stage} 关路线`);
+        broadcastRoom(room, [event]);
+        return { ok: true };
+      }
 
       // continue
       prepareNextRogueliteStage(room, player, mapNode);
@@ -1045,6 +1111,8 @@ function ensureRogueliteState(room: Room): NonNullable<Room["roguelite"]> {
   room.roguelite ??= { stage: 1, maxStage: ROGUELITE_MAX_STAGE, appliedRewards: [] };
   room.roguelite.maxStage = room.roguelite.maxStage || ROGUELITE_MAX_STAGE;
   room.roguelite.appliedRewards ??= [];
+  room.roguelite.mapRoute ??= {};
+  room.roguelite.consumedMapNodeIds ??= [];
   room.roguelite.battleRound ??= 1;
   room.roguelite.fatigueBonus ??= 0;
   room.roguelite.fatigueAnnouncedBonus ??= 0;
@@ -1339,8 +1407,12 @@ function prepareNextRogueliteStage(room: Room, player: Room["players"][number], 
   if (mapNode) {
     roguelite.stage = mapNode.stage;
     roguelite.currentMapNode = mapNode;
+    rememberRogueliteMapNode(roguelite, mapNode);
+    consumeRogueliteMapNode(roguelite, mapNode);
   } else {
     roguelite.currentMapNode = normalizeRogueliteMapNode(undefined, roguelite.stage);
+    rememberRogueliteMapNode(roguelite, roguelite.currentMapNode);
+    consumeRogueliteMapNode(roguelite, roguelite.currentMapNode);
   }
   room.phase = "battle";
   room.effects = [];

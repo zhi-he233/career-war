@@ -143,6 +143,8 @@ export interface RogueliteRunState {
     stage: number;
     maxStage: number;
     currentMapNode?: RogueliteMapNodeSelection;
+    mapRoute?: Record<number, string>;
+    consumedMapNodeIds?: string[];
     battleRound?: number;
     fatigueBonus?: number;
     fatigueAnnouncedBonus?: number;

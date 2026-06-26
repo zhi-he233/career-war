@@ -1762,6 +1762,11 @@ function resolveSkill(
   }
 
   if (characterId === "self_destructor") {
+    if (first === 1) {
+      outcome.damage = 0;
+      outcome.skillMessages.push("自爆人 1 点无伤");
+      return outcome;
+    }
     if (first === 6 && options.useOptionalCharacterSkill) {
       const selfDamageAmount = typeof options.selfDamageAmount === "number" ? options.selfDamageAmount : 0;
       if (!Number.isInteger(selfDamageAmount) || selfDamageAmount < 1 || selfDamageAmount > 9) throw new Error("请选择 1 到 9 点自爆扣血");

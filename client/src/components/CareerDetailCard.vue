@@ -251,7 +251,7 @@ function selectCareer(): void {
   height: 100%;
   border: 2px solid rgba(36, 48, 68, 0.16);
   border-radius: 999px;
-  object-fit: cover;
+  object-fit: contain;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }

@@ -30,7 +30,7 @@ npm start
 
 Railway 会自动提供 `PORT`，server 会读取 `process.env.PORT`。不要手动写死端口。
 
-如需允许额外的跨域开发地址，可以设置 `CLIENT_ORIGIN`，例如 `http://localhost:5173`。线上单服务同域部署不需要设置它。
+如需允许额外的跨域开发地址，可以设置 `CLIENT\_ORIGIN`，例如 `http://localhost:5173`。线上单服务同域部署不需要设置它。
 
 ## 部署后测试
 
@@ -56,7 +56,8 @@ Railway 只会把外部流量转发到它提供的 `PORT`。server 必须监听 
 
 检查浏览器 Network 面板里的 `/socket.io/` 请求：
 
-- 如果请求去了 `localhost`，说明前端构建里仍有本地地址。
-- 如果状态是 404，确认 Railway 使用的是单服务部署，并且 Start Command 是 `npm start`。
-- 如果端口错误，确认 server 使用 `process.env.PORT`。
-- 如果跨域报错，线上同域部署通常不需要 `CLIENT_ORIGIN`；只有跨域访问时才需要配置它。
+* 如果请求去了 `localhost`，说明前端构建里仍有本地地址。
+* 如果状态是 404，确认 Railway 使用的是单服务部署，并且 Start Command 是 `npm start`。
+* 如果端口错误，确认 server 使用 `process.env.PORT`。
+* 如果跨域报错，线上同域部署通常不需要 `CLIENT\_ORIGIN`；只有跨域访问时才需要配置它。
+

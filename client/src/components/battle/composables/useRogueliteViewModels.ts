@@ -282,13 +282,18 @@ export function useRogueliteViewModels(
 
   function buildRogueliteRewardPhaseVM(): NonNullable<RoguelitePanelVM["rewardPhase"]> {
     const summary = rogueliteState.value?.lastStageSummary;
+    const goldText = summary?.goldGained ? `获得金币 +${summary.goldGained}` : "";
     return {
       isBoss: isBossRewardPhase.value,
       title: isBossRewardPhase.value ? "选择 Boss 能力" : "选择奖励",
-      hint: isBossRewardPhase.value ? "选择 1 个 Boss 能力，完成挑战" : "选择 1 个奖励后进入下一关",
+      hint: [
+        isBossRewardPhase.value ? "选择 1 个 Boss 能力，完成挑战" : "选择 1 个奖励后进入下一关",
+        goldText
+      ].filter(Boolean).join(" · "),
       summary: summary ? {
         defeatedName: summary.defeatedEnemyName,
         postBattleHeal: summary.postBattleHeal ?? 0,
+        goldGained: summary.goldGained ?? 0,
         hpAfterHeal: summary.hpAfterHeal,
         maxHp: summary.maxHp,
         isBoss: summary.isBoss ?? false,

@@ -15,6 +15,12 @@ export declare function useRogueliteViewModels(room: ComputedRef<Room>, me: Comp
     rogueliteStageTypeLabel: ComputedRef<"Boss 战" | "精英关" | "普通关">;
     rogueliteEnemyInfo: ComputedRef<{
         stageType: "normal" | "elite" | "boss";
+        enemyTemplateId?: string;
+        displayName?: string;
+        enemyKind?: "monster" | "duelist" | "boss";
+        spriteKey?: string;
+        portraitKey?: string;
+        baseCharacterId?: string;
         hpBonus: number;
         shieldBonus: number;
         damageBonus: number;

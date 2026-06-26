@@ -126,6 +126,7 @@ function hasAnyResource(r: Record<string, unknown>): boolean {
         <span class="summary-label">本关结算</span>
         <div class="summary-chips">
           <span>击败：{{ data.rewardPhase.summary.defeatedName }}</span>
+          <span v-if="(data.rewardPhase.summary.goldGained ?? 0) > 0" class="summary-gold">获得金币：+{{ data.rewardPhase.summary.goldGained }}</span>
           <span v-if="data.rewardPhase.summary.postBattleHeal > 0" class="summary-heal">战后恢复：+{{ data.rewardPhase.summary.postBattleHeal }} 生命</span>
           <span>当前生命：{{ data.rewardPhase.summary.hpAfterHeal }} / {{ data.rewardPhase.summary.maxHp }}</span>
           <span v-if="data.rewardPhase.summary.isBoss" class="summary-boss">Boss 关</span>

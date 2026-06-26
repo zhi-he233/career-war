@@ -17,7 +17,7 @@ export type CharacterId =
   | "fire_lord"
   | "mountain_shield";
 
-export type RoomPhase = "lobby" | "battle" | "reward" | "roguelite_continue" | "gameOver";
+export type RoomPhase = "lobby" | "battle" | "reward" | "roguelite_event" | "roguelite_continue" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
 export type GameMode = "classic" | "duo_2v2" | "pve_1v1" | "pve_roguelite";
 export type TeamId = "A" | "B";
@@ -72,6 +72,12 @@ export interface Player {
   rogueliteBossState?: Record<string, number | boolean>;
   rogueliteEnemyInfo?: {
     stageType: "normal" | "elite" | "boss";
+    enemyTemplateId?: string;
+    displayName?: string;
+    enemyKind?: "monster" | "duelist" | "boss";
+    spriteKey?: string;
+    portraitKey?: string;
+    baseCharacterId?: string;
     hpBonus: number;
     shieldBonus: number;
     damageBonus: number;
@@ -214,6 +220,24 @@ export interface RogueliteReward {
   maxStacks?: number;
 }
 
+export type RogueliteEventChoiceId = "a" | "b";
+
+export interface RogueliteEventChoice {
+  id: RogueliteEventChoiceId;
+  label: string;
+  effect: string;
+  cost: string;
+}
+
+export interface RoguelitePendingEvent {
+  id: string;
+  name: string;
+  rarity: "common" | "uncommon" | "rare";
+  stage: "early" | "mid" | "late" | "any";
+  description: string;
+  choices: readonly RogueliteEventChoice[];
+}
+
 export interface RogueliteRunState {
   stage: number;
   maxStage: number;
@@ -225,9 +249,13 @@ export interface RogueliteRunState {
   fatigueAnnouncedBonus?: number;
   rewardChoices?: RogueliteReward[];
   appliedRewards?: RogueliteReward[];
+  pendingEvent?: RoguelitePendingEvent;
+  runGold?: number;
+  nextBattleShieldBonus?: number;
   lastStageSummary?: {
     defeatedEnemyName: string;
     postBattleHeal: number;
+    goldGained?: number;
     hpAfterHeal: number;
     maxHp: number;
     isBoss: boolean;

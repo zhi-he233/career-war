@@ -52,7 +52,7 @@ const serverRouteKey = computed(() =>
 );
 const activeRoomMode = ref<RogueliteRoomFlow>("map");
 const gold = computed(() => {
-  const g = (p.room.roguelite as any)?.runGold;
+  const g = p.room.roguelite?.runGold;
   return typeof g === "number" ? g : 0;
 });
 const bText = computed(() => {
@@ -305,6 +305,9 @@ function enterCurrentRoom() {
       startBattleForCurrentNode();
       break;
     case "event":
+      activeRoomMode.value = "map";
+      emit("challenge", { id: node.id, stage: node.stage, type: node.type });
+      break;
     case "shop":
     case "rest":
     case "reward":
@@ -486,7 +489,7 @@ onUnmounted(() => {
       </div>
 
       <RogueliteRoomPanel
-        v-if="activeRoomMode === 'event' || activeRoomMode === 'shop' || activeRoomMode === 'rest' || activeRoomMode === 'reward'"
+        v-if="activeRoomMode === 'shop' || activeRoomMode === 'rest' || activeRoomMode === 'reward'"
         :type="activeRoomMode"
         :stage="currentStage"
         @complete="completeCurrentRoom"

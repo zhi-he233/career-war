@@ -166,6 +166,7 @@ export interface RoguelitePanelVM {
         summary?: {
             defeatedName: string;
             postBattleHeal: number;
+            goldGained?: number;
             hpAfterHeal: number;
             maxHp: number;
             isBoss: boolean;

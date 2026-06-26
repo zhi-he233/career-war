@@ -5,9 +5,33 @@ export type RogueliteEnemyId = "normal" | "normal_gambler" | "normal_shield_brea
 export type RogueliteBossId = "boss_boxer_king" | "boss_blood_demon" | "boss_shield_guard" | "boss_god_berserker" | "boss_gambler_dealer";
 export type RogueliteMechanicId = "fatigue" | "stage_scaling" | "reward_rhythm" | "boss_fixed_hp";
 export type RogueliteRewardCategory = "starter" | "growth" | "character_skill" | "boss_ability";
+export interface UnsupportedRogueliteRewardDraft {
+    type: string;
+    name: string;
+    category: RogueliteRewardCategory;
+    value: number;
+    tag?: string;
+    maxStacks?: number;
+    description: string;
+    reason: string;
+}
+export interface UnsupportedRogueliteBossDraft {
+    id: string;
+    name: string;
+    baseHp: number;
+    baseShield: number;
+    description: string;
+    reason: string;
+}
 export interface RogueliteEnemyBalance {
     id: RogueliteEnemyId;
     name: string;
+    enemyTemplateId: string;
+    displayName: string;
+    enemyKind: "monster" | "duelist";
+    spriteKey?: string;
+    portraitKey?: string;
+    baseCharacterId?: string;
     stageType: Exclude<RogueliteStageType, "boss">;
     hpBonus: number;
     shieldBonus: number;
@@ -18,6 +42,12 @@ export interface RogueliteEnemyBalance {
 export interface RogueliteBossBalance {
     id: RogueliteBossId;
     name: string;
+    enemyTemplateId: string;
+    displayName: string;
+    enemyKind: "boss";
+    spriteKey?: string;
+    portraitKey?: string;
+    baseCharacterId?: string;
     stageType: "boss";
     baseHp: number;
     fixedHp?: number;
@@ -80,11 +110,11 @@ export declare const ROGUELITE_FATIGUE: {
     readonly affects: "direct_attack_damage_only";
 };
 export declare const ROGUELITE_STAGE_SCALING: {
-    readonly bossInterval: 3;
+    readonly bossInterval: 6;
     readonly earlyStages: readonly [{
         readonly stage: 1;
         readonly enemyId: "normal";
-        readonly hp: 8;
+        readonly hp: 12;
         readonly shield: 0;
         readonly description: "训练拳手";
     }, {
@@ -93,12 +123,6 @@ export declare const ROGUELITE_STAGE_SCALING: {
         readonly hp: 12;
         readonly shield: 0;
         readonly description: "普通拳手";
-    }, {
-        readonly stage: 3;
-        readonly bossPool: readonly ["boss_boxer_king", "boss_blood_demon", "boss_shield_guard", "boss_god_berserker", "boss_gambler_dealer"];
-        readonly hp: "boss_config";
-        readonly shield: "boss_config";
-        readonly description: "Boss 关，不吃普通关卡缩放";
     }];
     readonly stage4To6: {
         readonly 4: {
@@ -106,12 +130,12 @@ export declare const ROGUELITE_STAGE_SCALING: {
             readonly shieldBonus: 2;
         };
         readonly 5: {
-            readonly hpBonus: 15;
+            readonly hpBonus: 12;
             readonly shieldBonus: 4;
         };
         readonly 6: {
-            readonly hpBonus: 25;
-            readonly shieldBonus: 8;
+            readonly hpBonus: 15;
+            readonly shieldBonus: 6;
         };
     };
     readonly stage7Plus: {
@@ -129,6 +153,12 @@ export declare const ROGUELITE_STAGE_SCALING: {
 export declare const ROGUELITE_ENEMIES: readonly [{
     readonly id: "normal";
     readonly name: "普通兵";
+    readonly enemyTemplateId: "normal_training_dummy";
+    readonly displayName: "训练假人";
+    readonly enemyKind: "monster";
+    readonly spriteKey: "normal_training_dummy";
+    readonly portraitKey: "normal_training_dummy";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "normal";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
@@ -138,6 +168,12 @@ export declare const ROGUELITE_ENEMIES: readonly [{
 }, {
     readonly id: "normal_gambler";
     readonly name: "赌徒";
+    readonly enemyTemplateId: "normal_gambler";
+    readonly displayName: "赌徒";
+    readonly enemyKind: "duelist";
+    readonly spriteKey: "normal_gambler";
+    readonly portraitKey: "normal_gambler";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "normal";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
@@ -147,6 +183,12 @@ export declare const ROGUELITE_ENEMIES: readonly [{
 }, {
     readonly id: "normal_shield_breaker";
     readonly name: "破盾兵";
+    readonly enemyTemplateId: "normal_shield_breaker";
+    readonly displayName: "破盾兵";
+    readonly enemyKind: "monster";
+    readonly spriteKey: "normal_shield_breaker";
+    readonly portraitKey: "normal_shield_breaker";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "normal";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
@@ -156,6 +198,12 @@ export declare const ROGUELITE_ENEMIES: readonly [{
 }, {
     readonly id: "normal_armor_piercer";
     readonly name: "穿甲兵";
+    readonly enemyTemplateId: "normal_armor_piercer";
+    readonly displayName: "穿甲兵";
+    readonly enemyKind: "monster";
+    readonly spriteKey: "normal_armor_piercer";
+    readonly portraitKey: "normal_armor_piercer";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "normal";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
@@ -165,6 +213,12 @@ export declare const ROGUELITE_ENEMIES: readonly [{
 }, {
     readonly id: "elite_iron_skin";
     readonly name: "铁皮精英";
+    readonly enemyTemplateId: "elite_iron_skin";
+    readonly displayName: "铁皮精英";
+    readonly enemyKind: "monster";
+    readonly spriteKey: "elite_iron_skin";
+    readonly portraitKey: "elite_iron_skin";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "elite";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
@@ -174,6 +228,12 @@ export declare const ROGUELITE_ENEMIES: readonly [{
 }, {
     readonly id: "elite_berserker";
     readonly name: "狂暴精英";
+    readonly enemyTemplateId: "elite_berserker";
+    readonly displayName: "狂暴精英";
+    readonly enemyKind: "monster";
+    readonly spriteKey: "elite_berserker";
+    readonly portraitKey: "elite_berserker";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "elite";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
@@ -183,15 +243,27 @@ export declare const ROGUELITE_ENEMIES: readonly [{
 }, {
     readonly id: "elite_reaper";
     readonly name: "收割精英";
+    readonly enemyTemplateId: "elite_reaper";
+    readonly displayName: "收割精英";
+    readonly enemyKind: "monster";
+    readonly spriteKey: "elite_reaper";
+    readonly portraitKey: "elite_reaper";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "elite";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
     readonly damageBonus: 0;
     readonly skills: readonly ["收割：目标低于 40% 生命时伤害 +2"];
-    readonly description: "压低血线后更危险的精英。";
+    readonly description: "压低血线后伤害提高的精英。";
 }, {
     readonly id: "elite_armor_piercing";
     readonly name: "穿甲精英";
+    readonly enemyTemplateId: "elite_armor_piercing";
+    readonly displayName: "穿甲精英";
+    readonly enemyKind: "monster";
+    readonly spriteKey: "elite_armor_piercing";
+    readonly portraitKey: "elite_armor_piercing";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "elite";
     readonly hpBonus: 0;
     readonly shieldBonus: 0;
@@ -202,6 +274,12 @@ export declare const ROGUELITE_ENEMIES: readonly [{
 export declare const ROGUELITE_BOSSES: readonly [{
     readonly id: "boss_boxer_king";
     readonly name: "拳王";
+    readonly enemyTemplateId: "boss_boxer_king";
+    readonly displayName: "拳王";
+    readonly enemyKind: "boss";
+    readonly spriteKey: "boss_boxer_king";
+    readonly portraitKey: "boss_boxer_king";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "boss";
     readonly baseHp: 18;
     readonly baseShield: 2;
@@ -210,6 +288,12 @@ export declare const ROGUELITE_BOSSES: readonly [{
 }, {
     readonly id: "boss_blood_demon";
     readonly name: "血魔";
+    readonly enemyTemplateId: "boss_blood_demon";
+    readonly displayName: "血魔";
+    readonly enemyKind: "boss";
+    readonly spriteKey: "boss_blood_demon";
+    readonly portraitKey: "boss_blood_demon";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "boss";
     readonly baseHp: 16;
     readonly baseShield: 0;
@@ -218,6 +302,12 @@ export declare const ROGUELITE_BOSSES: readonly [{
 }, {
     readonly id: "boss_shield_guard";
     readonly name: "山盾守卫";
+    readonly enemyTemplateId: "boss_shield_guard";
+    readonly displayName: "山盾守卫";
+    readonly enemyKind: "boss";
+    readonly spriteKey: "boss_shield_guard";
+    readonly portraitKey: "boss_shield_guard";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "boss";
     readonly baseHp: 14;
     readonly baseShield: 5;
@@ -226,6 +316,12 @@ export declare const ROGUELITE_BOSSES: readonly [{
 }, {
     readonly id: "boss_god_berserker";
     readonly name: "神狂战";
+    readonly enemyTemplateId: "boss_god_berserker";
+    readonly displayName: "神狂战";
+    readonly enemyKind: "boss";
+    readonly spriteKey: "boss_god_berserker";
+    readonly portraitKey: "boss_god_berserker";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "boss";
     readonly baseHp: 20;
     readonly fixedHp: 20;
@@ -235,6 +331,12 @@ export declare const ROGUELITE_BOSSES: readonly [{
 }, {
     readonly id: "boss_gambler_dealer";
     readonly name: "赌命庄家";
+    readonly enemyTemplateId: "boss_gambler_dealer";
+    readonly displayName: "赌命庄家";
+    readonly enemyKind: "boss";
+    readonly spriteKey: "boss_gambler_dealer";
+    readonly portraitKey: "boss_gambler_dealer";
+    readonly baseCharacterId: "boxer";
     readonly stageType: "boss";
     readonly baseHp: 16;
     readonly baseShield: 3;
@@ -397,20 +499,20 @@ export declare const ROGUELITE_CHARACTER_SKILL_REWARDS: readonly [{
     readonly maxStacks: 3;
 }, {
     readonly name: "赵子龙技能";
-    readonly description: "攻击无视护盾和护甲，升级后穿透伤害 +1/+2。";
+    readonly description: "攻击无视护盾和护甲；高等级增加穿透伤害 +1/+2/+4。";
     readonly type: "zhaoyun_pierce";
     readonly value: 1;
     readonly maxStacks: 3;
 }, {
     readonly name: "火焰领主技能";
-    readonly description: "攻击命中后添加等同等级的火焰印记。";
+    readonly description: "攻击命中后添加等同等级的火焰印记，按 6 可以引爆，每层造成 3 点伤害。";
     readonly type: "flame_lord_mark";
     readonly value: 1;
     readonly maxStacks: 3;
 }];
 export declare const ROGUELITE_BOSS_ABILITY_REWARDS: readonly [{
     readonly name: "狂怒之血";
-    readonly description: "攻击额外造成已损失生命一半的伤害，每级额外 +2。";
+    readonly description: "攻击额外造成已损失生命一半的伤害。";
     readonly type: "berserker_blood";
     readonly value: 0;
 }, {
@@ -420,9 +522,102 @@ export declare const ROGUELITE_BOSS_ABILITY_REWARDS: readonly [{
     readonly value: 2;
 }, {
     readonly name: "龙胆之力";
-    readonly description: "攻击无视护盾和护甲，每级额外伤害 +1。";
+    readonly description: "攻击无视护盾和护甲，叠层后额外伤害 +1。";
     readonly type: "dragon_courage";
     readonly value: 0;
+}];
+export declare const UNSUPPORTED_ROGUELITE_REWARD_TYPES: readonly ["spiked_guard", "armor_tooth", "victory_spoils", "shop_discount", "elite_hunter", "paladin_oath", "assassin_execute", "dealer_rule", "shield_king_order", "cycle_bell"];
+export declare const ROGUELITE_UNSUPPORTED_ENABLED_REWARDS: readonly [{
+    readonly type: "spiked_guard";
+    readonly name: "尖刺防守";
+    readonly category: "growth";
+    readonly value: 1;
+    readonly tag: "shield";
+    readonly maxStacks: 3;
+    readonly description: "获得护盾时，下次攻击追加（护盾数值 / 2）伤害。";
+    readonly reason: "需要新增获得护盾后的下次攻击追伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+}, {
+    readonly type: "armor_tooth";
+    readonly name: "护甲尖牙";
+    readonly category: "growth";
+    readonly value: 1;
+    readonly tag: "armor";
+    readonly maxStacks: 2;
+    readonly description: "有护甲时攻击额外造成数值等同于护甲的伤害。";
+    readonly reason: "需要新增按护甲转化攻击伤害的战斗触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+}, {
+    readonly type: "victory_spoils";
+    readonly name: "胜者搜刮";
+    readonly category: "growth";
+    readonly value: 1;
+    readonly tag: "economy";
+    readonly maxStacks: 3;
+    readonly description: "每场胜利后获得额外金币 +25%。";
+    readonly reason: "需要新增金币结算逻辑，当前没有战后金币收益系统承接。";
+}, {
+    readonly type: "shop_discount";
+    readonly name: "黑市熟客";
+    readonly category: "growth";
+    readonly value: 1;
+    readonly tag: "economy";
+    readonly maxStacks: 1;
+    readonly description: "商店价格降低 25%。";
+    readonly reason: "需要新增商店价格结算逻辑，本轮未接入商店购买流程。";
+}, {
+    readonly type: "elite_hunter";
+    readonly name: "精英猎手";
+    readonly category: "growth";
+    readonly value: 1;
+    readonly tag: "burst";
+    readonly maxStacks: 2;
+    readonly description: "对精英和 Boss 第一次攻击伤害 +25%。";
+    readonly reason: "需要新增按敌人类型和首次攻击计算百分比伤害的逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+}, {
+    readonly type: "paladin_oath";
+    readonly name: "圣骑士誓约";
+    readonly category: "character_skill";
+    readonly value: 1;
+    readonly maxStacks: 3;
+    readonly description: "获得护盾时回复（护盾值 / 2）生命，生命值降到 1-5 区间时获得一回合无敌。";
+    readonly reason: "需要新增护盾回血与低血无敌触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+}, {
+    readonly type: "assassin_execute";
+    readonly name: "刺客斩杀";
+    readonly category: "character_skill";
+    readonly value: 1;
+    readonly maxStacks: 3;
+    readonly description: "目标血量低于 50% 时攻击伤害 +1/2/4。";
+    readonly reason: "需要新增目标血线判定的角色技能逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+}, {
+    readonly type: "dealer_rule";
+    readonly name: "庄家规则";
+    readonly category: "boss_ability";
+    readonly value: 0;
+    readonly description: "每场第一次骰点可选择重投一次。";
+    readonly reason: "需要新增玩家重投决策流程与状态记录，当前 RogueliteRewardType 与 engine 均未支持。";
+}, {
+    readonly type: "shield_king_order";
+    readonly name: "盾王号令";
+    readonly category: "boss_ability";
+    readonly value: 0;
+    readonly description: "每回合开始若无护盾，获得 4 护盾，并且每层获得 2 点护甲加成。";
+    readonly reason: "需要新增回合开始护盾检查与护甲加成逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+}, {
+    readonly type: "cycle_bell";
+    readonly name: "轮回钟声";
+    readonly category: "boss_ability";
+    readonly value: 0;
+    readonly description: "Boss 战或精英战中伤害提高，作为进入下一轮循环的信号。";
+    readonly reason: "由文档中的旧钟声条目修正而来；需要新增按房间类型增伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+}];
+export declare const UNSUPPORTED_ROGUELITE_BOSS_IDS: readonly ["boss_dragon_spear_trial"];
+export declare const ROGUELITE_UNSUPPORTED_ENABLED_BOSSES: readonly [{
+    readonly id: "boss_dragon_spear_trial";
+    readonly name: "龙胆试炼";
+    readonly baseHp: 17;
+    readonly baseShield: 1;
+    readonly description: "攻击穿透护盾和护甲，1 血时触发龙胆，无敌一回合，伤害 +4，并且回复这一次攻击的生命值。";
+    readonly reason: "需要新增 Boss 专属穿透、1 血无敌、反击后回复等战斗触发逻辑；本轮未加入 ROGUELITE_BOSSES 实际轮换池。";
 }];
 export declare const ROGUELITE_STARTER_REWARDS: readonly [{
     readonly name: "重拳开局";
@@ -483,11 +678,11 @@ export declare const ROGUELITE_BALANCE_MECHANICS: {
         readonly affects: "direct_attack_damage_only";
     };
     readonly stageScaling: {
-        readonly bossInterval: 3;
+        readonly bossInterval: 6;
         readonly earlyStages: readonly [{
             readonly stage: 1;
             readonly enemyId: "normal";
-            readonly hp: 8;
+            readonly hp: 12;
             readonly shield: 0;
             readonly description: "训练拳手";
         }, {
@@ -496,12 +691,6 @@ export declare const ROGUELITE_BALANCE_MECHANICS: {
             readonly hp: 12;
             readonly shield: 0;
             readonly description: "普通拳手";
-        }, {
-            readonly stage: 3;
-            readonly bossPool: readonly ["boss_boxer_king", "boss_blood_demon", "boss_shield_guard", "boss_god_berserker", "boss_gambler_dealer"];
-            readonly hp: "boss_config";
-            readonly shield: "boss_config";
-            readonly description: "Boss 关，不吃普通关卡缩放";
         }];
         readonly stage4To6: {
             readonly 4: {
@@ -509,12 +698,12 @@ export declare const ROGUELITE_BALANCE_MECHANICS: {
                 readonly shieldBonus: 2;
             };
             readonly 5: {
-                readonly hpBonus: 15;
+                readonly hpBonus: 12;
                 readonly shieldBonus: 4;
             };
             readonly 6: {
-                readonly hpBonus: 25;
-                readonly shieldBonus: 8;
+                readonly hpBonus: 15;
+                readonly shieldBonus: 6;
             };
         };
         readonly stage7Plus: {
@@ -534,11 +723,11 @@ export declare const ROGUELITE_BALANCE_MECHANICS: {
     readonly normalGamblerFallbackStartsAtStage: 4;
     readonly normalGamblerFallbackModulo: 4;
     readonly eliteStartsAtStage: 5;
-    readonly eliteStageRule: "stage >= 5 && stage % 3 === 2";
+    readonly eliteStageRule: "cycleStage === 5 && stage >= 5";
     readonly eliteEarlyPool: readonly ["elite_iron_skin", "elite_berserker"];
     readonly eliteLatePoolStartsAtStage: 10;
     readonly eliteLatePool: readonly ["elite_iron_skin", "elite_berserker", "elite_reaper", "elite_armor_piercing"];
-    readonly bossStageRule: "stage % 3 === 0";
+    readonly bossStageRule: "cycleStage === 6 || cycleStage === 15";
     readonly bossAbilityRewardStage: 15;
 };
 export declare const ROGUELITE_REWARD_TABLES: Record<RogueliteRewardCategory, readonly RogueliteRewardDraft[]>;
@@ -559,11 +748,11 @@ export declare const rogueliteBalance: {
         readonly affects: "direct_attack_damage_only";
     };
     readonly stageScaling: {
-        readonly bossInterval: 3;
+        readonly bossInterval: 6;
         readonly earlyStages: readonly [{
             readonly stage: 1;
             readonly enemyId: "normal";
-            readonly hp: 8;
+            readonly hp: 12;
             readonly shield: 0;
             readonly description: "训练拳手";
         }, {
@@ -572,12 +761,6 @@ export declare const rogueliteBalance: {
             readonly hp: 12;
             readonly shield: 0;
             readonly description: "普通拳手";
-        }, {
-            readonly stage: 3;
-            readonly bossPool: readonly ["boss_boxer_king", "boss_blood_demon", "boss_shield_guard", "boss_god_berserker", "boss_gambler_dealer"];
-            readonly hp: "boss_config";
-            readonly shield: "boss_config";
-            readonly description: "Boss 关，不吃普通关卡缩放";
         }];
         readonly stage4To6: {
             readonly 4: {
@@ -585,12 +768,12 @@ export declare const rogueliteBalance: {
                 readonly shieldBonus: 2;
             };
             readonly 5: {
-                readonly hpBonus: 15;
+                readonly hpBonus: 12;
                 readonly shieldBonus: 4;
             };
             readonly 6: {
-                readonly hpBonus: 25;
-                readonly shieldBonus: 8;
+                readonly hpBonus: 15;
+                readonly shieldBonus: 6;
             };
         };
         readonly stage7Plus: {
@@ -608,6 +791,12 @@ export declare const rogueliteBalance: {
     readonly enemies: readonly [{
         readonly id: "normal";
         readonly name: "普通兵";
+        readonly enemyTemplateId: "normal_training_dummy";
+        readonly displayName: "训练假人";
+        readonly enemyKind: "monster";
+        readonly spriteKey: "normal_training_dummy";
+        readonly portraitKey: "normal_training_dummy";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "normal";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
@@ -617,6 +806,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "normal_gambler";
         readonly name: "赌徒";
+        readonly enemyTemplateId: "normal_gambler";
+        readonly displayName: "赌徒";
+        readonly enemyKind: "duelist";
+        readonly spriteKey: "normal_gambler";
+        readonly portraitKey: "normal_gambler";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "normal";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
@@ -626,6 +821,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "normal_shield_breaker";
         readonly name: "破盾兵";
+        readonly enemyTemplateId: "normal_shield_breaker";
+        readonly displayName: "破盾兵";
+        readonly enemyKind: "monster";
+        readonly spriteKey: "normal_shield_breaker";
+        readonly portraitKey: "normal_shield_breaker";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "normal";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
@@ -635,6 +836,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "normal_armor_piercer";
         readonly name: "穿甲兵";
+        readonly enemyTemplateId: "normal_armor_piercer";
+        readonly displayName: "穿甲兵";
+        readonly enemyKind: "monster";
+        readonly spriteKey: "normal_armor_piercer";
+        readonly portraitKey: "normal_armor_piercer";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "normal";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
@@ -644,6 +851,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "elite_iron_skin";
         readonly name: "铁皮精英";
+        readonly enemyTemplateId: "elite_iron_skin";
+        readonly displayName: "铁皮精英";
+        readonly enemyKind: "monster";
+        readonly spriteKey: "elite_iron_skin";
+        readonly portraitKey: "elite_iron_skin";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "elite";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
@@ -653,6 +866,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "elite_berserker";
         readonly name: "狂暴精英";
+        readonly enemyTemplateId: "elite_berserker";
+        readonly displayName: "狂暴精英";
+        readonly enemyKind: "monster";
+        readonly spriteKey: "elite_berserker";
+        readonly portraitKey: "elite_berserker";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "elite";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
@@ -662,15 +881,27 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "elite_reaper";
         readonly name: "收割精英";
+        readonly enemyTemplateId: "elite_reaper";
+        readonly displayName: "收割精英";
+        readonly enemyKind: "monster";
+        readonly spriteKey: "elite_reaper";
+        readonly portraitKey: "elite_reaper";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "elite";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
         readonly damageBonus: 0;
         readonly skills: readonly ["收割：目标低于 40% 生命时伤害 +2"];
-        readonly description: "压低血线后更危险的精英。";
+        readonly description: "压低血线后伤害提高的精英。";
     }, {
         readonly id: "elite_armor_piercing";
         readonly name: "穿甲精英";
+        readonly enemyTemplateId: "elite_armor_piercing";
+        readonly displayName: "穿甲精英";
+        readonly enemyKind: "monster";
+        readonly spriteKey: "elite_armor_piercing";
+        readonly portraitKey: "elite_armor_piercing";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "elite";
         readonly hpBonus: 0;
         readonly shieldBonus: 0;
@@ -681,6 +912,12 @@ export declare const rogueliteBalance: {
     readonly bosses: readonly [{
         readonly id: "boss_boxer_king";
         readonly name: "拳王";
+        readonly enemyTemplateId: "boss_boxer_king";
+        readonly displayName: "拳王";
+        readonly enemyKind: "boss";
+        readonly spriteKey: "boss_boxer_king";
+        readonly portraitKey: "boss_boxer_king";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "boss";
         readonly baseHp: 18;
         readonly baseShield: 2;
@@ -689,6 +926,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "boss_blood_demon";
         readonly name: "血魔";
+        readonly enemyTemplateId: "boss_blood_demon";
+        readonly displayName: "血魔";
+        readonly enemyKind: "boss";
+        readonly spriteKey: "boss_blood_demon";
+        readonly portraitKey: "boss_blood_demon";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "boss";
         readonly baseHp: 16;
         readonly baseShield: 0;
@@ -697,6 +940,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "boss_shield_guard";
         readonly name: "山盾守卫";
+        readonly enemyTemplateId: "boss_shield_guard";
+        readonly displayName: "山盾守卫";
+        readonly enemyKind: "boss";
+        readonly spriteKey: "boss_shield_guard";
+        readonly portraitKey: "boss_shield_guard";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "boss";
         readonly baseHp: 14;
         readonly baseShield: 5;
@@ -705,6 +954,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "boss_god_berserker";
         readonly name: "神狂战";
+        readonly enemyTemplateId: "boss_god_berserker";
+        readonly displayName: "神狂战";
+        readonly enemyKind: "boss";
+        readonly spriteKey: "boss_god_berserker";
+        readonly portraitKey: "boss_god_berserker";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "boss";
         readonly baseHp: 20;
         readonly fixedHp: 20;
@@ -714,6 +969,12 @@ export declare const rogueliteBalance: {
     }, {
         readonly id: "boss_gambler_dealer";
         readonly name: "赌命庄家";
+        readonly enemyTemplateId: "boss_gambler_dealer";
+        readonly displayName: "赌命庄家";
+        readonly enemyKind: "boss";
+        readonly spriteKey: "boss_gambler_dealer";
+        readonly portraitKey: "boss_gambler_dealer";
+        readonly baseCharacterId: "boxer";
         readonly stageType: "boss";
         readonly baseHp: 16;
         readonly baseShield: 3;
@@ -747,6 +1008,97 @@ export declare const rogueliteBalance: {
         readonly rewardTypes: readonly ["berserker_blood", "vampire_instinct", "dragon_courage"];
         readonly notes: "第 15 关大 Boss 后才给质变能力。";
     }];
+    readonly unsupportedEnabledRewards: readonly [{
+        readonly type: "spiked_guard";
+        readonly name: "尖刺防守";
+        readonly category: "growth";
+        readonly value: 1;
+        readonly tag: "shield";
+        readonly maxStacks: 3;
+        readonly description: "获得护盾时，下次攻击追加（护盾数值 / 2）伤害。";
+        readonly reason: "需要新增获得护盾后的下次攻击追伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+    }, {
+        readonly type: "armor_tooth";
+        readonly name: "护甲尖牙";
+        readonly category: "growth";
+        readonly value: 1;
+        readonly tag: "armor";
+        readonly maxStacks: 2;
+        readonly description: "有护甲时攻击额外造成数值等同于护甲的伤害。";
+        readonly reason: "需要新增按护甲转化攻击伤害的战斗触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+    }, {
+        readonly type: "victory_spoils";
+        readonly name: "胜者搜刮";
+        readonly category: "growth";
+        readonly value: 1;
+        readonly tag: "economy";
+        readonly maxStacks: 3;
+        readonly description: "每场胜利后获得额外金币 +25%。";
+        readonly reason: "需要新增金币结算逻辑，当前没有战后金币收益系统承接。";
+    }, {
+        readonly type: "shop_discount";
+        readonly name: "黑市熟客";
+        readonly category: "growth";
+        readonly value: 1;
+        readonly tag: "economy";
+        readonly maxStacks: 1;
+        readonly description: "商店价格降低 25%。";
+        readonly reason: "需要新增商店价格结算逻辑，本轮未接入商店购买流程。";
+    }, {
+        readonly type: "elite_hunter";
+        readonly name: "精英猎手";
+        readonly category: "growth";
+        readonly value: 1;
+        readonly tag: "burst";
+        readonly maxStacks: 2;
+        readonly description: "对精英和 Boss 第一次攻击伤害 +25%。";
+        readonly reason: "需要新增按敌人类型和首次攻击计算百分比伤害的逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+    }, {
+        readonly type: "paladin_oath";
+        readonly name: "圣骑士誓约";
+        readonly category: "character_skill";
+        readonly value: 1;
+        readonly maxStacks: 3;
+        readonly description: "获得护盾时回复（护盾值 / 2）生命，生命值降到 1-5 区间时获得一回合无敌。";
+        readonly reason: "需要新增护盾回血与低血无敌触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+    }, {
+        readonly type: "assassin_execute";
+        readonly name: "刺客斩杀";
+        readonly category: "character_skill";
+        readonly value: 1;
+        readonly maxStacks: 3;
+        readonly description: "目标血量低于 50% 时攻击伤害 +1/2/4。";
+        readonly reason: "需要新增目标血线判定的角色技能逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+    }, {
+        readonly type: "dealer_rule";
+        readonly name: "庄家规则";
+        readonly category: "boss_ability";
+        readonly value: 0;
+        readonly description: "每场第一次骰点可选择重投一次。";
+        readonly reason: "需要新增玩家重投决策流程与状态记录，当前 RogueliteRewardType 与 engine 均未支持。";
+    }, {
+        readonly type: "shield_king_order";
+        readonly name: "盾王号令";
+        readonly category: "boss_ability";
+        readonly value: 0;
+        readonly description: "每回合开始若无护盾，获得 4 护盾，并且每层获得 2 点护甲加成。";
+        readonly reason: "需要新增回合开始护盾检查与护甲加成逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+    }, {
+        readonly type: "cycle_bell";
+        readonly name: "轮回钟声";
+        readonly category: "boss_ability";
+        readonly value: 0;
+        readonly description: "Boss 战或精英战中伤害提高，作为进入下一轮循环的信号。";
+        readonly reason: "由文档中的旧钟声条目修正而来；需要新增按房间类型增伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
+    }];
+    readonly unsupportedEnabledBosses: readonly [{
+        readonly id: "boss_dragon_spear_trial";
+        readonly name: "龙胆试炼";
+        readonly baseHp: 17;
+        readonly baseShield: 1;
+        readonly description: "攻击穿透护盾和护甲，1 血时触发龙胆，无敌一回合，伤害 +4，并且回复这一次攻击的生命值。";
+        readonly reason: "需要新增 Boss 专属穿透、1 血无敌、反击后回复等战斗触发逻辑；本轮未加入 ROGUELITE_BOSSES 实际轮换池。";
+    }];
     readonly mechanics: {
         readonly fatigue: {
             readonly startsAtRound: 9;
@@ -755,11 +1107,11 @@ export declare const rogueliteBalance: {
             readonly affects: "direct_attack_damage_only";
         };
         readonly stageScaling: {
-            readonly bossInterval: 3;
+            readonly bossInterval: 6;
             readonly earlyStages: readonly [{
                 readonly stage: 1;
                 readonly enemyId: "normal";
-                readonly hp: 8;
+                readonly hp: 12;
                 readonly shield: 0;
                 readonly description: "训练拳手";
             }, {
@@ -768,12 +1120,6 @@ export declare const rogueliteBalance: {
                 readonly hp: 12;
                 readonly shield: 0;
                 readonly description: "普通拳手";
-            }, {
-                readonly stage: 3;
-                readonly bossPool: readonly ["boss_boxer_king", "boss_blood_demon", "boss_shield_guard", "boss_god_berserker", "boss_gambler_dealer"];
-                readonly hp: "boss_config";
-                readonly shield: "boss_config";
-                readonly description: "Boss 关，不吃普通关卡缩放";
             }];
             readonly stage4To6: {
                 readonly 4: {
@@ -781,12 +1127,12 @@ export declare const rogueliteBalance: {
                     readonly shieldBonus: 2;
                 };
                 readonly 5: {
-                    readonly hpBonus: 15;
+                    readonly hpBonus: 12;
                     readonly shieldBonus: 4;
                 };
                 readonly 6: {
-                    readonly hpBonus: 25;
-                    readonly shieldBonus: 8;
+                    readonly hpBonus: 15;
+                    readonly shieldBonus: 6;
                 };
             };
             readonly stage7Plus: {
@@ -806,11 +1152,11 @@ export declare const rogueliteBalance: {
         readonly normalGamblerFallbackStartsAtStage: 4;
         readonly normalGamblerFallbackModulo: 4;
         readonly eliteStartsAtStage: 5;
-        readonly eliteStageRule: "stage >= 5 && stage % 3 === 2";
+        readonly eliteStageRule: "cycleStage === 5 && stage >= 5";
         readonly eliteEarlyPool: readonly ["elite_iron_skin", "elite_berserker"];
         readonly eliteLatePoolStartsAtStage: 10;
         readonly eliteLatePool: readonly ["elite_iron_skin", "elite_berserker", "elite_reaper", "elite_armor_piercing"];
-        readonly bossStageRule: "stage % 3 === 0";
+        readonly bossStageRule: "cycleStage === 6 || cycleStage === 15";
         readonly bossAbilityRewardStage: 15;
     };
 };

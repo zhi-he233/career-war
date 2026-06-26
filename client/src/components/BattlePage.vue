@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteMapNodeSelection, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
+import type { Character, CharacterHighlight, EmoteId, GameEvent, Player, PlayerEmoteEvent, RogueliteEventChoiceId, RogueliteMapNodeSelection, RogueliteReward, RollActionType, RollDecisionAvailableAction, RollDecisionChoice, Room, SkillHint, SummonerSkillId } from "@career-war/shared";
 import { socket } from "../socket";
 import { getCharacterArt } from "../assets/art/characters";
 import { useDiceAnimation } from "../composables/useDiceAnimation";
@@ -19,6 +19,7 @@ import DicePanel from "./battle/DicePanel.vue";
 import ActionSlots from "./battle/ActionSlots.vue";
 import SelfPanel from "./battle/SelfPanel.vue";
 import RoguelitePanel from "./battle/RoguelitePanel.vue";
+import RogueliteEventChoice from "./battle/RogueliteEventChoice.vue";
 import RogueliteRewardChoice from "./battle/RogueliteRewardChoice.vue";
 import RogueliteStatusCompact from "./battle/RogueliteStatusCompact.vue";
 import RogueliteRunMap from "./battle/RogueliteRunMap.vue";
@@ -129,6 +130,7 @@ const isSinglePlayerPveMode = computed(() => isPveMode.value || isRogueliteMode.
 const isBotTurn = computed(() => isSinglePlayerPveMode.value && Boolean(activePlayer.value?.isBot) && room.value.phase === "battle");
 const isBossStage = computed(() => room.value.phase === "battle" && rogueliteEnemyInfo.value?.stageType === "boss");
 const isRogueliteSuccess = computed(() => isRogueliteMode.value && room.value.phase === "gameOver" && room.value.winnerId === props.playerId);
+const pendingRogueliteEvent = computed(() => room.value.roguelite?.pendingEvent);
 
 /** Unified click handler for any seat click from CombatBoard/BattleSeat.
  *  Delegates to mode-specific logic in BattlePage. */
@@ -1056,6 +1058,11 @@ function onChooseRogueliteReward(rewardId: string): void {
   closeRogueliteDetails();
 }
 
+function chooseRogueliteEventOption(choiceId: RogueliteEventChoiceId): void {
+  if (!isRogueliteMode.value || room.value.phase !== "roguelite_event") return;
+  socket.emit("chooseRogueliteEventOption", { choiceId });
+}
+
 function chooseRogueliteContinue(choice: "finish" | "continue", mapNode?: RogueliteMapNodeSelection): void {
   if (!isRogueliteMode.value || room.value.phase !== "roguelite_continue") return;
   socket.emit("chooseRogueliteContinue", { choice, mapNode });
@@ -1404,7 +1411,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           <EmotePanel :locked="emoteLocked" compact @send-emote="sendEmote" />
         </section>
 
-        <section v-if="room.phase === 'gameOver'" class="log-panel rematch-panel">
+        <section v-if="room.phase === 'gameOver' && !isRogueliteMode" class="log-panel rematch-panel">
           <p class="winner">{{ winnerText }}</p>
           <button class="primary-btn" type="button" :disabled="isRematchReady" @click="readyForRematch">
             {{ isRematchReady ? "已准备" : "准备再来一局" }}
@@ -1440,6 +1447,12 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         </section>
         -->
       </div>
+
+      <RogueliteEventChoice
+        v-if="isRogueliteMode && room.phase === 'roguelite_event' && pendingRogueliteEvent"
+        :event="pendingRogueliteEvent"
+        @select="chooseRogueliteEventOption"
+      />
     </div>
 
     <div

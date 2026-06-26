@@ -314,8 +314,29 @@ function seatNoEffect(player: Player): { key: string } | undefined {
 }
 
 function seatEmote(player: Player) {
+  const directEmote = lookupEmote(player.id);
+  if (directEmote) return { key: directEmote.key, emoji: directEmote.emoji };
+
+  if (isDuoMode.value && player.controllerId) {
+    const controllerEmote = lookupEmote(player.controllerId);
+    const targetId = duoEmoteTargetId(player.controllerId);
+    return controllerEmote && targetId === player.id ? { key: controllerEmote.key, emoji: controllerEmote.emoji } : undefined;
+  }
+
   const e = lookupEmote(player.id, player.controllerId);
   return e ? { key: e.key, emoji: e.emoji } : undefined;
+}
+
+function duoEmoteTargetId(controllerId: string): string | undefined {
+  if (selectedActor.value?.controllerId === controllerId) return selectedActor.value.id;
+  const guardActorId = room.value.pendingGuardCheck?.actorId;
+  const guardActor = guardActorId ? room.value.players.find((player) => player.id === guardActorId) : undefined;
+  if (guardActor?.controllerId === controllerId) return guardActor.id;
+
+  const controlledUnits = room.value.players
+    .filter((player) => player.controllerId === controllerId || player.id === controllerId)
+    .sort((a, b) => (a.slotIndex ?? 0) - (b.slotIndex ?? 0));
+  return controlledUnits.find((player) => !player.isDead)?.id ?? controlledUnits[0]?.id;
 }
 
 /** Shared props for DicePanel — mode-agnostic fields. */

@@ -58,10 +58,6 @@ const isEnemy = computed(() => props.seat.isSelf === false);
 
       <span v-if="props.seat.isDead" class="dead-label">已阵亡</span>
 
-      <transition name="emote-bubble">
-        <span v-if="props.seat.emote" :key="props.seat.emote.key" class="emote-bubble">{{ props.seat.emote.emoji }}</span>
-      </transition>
-
       <transition name="float-pop">
         <b v-if="props.seat.damageEffect" :key="props.seat.damageEffect.key" class="float-number damage-pop" :class="{ 'big-hit': props.seat.damageEffect.value >= 8 }">-{{ props.seat.damageEffect.value }}</b>
       </transition>
@@ -72,6 +68,10 @@ const isEnemy = computed(() => props.seat.isSelf === false);
         <b v-if="props.seat.noEffect" :key="props.seat.noEffect.key" class="float-number no-pop">格挡</b>
       </transition>
     </button>
+
+    <transition name="emote-bubble">
+      <span v-if="props.seat.emote" :key="props.seat.emote.key" class="emote-bubble">{{ props.seat.emote.emoji }}</span>
+    </transition>
 
     <div class="seat-name-row">
       <strong>{{ props.seat.playerNumber }}号 {{ props.seat.nickname }}</strong>

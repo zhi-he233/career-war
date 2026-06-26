@@ -143,6 +143,12 @@
   line-height: 1.2;
 }
 
+.duo-combat-board .emote-bubble {
+  top: -6px;
+  z-index: 60;
+  font-size: 28px;
+}
+
 /* hide tags + roll in duo */
 .duo-combat-board .seat-tags,
 .duo-combat-board .seat-roll { display: none; }

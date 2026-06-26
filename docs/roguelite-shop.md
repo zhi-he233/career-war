@@ -2,6 +2,19 @@
 
 商店主题统一为：地下黑市、铁匠铺、骰子摊、战利品回收站。不要写办公类物品。
 
+## 数值标尺
+
+| 模糊词 | 统一数值 |
+| - | - |
+| 少量回复 | 回复 6 生命 |
+| 大量回复 | 回复 14 生命 |
+| 少量护盾 | 6 护盾 |
+| 高品质奖励预览 | 从稀有奖励池三选一 |
+| 角色技能奖励预览 | 从角色技能池三选一 |
+| Boss 能力奖励预览 | 从 Boss 能力池三选一 |
+| 第一次攻击伤害提高 | 下一场第一次攻击伤害 +4 |
+| 火焰标记 | 附加 2 层火焰标记 |
+
 ## 商店规则
 
 |规则项|当前建议|备注|
@@ -20,26 +33,24 @@
 
 |id|商品名|类型 heal / relic / perk / skill / remove / reroll|价格|出现阶段|效果描述|限购次数|备注|
 |-|-|-|-|-|-|-|-|
-|minor\_healing\_potion|小瓶回血药|heal|25|any|回复少量生命|每次商店 1 次|基础回血商品|
-|large\_healing\_potion|大瓶回血药|heal|55|mid / late|回复大量生命|每次商店 1 次|中后期保命|
-|shield\_patch|护盾补片|relic|35|any|下一场开始获得少量护盾|每次商店 1 次|便宜防御|
-|iron\_plate|铁甲片|perk|60|any|获得一个防御类普通成长|不限|护甲/护盾流|
-|spiked\_gauntlet|尖刺拳套|perk|65|any|获得一个伤害类普通成长|不限|爆发流|
-|blood\_vial|血瓶|perk|70|mid / late|获得一个吸血或回复类成长|不限|回复流|
-|lucky\_dice|幸运骰子|perk|75|mid / late|获得一个骰子类成长|不限|骰子流|
-|skill\_scroll|职业技能卷轴|skill|95|mid / late|获得一个角色技能奖励预览|每次商店 1 次|强构筑入口|
-|dragon\_scale|龙鳞碎片|relic|110|late|获得穿透或高品质奖励预览|每次商店 1 次|后期稀有|
-|cleansing\_salt|净化盐|remove|80|any|删除一个负面效果|每次商店 1 次|价格偏高|
-|blacksmith\_hammer|铁匠锤|relic|85|any|升级一个已有成长|每次商店 1 次|构筑强化|
-|reroll\_coupon|重摇券|reroll|30|any|刷新当前商店商品|每次商店 2 次|可和刷新价格联动|
-|cracked\_relic\_box|裂纹遗物盒|relic|45|any|随机获得一个小奖励|每次商店 1 次|便宜赌狗商品|
-|cursed\_relic\_box|诅咒遗物盒|relic|30|mid / late|获得较好奖励，但附带负面效果|每次商店 1 次|高风险低价格|
-|battle\_map|斗技塔地图|relic|50|any|预览后续路线或提高奖励房出现概率|每次商店 1 次|地图系统候选|
-|opening\_bell|开场铃|relic|45|any|下一场第一次攻击伤害提高|每次商店 1 次|临时爆发|
-|emergency\_shield|应急护符|relic|55|mid / late|低生命时获得一次护盾|每次商店 1 次|保命道具|
-|flame\_oil|火焰油|relic|55|mid / late|下一场攻击附带火焰标记或额外伤害|每次商店 1 次|火焰流|
-|blood\_contract|血契纸|relic|65|mid / late|失去少量生命，换一个高品质奖励预览|每次商店 1 次|风险换强度|
-|boss\_trophy|Boss 战利品|skill|130|late|获得一个 Boss 能力奖励预览|每次商店 1 次|很贵，后期爽点|
-
-
+|minor_healing_potion|小瓶回血药|heal|25|any|回复 6 生命|每次商店 1 次|基础回血商品|
+|large_healing_potion|大瓶回血药|heal|55|mid / late|回复 14 生命|每次商店 1 次|中后期保命|
+|shield_patch|护盾补片|relic|35|any|下一场开始获得 6 护盾|每次商店 1 次|便宜防御|
+|iron_plate|铁甲片|perk|60|any|从普通成长池三选一（防御类）|不限|护甲/护盾流|
+|spiked_gauntlet|尖刺拳套|perk|65|any|从普通成长池三选一（伤害类）|不限|爆发流|
+|blood_vial|血瓶|perk|70|mid / late|从普通成长池三选一（回复/吸血类）|不限|回复流|
+|lucky_dice|幸运骰子|perk|75|mid / late|从普通成长池三选一（骰子类）|不限|骰子流|
+|skill_scroll|职业技能卷轴|skill|95|mid / late|从角色技能池三选一|每次商店 1 次|强构筑入口|
+|dragon_scale|龙鳞碎片|relic|110|late|从稀有奖励池三选一（偏向穿透类）|每次商店 1 次|后期稀有|
+|cleansing_salt|净化盐|remove|80|any|删除一个负面效果|每次商店 1 次|价格偏高|
+|blacksmith_hammer|铁匠锤|relic|85|any|升级一个已有成长|每次商店 1 次|构筑强化|
+|reroll_coupon|重摇券|reroll|30|any|刷新当前商店商品|每次商店 2 次|可和刷新价格联动|
+|cracked_relic_box|裂纹遗物盒|relic|45|any|随机获得 20 金币或 4 护盾|每次商店 1 次|便宜赌狗商品|
+|cursed_relic_box|诅咒遗物盒|relic|30|mid / late|获得 45 金币，但附带一个负面效果|每次商店 1 次|高风险低价格|
+|battle_map|斗技塔地图|relic|50|any|预览后续 3 层路线或提高奖励房出现概率|每次商店 1 次|地图系统候选|
+|opening_bell|开场铃|relic|45|any|下一场第一次攻击伤害 +4|每次商店 1 次|临时爆发|
+|emergency_shield|应急护符|relic|55|mid / late|低于半血时获得 8 护盾（每场 1 次）|每次商店 1 次|保命道具|
+|flame_oil|火焰油|relic|55|mid / late|下一场攻击命中附加 2 层火焰标记|每次商店 1 次|火焰流|
+|blood_contract|血契纸|relic|65|mid / late|失去 5 生命，从稀有奖励池三选一|每次商店 1 次|风险换强度|
+|boss_trophy|Boss 战利品|skill|130|late|从 Boss 能力池三选一|每次商店 1 次|很贵，后期爽点|
 

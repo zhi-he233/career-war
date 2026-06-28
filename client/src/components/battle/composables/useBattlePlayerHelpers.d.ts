@@ -27,6 +27,7 @@ export declare function useBattlePlayerHelpers(params: BattlePlayerHelpersParams
     playerStatus: (player: Player) => string;
     lastRollText: (player: Player) => string;
     guardBadges: (player: Player) => string[];
+    statusBadges: (player: Player) => string[];
     isProtectedByGuardingMountainShield: (player: Player) => boolean;
     buildSeatTags: (player: Player) => string[];
     buildDuoSeatTags: (player: Player) => string[];

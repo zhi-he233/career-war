@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { GameMode, RoomListItem } from "@career-war/shared";
-import { useAuth } from "../composables/useAuth";
 
 const props = defineProps<{
   inviteRoomId?: string;
   roomList: RoomListItem[];
   initialMode?: GameMode | null;
+  playerName: string;
 }>();
 
 const emit = defineEmits<{
@@ -16,8 +16,6 @@ const emit = defineEmits<{
   refreshRoomList: [];
 }>();
 
-const { currentUser } = useAuth();
-const nickname = ref((currentUser.value?.username || localStorage.getItem("career-war-nickname")) ?? "");
 const roomId = ref("");
 const inviteRoomId = ref("");
 const selectedMode = ref<GameMode | null>(null);
@@ -70,12 +68,11 @@ function backToModeSelect(): void {
 }
 
 function normalizedNickname(): string {
-  return nickname.value.trim() || "玩家";
+  return props.playerName.trim() || "玩家";
 }
 
 function rememberName(): void {
   const name = normalizedNickname();
-  nickname.value = name;
   localStorage.setItem("career-war-nickname", name);
 }
 
@@ -173,11 +170,6 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 
       <p v-if="joinError" class="pvp-alert">{{ joinError }}</p>
 
-      <label class="field">
-        <span>{{ currentUser ? "游戏名（登录用户）" : "游客昵称" }}</span>
-        <input v-model="nickname" maxlength="12" placeholder="输入你的游戏名" />
-      </label>
-
       <button v-if="!isInviteMode" class="primary-btn" type="button" :disabled="submitting" @click="createRoom">{{ submitting ? "创建中……" : isPveMode ? "创建人机练习" : "创建房间" }}</button>
 
       <div v-if="!isInviteMode && !isPveMode" class="divider">或</div>
@@ -229,10 +221,12 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 <style scoped>
 .pvp-page {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px !important;
   align-content: start;
   min-width: 0;
-  overflow-x: hidden;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .pvp-heading {
@@ -266,6 +260,10 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
   display: grid;
   gap: 14px !important;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .pvp-mode-card {
@@ -338,8 +336,14 @@ button.pvp-mode-card {
 }
 
 .pvp-room-flow {
+  align-content: start;
+  grid-auto-rows: auto;
   gap: 12px !important;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   border: 2px solid #111111 !important;
   border-radius: 16px !important;
   padding: 14px !important;
@@ -377,9 +381,18 @@ button.pvp-mode-card {
 }
 
 .pvp-room-flow .room-list-panel {
+  min-height: 0;
   border-width: 1px !important;
   border-color: rgba(17, 17, 17, 0.28) !important;
   box-shadow: none !important;
+}
+
+.pvp-room-flow .room-list {
+  min-height: 0;
+  max-height: min(48vh, 380px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .pvp-room-flow .public-room-card {

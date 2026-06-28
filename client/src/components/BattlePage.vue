@@ -53,6 +53,12 @@ type FloatingEffect = {
   value: number;
   key: string;
 };
+type SkillToast = {
+  key: string;
+  actorName: string;
+  skillName: string;
+  effect: string;
+};
 type EmoteOption = {
   id: EmoteId;
   label: string;
@@ -61,8 +67,9 @@ type EmoteOption = {
 type VisibleEmote = { key: string; emoji: string };
 
 const MAX_RENDERED_LOG = 50;
-const HIGHLIGHT_DISPLAY_MS = 1500;
+const HIGHLIGHT_DISPLAY_MS = 2200;
 const SKILL_HINT_DISPLAY_MS = 1300;
+const SKILL_TOAST_DISPLAY_MS = 1800;
 const EMOTE_OPTIONS: EmoteOption[] = [
   { id: "cry", label: "大哭", emoji: "😭" },
   { id: "surprise", label: "惊讶", emoji: "😮" },
@@ -89,8 +96,10 @@ const effectTimers: number[] = [];
 const rollRequestLocked = ref(false);
 const activeHighlight = ref<CharacterHighlight | null>(null);
 const activeSkillHints = ref<SkillHint[]>([]);
+const skillToast = ref<SkillToast | null>(null);
 const rogueliteAlert = ref<{ text: string; key: string } | null>(null);
 let rogueliteAlertTimer: number | undefined;
+let skillToastTimer: number | undefined;
 
 // ── Roguelite map gate: show map before each new stage ──
 const rogueliteMapGateVisible = ref(false);
@@ -117,6 +126,7 @@ let highlightTimer: number | undefined;
 let skillHintTimer: number | undefined;
 const playedHighlightKeys = new Set<string>();
 const playedSkillHintIds = new Set<string>();
+const playedSkillToastIds = new Set<string>();
 
 const activePlayer = computed(() => room.value.players[room.value.activePlayerIndex]);
 const isDuoMode = computed(() => room.value.gameMode === "duo_2v2");
@@ -206,7 +216,7 @@ const rogueliteStageSeats = computed<SeatViewModel[]>(() => {
       shield: me.value.shield,
       lastRollText: lastRollText(me.value) || (zhaoZilongHitText(me.value) || ""),
       characterName: displayCharacterName(me.value),
-      seatTags: [],
+      seatTags: statusBadges(me.value),
       attackableLabel: "",
       targetLabel: "",
       isHost: false,
@@ -241,7 +251,7 @@ const rogueliteStageSeats = computed<SeatViewModel[]>(() => {
       shield: player.shield,
       lastRollText: lastRollText(player) || (zhaoZilongHitText(player) || ""),
       characterName: displayCharacterName(player),
-      seatTags: buildSeatTags(player),
+      seatTags: statusBadges(player),
       attackableLabel: "可攻击",
       targetLabel: "目标",
       isHost: player.id === room.value.hostId,
@@ -472,6 +482,7 @@ const {
   playerStatus,
   lastRollText,
   guardBadges,
+  statusBadges,
   isProtectedByGuardingMountainShield,
   buildSeatTags,
   buildDuoSeatTags,
@@ -658,6 +669,8 @@ watch(
       displayedRoom.value = cloneRoomForDisplay(nextRoom);
       visibleRollId.value = nextRollId;
       startEffectWindow(nextRollId);
+      showSkillHints(displayedRoom.value.skillHints, nextRollId);
+      showHighlight(displayedRoom.value.highlight);
       rollRequestLocked.value = false;
       return;
     }
@@ -670,7 +683,11 @@ watch(
     displayedRoom.value = cloneRoomForDisplay(nextRoom);
     rollRequestLocked.value = false;
     selectedActionSlot.value = null;
-    if (visibleRollId.value) startEffectWindow(visibleRollId.value);
+    if (visibleRollId.value) {
+      startEffectWindow(visibleRollId.value);
+      showSkillHints(displayedRoom.value.skillHints, visibleRollId.value);
+      showHighlight(displayedRoom.value.highlight);
+    }
   },
   { deep: false }
 );
@@ -709,6 +726,7 @@ onUnmounted(() => {
   clearEmoteTimers();
   clearHighlightTimer();
   clearSkillHintTimer();
+  clearSkillToastTimer();
   window.clearTimeout(rogueliteAlertTimer);
   rogueliteMapGateVisible.value = false;
   lastMapStageShown.value = null;
@@ -736,6 +754,69 @@ watch(
     }
   }
 );
+
+watch(
+  () => props.lastEvent,
+  (event) => {
+    if (!event || event.type !== "skill" || playedSkillToastIds.has(event.id)) return;
+    const toast = createSkillToast(event);
+    if (!toast) return;
+    playedSkillToastIds.add(event.id);
+    skillToast.value = toast;
+    clearSkillToastTimer();
+    skillToastTimer = window.setTimeout(() => {
+      skillToast.value = null;
+      skillToastTimer = undefined;
+    }, SKILL_TOAST_DISPLAY_MS);
+  }
+);
+
+function clearSkillToastTimer(): void {
+  if (skillToastTimer) {
+    window.clearTimeout(skillToastTimer);
+    skillToastTimer = undefined;
+  }
+}
+
+function createSkillToast(event: GameEvent): SkillToast | null {
+  if (!event.playerId) return null;
+  const actor = room.value.players.find((player) => player.id === event.playerId);
+  const actorName = actor?.rogueliteEnemyInfo?.displayName || actor?.nickname || "角色";
+  const skillName = inferSkillToastName(event.message, actor);
+  const effect = normalizeSkillToastEffect(event.message, actorName, skillName);
+  return {
+    key: event.id,
+    actorName,
+    skillName,
+    effect
+  };
+}
+
+function inferSkillToastName(message: string, actor: Player | undefined): string {
+  const marker = "技能发动：";
+  const markerIndex = message.indexOf(marker);
+  if (markerIndex >= 0) {
+    const rest = message.slice(markerIndex + marker.length).trim();
+    const end = rest.search(/[！!，,。:：]/);
+    return (end >= 0 ? rest.slice(0, end) : rest).trim() || "技能";
+  }
+  if (message.includes("三倍射击")) return "三倍射击";
+  if (message.includes("火焰爆发") || message.includes("爆发") && message.includes("火焰印记")) return "火焰爆发";
+  if (message.includes("火焰印记")) return "火焰印记";
+  if (message.includes("处决") || message.includes("斩杀")) return "处决";
+  if (message.includes("破阵")) return "破阵";
+  if (message.includes("架盾")) return "架盾";
+  if (actor?.characterId === "fire_lord") return "火焰印记";
+  return "技能";
+}
+
+function normalizeSkillToastEffect(message: string, actorName: string, skillName: string): string {
+  let effect = message.replace(/\s+/g, " ").trim();
+  if (effect.startsWith(actorName)) effect = effect.slice(actorName.length).trim();
+  const escapedSkillName = skillName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  effect = effect.replace(/^使用\s*/, "").replace(new RegExp(`^${escapedSkillName}[：:，,\\s]*`), "").trim();
+  return effect || message;
+}
 
 const visibleRoll = computed(() => {
   if (rollMode.value === "guard") return undefined;
@@ -1427,6 +1508,15 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           </div>
         </section>
       </section>
+
+      <transition name="skill-toast">
+        <div v-if="skillToast" :key="skillToast.key" class="skill-toast-overlay" aria-live="polite">
+          <div class="skill-toast-card">
+            <strong>{{ skillToast.actorName }} 使用 {{ skillToast.skillName }}</strong>
+            <span>{{ skillToast.effect }}</span>
+          </div>
+        </div>
+      </transition>
 
       <div v-if="showRogueliteRewardCenterPrompt && roguelitePanelVM.rewardPhase" class="roguelite-reward-center-layer">
         <RogueliteRewardChoice

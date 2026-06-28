@@ -80,22 +80,31 @@ export function useBattlePlayerHelpers(params) {
         }
         return [];
     }
+    function statusBadges(player) {
+        const tags = [];
+        if ((player.flameMarks ?? 0) > 0)
+            tags.push(`火焰印记 x${player.flameMarks}`);
+        return tags;
+    }
     function buildSeatTags(player) {
         if (isRogueliteMode.value && player.isBot && player.rogueliteEnemyInfo) {
             const tags = [rogueliteEnemyTypeLabel(player)];
             if (player.rogueliteEnemyInfo.skillNames?.[0])
                 tags.push(player.rogueliteEnemyInfo.skillNames[0]);
+            tags.push(...statusBadges(player));
             return tags;
         }
         const tags = [characterName(player.characterId)];
         if (!isRogueliteMode.value || player.isBot) {
             tags.push(`${summonerSkillName(player.summonerSkillId)}${player.summonerSkillCooldown ? ` ${player.summonerSkillCooldown}` : ""}`);
         }
+        tags.push(...statusBadges(player));
         tags.push(...guardBadges(player));
         return tags;
     }
     function buildDuoSeatTags(player) {
         const tags = [characterName(player.characterId), summonerSkillName(player.summonerSkillId)];
+        tags.push(...statusBadges(player));
         tags.push(...guardBadges(player));
         return tags;
     }
@@ -112,6 +121,7 @@ export function useBattlePlayerHelpers(params) {
         playerStatus,
         lastRollText,
         guardBadges,
+        statusBadges,
         isProtectedByGuardingMountainShield,
         buildSeatTags,
         buildDuoSeatTags,

@@ -2,7 +2,13 @@
 import { ref } from "vue";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
+defineProps<{
+  playerName: string;
+  isLoggedIn: boolean;
+}>();
+
 const emit = defineEmits<{
+  updatePlayerName: [value: string];
   selectPvp: [];
   selectPve: [];
   selectRoguelite: [];
@@ -14,7 +20,18 @@ const showRules = ref(false);
 
 <template>
   <section class="home-page game-home">
-    <div class="home-topline"></div>
+    <div class="home-topline">
+      <label class="home-name-field">
+        <span>{{ isLoggedIn ? "游戏名" : "游客游戏名" }}</span>
+        <input
+          :value="playerName"
+          maxlength="12"
+          :readonly="isLoggedIn"
+          placeholder="输入你的游戏名"
+          @input="emit('updatePlayerName', ($event.target as HTMLInputElement).value)"
+        />
+      </label>
+    </div>
 
     <div class="home-title-card">
       <span class="home-dice-mark">🎲</span>
@@ -38,7 +55,41 @@ const showRules = ref(false);
 
 <style scoped>
 .home-topline {
-  /* kept as layout placeholder, styled only if needed later */
+  display: grid;
+  min-width: 0;
+}
+
+.home-name-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(17, 17, 17, 0.32);
+  border-radius: 12px;
+  padding: 6px 8px;
+  background: rgba(255, 250, 240, 0.8);
+}
+
+.home-name-field span {
+  color: #3f3f46;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.home-name-field input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #111111;
+  font-size: 14px;
+  font-weight: 900;
+  outline: none;
+}
+
+.home-name-field input[readonly] {
+  opacity: 0.78;
 }
 
 .home-profile-btn {

@@ -1131,20 +1131,37 @@ function finishAction(room, actor, target, outcome, events, ctx) {
     let hpDamage = 0;
     const invincible = hasInvincible(room);
     if (outcome.executesTarget) {
-        finalDamage = executeTarget(target);
-        hpDamage = finalDamage;
-        events.push(makeEvent(ctx.now, ctx.makeId, "damage", `${actor.nickname} 处决 ${target.nickname}，直接斩杀`, actor.id, target.id, outcome.dice, finalDamage));
-        skillHintDrafts.push({ key: "execution-assassin-execute", text: "处决！" });
-        events.push(makeEvent(ctx.now, ctx.makeId, "death", `${target.nickname} 已死亡`, target.id));
+        if (invincible) {
+            outcome.executesTarget = false;
+            events.push(makeEvent(ctx.now, ctx.makeId, "damage", "全员无敌生效，本次伤害为 0", actor.id, target.id, outcome.dice, 0));
+        }
+        else {
+            const targetHpBeforeDamage = target.hp;
+            const damageResult = applyDamage(room, target, outcome.damage, outcome.ignoresShield);
+            finalDamage = damageResult.damage;
+            hpDamage = damageResult.hpDamage;
+            applyGodBerserkerThresholdProtection(target, targetHpBeforeDamage, events, ctx, outcome.dice);
+            if (target.isDead) {
+                events.push(makeEvent(ctx.now, ctx.makeId, "damage", `${actor.nickname} 处决 ${target.nickname}，造成 ${finalDamage} 点伤害并斩杀`, actor.id, target.id, outcome.dice, finalDamage));
+                skillHintDrafts.push({ key: "execution-assassin-execute", text: "处决！" });
+                events.push(makeEvent(ctx.now, ctx.makeId, "death", `${target.nickname} 已死亡`, target.id));
+            }
+            else {
+                outcome.executesTarget = false;
+                events.push(makeEvent(ctx.now, ctx.makeId, "damage", `${actor.nickname} 处决未达成，对 ${target.nickname} 造成 ${finalDamage} 点伤害`, actor.id, target.id, outcome.dice, finalDamage));
+            }
+        }
     }
     else if (outcome.damage > 0) {
         if (invincible) {
             events.push(makeEvent(ctx.now, ctx.makeId, "damage", "全员无敌生效，本次伤害为 0", actor.id, target.id, outcome.dice, 0));
         }
         else {
+            const targetHpBeforeDamage = target.hp;
             const damageResult = applyDamage(room, target, outcome.damage, outcome.ignoresShield);
             finalDamage = damageResult.damage;
             hpDamage = damageResult.hpDamage;
+            applyGodBerserkerThresholdProtection(target, targetHpBeforeDamage, events, ctx, outcome.dice);
             const shieldText = outcome.ignoresShield ? "（无视护盾）" : "";
             events.push(makeEvent(ctx.now, ctx.makeId, "damage", `${actor.nickname} 对 ${target.nickname} 造成 ${finalDamage} 点伤害${shieldText}`, actor.id, target.id, outcome.dice, finalDamage));
             if (actor.characterId === "zhaoZilong" && finalDamage > 0) {
@@ -1614,7 +1631,6 @@ function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMax
         }
         if (targetHp <= 3) {
             outcome.executesTarget = true;
-            outcome.ignoresShield = true;
             outcome.skillMessages.push("刺客（斩）发动处决，斩杀残血目标");
             return outcome;
         }
@@ -1668,10 +1684,15 @@ function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMax
         return outcome;
     }
     if (characterId === "fire_lord") {
-        if (first === 3 && options.useOptionalCharacterSkill) {
+        if (first === 3) {
             outcome.damage = 0;
-            outcome.flameMarksToAdd = 1;
-            outcome.skillMessages.push("火焰领主 3 点无伤，并添加 1 层火焰印记");
+            if (options.useOptionalCharacterSkill) {
+                outcome.flameMarksToAdd = 1;
+                outcome.skillMessages.push("火焰领主发动火焰印记：附加 1 层火焰印记");
+            }
+            else {
+                outcome.skillMessages.push("火焰领主普通攻击 3 点无效果");
+            }
         }
         else if (first === 6 && options.useOptionalCharacterSkill) {
             outcome.damage = targetFlameMarks * 3;
@@ -1698,6 +1719,34 @@ function resolveSkill(characterId, first, previousFinalDamage, actorHp, actorMax
         return outcome;
     }
     return outcome;
+}
+function applyGodBerserkerThresholdProtection(target, hpBeforeDamage, events, ctx, dice) {
+    if (target.rogueliteBossId !== "boss_god_berserker")
+        return false;
+    const bs = target.rogueliteBossState ?? {};
+    const thresholds = [
+        { key: "t15", value: 15 },
+        { key: "t10", value: 10 },
+        { key: "t5", value: 5 },
+        { key: "t1", value: 1 }
+    ];
+    const crossed = thresholds.find((threshold) => bs[threshold.key] === true && hpBeforeDamage > threshold.value && target.hp < threshold.value);
+    if (!crossed)
+        return false;
+    target.hp = crossed.value;
+    target.isDead = false;
+    const newState = { ...bs, [crossed.key]: false };
+    for (const threshold of thresholds) {
+        if (threshold.value >= crossed.value)
+            newState[threshold.key] = false;
+    }
+    if (crossed.value === 1) {
+        newState.dyingAfterAttack = true;
+        events.push(makeEvent(ctx.now, ctx.makeId, "skill", "神狂战濒死不倒！它将在最后一击后死亡！", target.id, undefined, dice));
+    }
+    target.rogueliteBossState = newState;
+    events.push(makeEvent(ctx.now, ctx.makeId, "skill", `神狂战触发生命阈值：血量锁定在 ${crossed.value}`, target.id, undefined, dice));
+    return true;
 }
 function applyDamage(room, target, incomingDamage, ignoresShield) {
     if (incomingDamage <= 0)

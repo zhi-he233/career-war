@@ -96,10 +96,14 @@
   grid-auto-rows: auto !important;
   gap: 8px !important;
   padding: 10px !important;
+  min-height: 0 !important;
   border-width: 1px !important;
   border-radius: 16px !important;
   background: #fffdf6 !important;
   box-shadow: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
 }
 
 .pvp-room-flow .section-heading {
@@ -173,16 +177,19 @@
 
 .room-list-panel {
   min-height: 0 !important;
-  max-height: 156px !important;
+  max-height: none !important;
   padding: 8px !important;
   border-width: 1px !important;
   border-radius: 12px !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
 .room-list {
-  max-height: 96px !important;
-  overflow: hidden !important;
+  min-height: 0 !important;
+  max-height: min(48vh, 380px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
 }
 
 .divider {
@@ -389,6 +396,10 @@
 .pvp-mode-grid {
   grid-template-columns: 1fr !important;
   align-content: start !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
 }
 
 .pvp-mode-card {

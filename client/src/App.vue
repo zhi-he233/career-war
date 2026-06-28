@@ -35,6 +35,7 @@ const showLeaveConfirm = ref(false);
 /** Auth dialog visibility */
 const showAuthDialog = ref(false);
 const { currentUser, isLoggedIn, loading: authLoading, logout: authLogout } = useAuth();
+const playerName = ref(localStorage.getItem("career-war-nickname")?.trim() || "");
 /** Invite room ID from BOTH old format (?room=XXXX) and new format (/room/XXXX). */
 const _qs = new URLSearchParams(window.location.search);
 const _pathRoom = (window.location.pathname.match(/^\/room\/([A-Z0-9]{4})/) ?? [])[1] ?? "";
@@ -67,6 +68,7 @@ if (inviteRoomId) {
 const connectionStatusText = computed(() => (isSocketConnected.value ? "已连接" : "断开"));
 const latencyText = computed(() => (roundTripMs.value === null ? "-- ms" : `${roundTripMs.value} ms`));
 const transportText = computed(() => transportName.value || "--");
+const resolvedPlayerName = computed(() => currentUser.value?.username || playerName.value.trim() || `玩家${clientId.slice(0, 4)}`);
 
 /** Extract initial game mode from route query (?mode=pve_1v1). */
 const modeFromQuery = computed<GameMode | null>(() => {
@@ -172,6 +174,24 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => currentUser.value?.username,
+  (username) => {
+    if (!username) return;
+    playerName.value = username;
+    localStorage.setItem("career-war-nickname", username);
+  },
+  { immediate: true }
+);
+
+function updatePlayerName(value: string): void {
+  if (currentUser.value) return;
+  const nextName = value.slice(0, 12);
+  playerName.value = nextName;
+  const normalized = nextName.trim();
+  if (normalized) localStorage.setItem("career-war-nickname", normalized);
+}
+
 function enterFromCurrentUrl(): void {
   if (inviteRoomId) {
     joinInviteRoom();
@@ -185,7 +205,7 @@ function enterFromCurrentUrl(): void {
 function joinInviteRoom(): void {
   if (inviteJoinStarted.value || room.value) return;
   inviteJoinStarted.value = true;
-  const savedNickname = currentUser.value?.username || localStorage.getItem("career-war-nickname")?.trim();
+  const savedNickname = resolvedPlayerName.value;
   const nickname = savedNickname || `玩家${clientId.slice(0, 4)}`;
   localStorage.setItem("career-war-nickname", nickname);
 
@@ -295,7 +315,7 @@ function openPveMode(): void {
 }
 
 function openRogueliteMode(): void {
-  const savedNickname = currentUser.value?.username || localStorage.getItem("career-war-nickname")?.trim();
+  const savedNickname = resolvedPlayerName.value;
   const nickname = savedNickname || `玩家${clientId.slice(0, 4)}`;
   localStorage.setItem("career-war-nickname", nickname);
   createRoom({ nickname, gameMode: "pve_roguelite" });
@@ -495,6 +515,9 @@ function getTransportName(transport: unknown): string {
 
     <HomePage
       v-if="route.name === 'home'"
+      :player-name="resolvedPlayerName"
+      :is-logged-in="isLoggedIn"
+      @update-player-name="updatePlayerName"
       @select-pvp="openPvpMode"
       @select-pve="openPveMode"
       @select-roguelite="openRogueliteMode"
@@ -511,6 +534,7 @@ function getTransportName(transport: unknown): string {
       :invite-room-id="inviteRoomId"
       :room-list="roomList"
       :initial-mode="modeFromQuery"
+      :player-name="resolvedPlayerName"
       @back-home="backToHome"
       @create-room="createRoom"
       @join-room="joinRoom"

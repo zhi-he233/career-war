@@ -6,6 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import { authMiddleware, authRouter } from "./auth.js";
+import { loadEditableRogueliteBalance, saveEditableRogueliteBalance } from "./editor/rogueliteBalanceEditor.js";
+import { loadEditableRogueliteEvents, saveEditableRogueliteEvents } from "./editor/rogueliteEventsEditor.js";
+import { loadEditableRogueliteRestSites, saveEditableRogueliteRestSites } from "./editor/rogueliteRestSitesEditor.js";
+import { loadEditableRogueliteShop, saveEditableRogueliteShop } from "./editor/rogueliteShopEditor.js";
 import {
   EMOTE_IDS,
   ROGUELITE_BALANCE_MECHANICS,
@@ -69,6 +73,13 @@ const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000;
 const ROOM_CLEANUP_INTERVAL_MS = 30 * 1000;
 const ROOM_MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8] as const;
 const DEFAULT_GAME_MODE: GameMode = "classic";
+const EDITOR_ENABLED = process.env.NODE_ENV !== "production" || process.env.ENABLE_EDITOR === "true";
+const EDITOR_ADMIN_USERS = new Set(
+  (process.env.EDITOR_ADMIN_USERS ?? "swh")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+);
 const DUO_MAX_CONTROLLERS = 2;
 const PVE_BOT_ID = "bot";
 const PVE_BOT_CLIENT_ID = "bot";
@@ -516,6 +527,110 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(authMiddleware);
 app.use(authRouter);
+
+function ensureEditorAccess(req: express.Request, res: express.Response): boolean {
+  if (!EDITOR_ENABLED) {
+    res.status(403).json({ error: "编辑器未启用" });
+    return false;
+  }
+  if (!req.currentUser) {
+    res.status(401).json({ error: "请先登录管理员账号" });
+    return false;
+  }
+  if (!EDITOR_ADMIN_USERS.has(req.currentUser.username)) {
+    res.status(403).json({ error: "当前账号没有编辑器权限" });
+    return false;
+  }
+  return true;
+}
+
+app.get("/api/editor/roguelite/events", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const events = await loadEditableRogueliteEvents();
+    res.json({ events });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "读取失败";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/editor/roguelite/events", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const events = await saveEditableRogueliteEvents(req.body?.events);
+    res.json({ ok: true, events });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "保存失败";
+    res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/editor/roguelite/balance", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const balance = await loadEditableRogueliteBalance();
+    res.json({ balance });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "读取失败";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/editor/roguelite/balance", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const balance = await saveEditableRogueliteBalance(req.body?.balance);
+    res.json({ ok: true, balance });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "保存失败";
+    res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/editor/roguelite/shop", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const shop = await loadEditableRogueliteShop();
+    res.json({ shop });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "读取失败";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/editor/roguelite/shop", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const shop = await saveEditableRogueliteShop(req.body?.shop);
+    res.json({ ok: true, shop });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "保存失败";
+    res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/editor/roguelite/rest-sites", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const restSites = await loadEditableRogueliteRestSites();
+    res.json({ restSites });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "读取失败";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/editor/roguelite/rest-sites", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const restSites = await saveEditableRogueliteRestSites(req.body?.restSites);
+    res.json({ ok: true, restSites });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "保存失败";
+    res.status(400).json({ error: message });
+  }
+});
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, rooms: rooms.size });
@@ -1376,6 +1491,7 @@ function ensureRogueliteState(room: Room): NonNullable<Room["roguelite"]> {
   room.roguelite.consumedMapNodeIds ??= [];
   room.roguelite.runGold ??= 0;
   room.roguelite.nextBattleShieldBonus ??= 0;
+  room.roguelite.nextBattleDamageBonus ??= 0;
   room.roguelite.battleRound ??= 1;
   room.roguelite.fatigueBonus ??= 0;
   room.roguelite.fatigueAnnouncedBonus ??= 0;
@@ -1485,9 +1601,23 @@ function applyRogueliteEventOutcome(room: Room, player: Room["players"][number],
     return { opensRewardChoice: false, playerDied: false };
   }
 
+  if (outcome.type === "lose_gold") {
+    const currentGold = roguelite.runGold ?? 0;
+    const lost = Math.min(currentGold, value);
+    roguelite.runGold = currentGold - lost;
+    addEvent(room, "system", `${player.nickname} 失去 ${lost} 金币，当前金币 ${roguelite.runGold}`);
+    return { opensRewardChoice: false, playerDied: false };
+  }
+
   if (outcome.type === "gain_start_shield_next_battle") {
     roguelite.nextBattleShieldBonus = (roguelite.nextBattleShieldBonus ?? 0) + value;
     addEvent(room, "system", `${player.nickname} 下一场战斗开始获得 ${value} 护盾`);
+    return { opensRewardChoice: false, playerDied: false };
+  }
+
+  if (outcome.type === "gain_start_damage_next_battle") {
+    roguelite.nextBattleDamageBonus = (roguelite.nextBattleDamageBonus ?? 0) + value;
+    addEvent(room, "system", `${player.nickname} 下一场战斗开始获得 ${value} 伤害加成`);
     return { opensRewardChoice: false, playerDied: false };
   }
 
@@ -1496,6 +1626,11 @@ function applyRogueliteEventOutcome(room: Room, player: Room["players"][number],
       addEvent(room, "system", outcome.note ?? "TODO: 非基础成长奖励池暂未接入，本次降级为基础成长池");
     }
     return { opensRewardChoice: true, playerDied: false };
+  }
+
+  if (outcome.type === "start_battle") {
+    addEvent(room, "system", outcome.note ?? `TODO: 事件战斗「${outcome.enemyId ?? "未选择对象"}」暂未接入，已安全跳过`);
+    return { opensRewardChoice: false, playerDied: false };
   }
 
   if (outcome.type === "todo") {
@@ -1828,6 +1963,12 @@ function prepareNextRogueliteStage(room: Room, player: Room["players"][number], 
   if (nextBattleShieldBonus > 0) {
     addEvent(room, "system", `事件护盾生效：${player.nickname} 获得 ${nextBattleShieldBonus} 护盾`);
     roguelite.nextBattleShieldBonus = 0;
+  }
+  const nextBattleDamageBonus = roguelite.nextBattleDamageBonus ?? 0;
+  if (nextBattleDamageBonus > 0) {
+    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + nextBattleDamageBonus;
+    addEvent(room, "system", `事件伤害生效：${player.nickname} 获得 ${nextBattleDamageBonus} 伤害加成`);
+    roguelite.nextBattleDamageBonus = 0;
   }
   // Reset per-stage abilities
   player.rogueliteShieldOverloadUsed = false;

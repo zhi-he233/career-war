@@ -6,3 +6,4 @@ export * from "./data/rogueliteRoomTypes.js";
 export * from "./data/rogueliteMapRules.js";
 export * from "./data/rogueliteEvents.js";
 export * from "./data/rogueliteShop.js";
+export * from "./data/rogueliteRestSites.js";

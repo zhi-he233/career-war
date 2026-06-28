@@ -174,6 +174,7 @@ export interface RogueliteRunState {
     pendingEvent?: RoguelitePendingEvent;
     runGold?: number;
     nextBattleShieldBonus?: number;
+    nextBattleDamageBonus?: number;
     lastStageSummary?: {
         defeatedEnemyName: string;
         postBattleHeal: number;

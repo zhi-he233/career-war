@@ -14,11 +14,13 @@ import LobbyPage from "./components/LobbyPage.vue";
 import BattlePage from "./components/BattlePage.vue";
 import AuthDialog from "./components/AuthDialog.vue";
 import ProfilePage from "./components/ProfilePage.vue";
+import RogueliteEditorPage from "./components/RogueliteEditorPage.vue";
 import { useAuth } from "./composables/useAuth";
 
 const ROOM_ID_KEY = "career-war-room-id";
 const PLAYER_ID_KEY = "career-war-player-id";
 const isDev = import.meta.env.DEV;
+const editorUiEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_EDITOR === "true";
 
 const room = ref<Room | null>(null);
 const characters = ref<Character[]>([...characterList]);
@@ -325,6 +327,10 @@ function openProfile(): void {
   router.push("/profile");
 }
 
+function openEditor(): void {
+  router.push("/editor/roguelite");
+}
+
 function backToHome(): void {
   router.push("/");
 }
@@ -517,17 +523,23 @@ function getTransportName(transport: unknown): string {
       v-if="route.name === 'home'"
       :player-name="resolvedPlayerName"
       :is-logged-in="isLoggedIn"
+      :editor-ui-enabled="editorUiEnabled"
       @update-player-name="updatePlayerName"
       @select-pvp="openPvpMode"
       @select-pve="openPveMode"
       @select-roguelite="openRogueliteMode"
       @select-profile="openProfile"
+      @select-editor="openEditor"
     />
     <ProfilePage
       v-else-if="route.name === 'profile'"
       @back="backToHome"
       @open-auth="showAuthDialog = true"
       @logout="handleLogout"
+    />
+    <RogueliteEditorPage
+      v-else-if="route.name === 'roguelite-editor' && editorUiEnabled"
+      @back="backToHome"
     />
     <PvpModePage
       v-else-if="route.name === 'modes'"

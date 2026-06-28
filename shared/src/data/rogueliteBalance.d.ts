@@ -116,13 +116,13 @@ export declare const ROGUELITE_STAGE_SCALING: {
         readonly enemyId: "normal";
         readonly hp: 12;
         readonly shield: 0;
-        readonly description: "训练拳手";
+        readonly description: "训练敌人";
     }, {
         readonly stage: 2;
         readonly enemyId: "normal";
         readonly hp: 12;
         readonly shield: 0;
-        readonly description: "普通拳手";
+        readonly description: "普通敌人";
     }];
     readonly stage4To6: {
         readonly 4: {
@@ -526,99 +526,6 @@ export declare const ROGUELITE_BOSS_ABILITY_REWARDS: readonly [{
     readonly type: "dragon_courage";
     readonly value: 0;
 }];
-export declare const UNSUPPORTED_ROGUELITE_REWARD_TYPES: readonly ["spiked_guard", "armor_tooth", "victory_spoils", "shop_discount", "elite_hunter", "paladin_oath", "assassin_execute", "dealer_rule", "shield_king_order", "cycle_bell"];
-export declare const ROGUELITE_UNSUPPORTED_ENABLED_REWARDS: readonly [{
-    readonly type: "spiked_guard";
-    readonly name: "尖刺防守";
-    readonly category: "growth";
-    readonly value: 1;
-    readonly tag: "shield";
-    readonly maxStacks: 3;
-    readonly description: "获得护盾时，下次攻击追加（护盾数值 / 2）伤害。";
-    readonly reason: "需要新增获得护盾后的下次攻击追伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-}, {
-    readonly type: "armor_tooth";
-    readonly name: "护甲尖牙";
-    readonly category: "growth";
-    readonly value: 1;
-    readonly tag: "armor";
-    readonly maxStacks: 2;
-    readonly description: "有护甲时攻击额外造成数值等同于护甲的伤害。";
-    readonly reason: "需要新增按护甲转化攻击伤害的战斗触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-}, {
-    readonly type: "victory_spoils";
-    readonly name: "胜者搜刮";
-    readonly category: "growth";
-    readonly value: 1;
-    readonly tag: "economy";
-    readonly maxStacks: 3;
-    readonly description: "每场胜利后获得额外金币 +25%。";
-    readonly reason: "需要新增金币结算逻辑，当前没有战后金币收益系统承接。";
-}, {
-    readonly type: "shop_discount";
-    readonly name: "黑市熟客";
-    readonly category: "growth";
-    readonly value: 1;
-    readonly tag: "economy";
-    readonly maxStacks: 1;
-    readonly description: "商店价格降低 25%。";
-    readonly reason: "需要新增商店价格结算逻辑，本轮未接入商店购买流程。";
-}, {
-    readonly type: "elite_hunter";
-    readonly name: "精英猎手";
-    readonly category: "growth";
-    readonly value: 1;
-    readonly tag: "burst";
-    readonly maxStacks: 2;
-    readonly description: "对精英和 Boss 第一次攻击伤害 +25%。";
-    readonly reason: "需要新增按敌人类型和首次攻击计算百分比伤害的逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-}, {
-    readonly type: "paladin_oath";
-    readonly name: "圣骑士誓约";
-    readonly category: "character_skill";
-    readonly value: 1;
-    readonly maxStacks: 3;
-    readonly description: "获得护盾时回复（护盾值 / 2）生命，生命值降到 1-5 区间时获得一回合无敌。";
-    readonly reason: "需要新增护盾回血与低血无敌触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-}, {
-    readonly type: "assassin_execute";
-    readonly name: "刺客斩杀";
-    readonly category: "character_skill";
-    readonly value: 1;
-    readonly maxStacks: 3;
-    readonly description: "目标血量低于 50% 时攻击伤害 +1/2/4。";
-    readonly reason: "需要新增目标血线判定的角色技能逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-}, {
-    readonly type: "dealer_rule";
-    readonly name: "庄家规则";
-    readonly category: "boss_ability";
-    readonly value: 0;
-    readonly description: "每场第一次骰点可选择重投一次。";
-    readonly reason: "需要新增玩家重投决策流程与状态记录，当前 RogueliteRewardType 与 engine 均未支持。";
-}, {
-    readonly type: "shield_king_order";
-    readonly name: "盾王号令";
-    readonly category: "boss_ability";
-    readonly value: 0;
-    readonly description: "每回合开始若无护盾，获得 4 护盾，并且每层获得 2 点护甲加成。";
-    readonly reason: "需要新增回合开始护盾检查与护甲加成逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-}, {
-    readonly type: "cycle_bell";
-    readonly name: "轮回钟声";
-    readonly category: "boss_ability";
-    readonly value: 0;
-    readonly description: "Boss 战或精英战中伤害提高，作为进入下一轮循环的信号。";
-    readonly reason: "由文档中的旧钟声条目修正而来；需要新增按房间类型增伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-}];
-export declare const UNSUPPORTED_ROGUELITE_BOSS_IDS: readonly ["boss_dragon_spear_trial"];
-export declare const ROGUELITE_UNSUPPORTED_ENABLED_BOSSES: readonly [{
-    readonly id: "boss_dragon_spear_trial";
-    readonly name: "龙胆试炼";
-    readonly baseHp: 17;
-    readonly baseShield: 1;
-    readonly description: "攻击穿透护盾和护甲，1 血时触发龙胆，无敌一回合，伤害 +4，并且回复这一次攻击的生命值。";
-    readonly reason: "需要新增 Boss 专属穿透、1 血无敌、反击后回复等战斗触发逻辑；本轮未加入 ROGUELITE_BOSSES 实际轮换池。";
-}];
 export declare const ROGUELITE_STARTER_REWARDS: readonly [{
     readonly name: "重拳开局";
     readonly description: "伤害 +2，生命上限 +4，回复 4 生命。";
@@ -644,21 +551,25 @@ export declare const ROGUELITE_STARTER_REWARDS: readonly [{
     readonly value: 8;
     readonly tag: "heal";
 }];
+export declare const UNSUPPORTED_ROGUELITE_REWARD_TYPES: readonly [];
+export declare const ROGUELITE_UNSUPPORTED_ENABLED_REWARDS: readonly [];
+export declare const UNSUPPORTED_ROGUELITE_BOSS_IDS: readonly [];
+export declare const ROGUELITE_UNSUPPORTED_ENABLED_BOSSES: readonly [];
 export declare const ROGUELITE_REWARD_RHYTHM: readonly [{
     readonly stage: "1";
     readonly title: "基础奖励";
     readonly rewardTypes: readonly ["vitality_boost", "shield_wall", "heavy_punch_training", "iron_body", "breathing_recovery", "guard_training"];
-    readonly notes: "第 1 关胜利，给基础生存或伤害。";
+    readonly notes: "第 1 关胜利后给基础生存或伤害奖励。";
 }, {
     readonly stage: "2";
     readonly title: "流派启动";
     readonly rewardTypes: readonly ["low_roll_defense", "shield_strike", "fate_tokens", "low_roll_charge", "low_hp_armor", "comeback", "first_strike"];
-    readonly notes: "第 2 关胜利，尽量来自不同 tag。";
+    readonly notes: "第 2 关胜利后尽量来自不同 tag。";
 }, {
     readonly stage: "3";
     readonly title: "核心技能";
     readonly rewardTypes: readonly ["shield_overload", "sturdy_bulwark", "lucky_floor", "drink_blood"];
-    readonly notes: "第 3 关 Boss 胜利，至少给一个关键技能。";
+    readonly notes: "第 3 关 Boss 胜利后给关键技能。";
 }, {
     readonly stage: "4-6";
     readonly title: "流派强化";
@@ -668,7 +579,7 @@ export declare const ROGUELITE_REWARD_RHYTHM: readonly [{
     readonly stage: "15";
     readonly title: "Boss 能力";
     readonly rewardTypes: readonly ["berserker_blood", "vampire_instinct", "dragon_courage"];
-    readonly notes: "第 15 关大 Boss 后才给质变能力。";
+    readonly notes: "第 15 关大 Boss 后给质变能力。";
 }];
 export declare const ROGUELITE_BALANCE_MECHANICS: {
     readonly fatigue: {
@@ -684,13 +595,13 @@ export declare const ROGUELITE_BALANCE_MECHANICS: {
             readonly enemyId: "normal";
             readonly hp: 12;
             readonly shield: 0;
-            readonly description: "训练拳手";
+            readonly description: "训练敌人";
         }, {
             readonly stage: 2;
             readonly enemyId: "normal";
             readonly hp: 12;
             readonly shield: 0;
-            readonly description: "普通拳手";
+            readonly description: "普通敌人";
         }];
         readonly stage4To6: {
             readonly 4: {
@@ -741,12 +652,6 @@ export declare const rogueliteBalance: {
         readonly characterId: "boxer";
         readonly controllerId: "bot";
     };
-    readonly fatigue: {
-        readonly startsAtRound: 9;
-        readonly normalRounds: "1-8";
-        readonly formula: "Math.max(0, Math.floor((round - 7) / 2))";
-        readonly affects: "direct_attack_damage_only";
-    };
     readonly stageScaling: {
         readonly bossInterval: 6;
         readonly earlyStages: readonly [{
@@ -754,13 +659,13 @@ export declare const rogueliteBalance: {
             readonly enemyId: "normal";
             readonly hp: 12;
             readonly shield: 0;
-            readonly description: "训练拳手";
+            readonly description: "训练敌人";
         }, {
             readonly stage: 2;
             readonly enemyId: "normal";
             readonly hp: 12;
             readonly shield: 0;
-            readonly description: "普通拳手";
+            readonly description: "普通敌人";
         }];
         readonly stage4To6: {
             readonly 4: {
@@ -986,17 +891,17 @@ export declare const rogueliteBalance: {
         readonly stage: "1";
         readonly title: "基础奖励";
         readonly rewardTypes: readonly ["vitality_boost", "shield_wall", "heavy_punch_training", "iron_body", "breathing_recovery", "guard_training"];
-        readonly notes: "第 1 关胜利，给基础生存或伤害。";
+        readonly notes: "第 1 关胜利后给基础生存或伤害奖励。";
     }, {
         readonly stage: "2";
         readonly title: "流派启动";
         readonly rewardTypes: readonly ["low_roll_defense", "shield_strike", "fate_tokens", "low_roll_charge", "low_hp_armor", "comeback", "first_strike"];
-        readonly notes: "第 2 关胜利，尽量来自不同 tag。";
+        readonly notes: "第 2 关胜利后尽量来自不同 tag。";
     }, {
         readonly stage: "3";
         readonly title: "核心技能";
         readonly rewardTypes: readonly ["shield_overload", "sturdy_bulwark", "lucky_floor", "drink_blood"];
-        readonly notes: "第 3 关 Boss 胜利，至少给一个关键技能。";
+        readonly notes: "第 3 关 Boss 胜利后给关键技能。";
     }, {
         readonly stage: "4-6";
         readonly title: "流派强化";
@@ -1006,98 +911,7 @@ export declare const rogueliteBalance: {
         readonly stage: "15";
         readonly title: "Boss 能力";
         readonly rewardTypes: readonly ["berserker_blood", "vampire_instinct", "dragon_courage"];
-        readonly notes: "第 15 关大 Boss 后才给质变能力。";
-    }];
-    readonly unsupportedEnabledRewards: readonly [{
-        readonly type: "spiked_guard";
-        readonly name: "尖刺防守";
-        readonly category: "growth";
-        readonly value: 1;
-        readonly tag: "shield";
-        readonly maxStacks: 3;
-        readonly description: "获得护盾时，下次攻击追加（护盾数值 / 2）伤害。";
-        readonly reason: "需要新增获得护盾后的下次攻击追伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-    }, {
-        readonly type: "armor_tooth";
-        readonly name: "护甲尖牙";
-        readonly category: "growth";
-        readonly value: 1;
-        readonly tag: "armor";
-        readonly maxStacks: 2;
-        readonly description: "有护甲时攻击额外造成数值等同于护甲的伤害。";
-        readonly reason: "需要新增按护甲转化攻击伤害的战斗触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-    }, {
-        readonly type: "victory_spoils";
-        readonly name: "胜者搜刮";
-        readonly category: "growth";
-        readonly value: 1;
-        readonly tag: "economy";
-        readonly maxStacks: 3;
-        readonly description: "每场胜利后获得额外金币 +25%。";
-        readonly reason: "需要新增金币结算逻辑，当前没有战后金币收益系统承接。";
-    }, {
-        readonly type: "shop_discount";
-        readonly name: "黑市熟客";
-        readonly category: "growth";
-        readonly value: 1;
-        readonly tag: "economy";
-        readonly maxStacks: 1;
-        readonly description: "商店价格降低 25%。";
-        readonly reason: "需要新增商店价格结算逻辑，本轮未接入商店购买流程。";
-    }, {
-        readonly type: "elite_hunter";
-        readonly name: "精英猎手";
-        readonly category: "growth";
-        readonly value: 1;
-        readonly tag: "burst";
-        readonly maxStacks: 2;
-        readonly description: "对精英和 Boss 第一次攻击伤害 +25%。";
-        readonly reason: "需要新增按敌人类型和首次攻击计算百分比伤害的逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-    }, {
-        readonly type: "paladin_oath";
-        readonly name: "圣骑士誓约";
-        readonly category: "character_skill";
-        readonly value: 1;
-        readonly maxStacks: 3;
-        readonly description: "获得护盾时回复（护盾值 / 2）生命，生命值降到 1-5 区间时获得一回合无敌。";
-        readonly reason: "需要新增护盾回血与低血无敌触发逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-    }, {
-        readonly type: "assassin_execute";
-        readonly name: "刺客斩杀";
-        readonly category: "character_skill";
-        readonly value: 1;
-        readonly maxStacks: 3;
-        readonly description: "目标血量低于 50% 时攻击伤害 +1/2/4。";
-        readonly reason: "需要新增目标血线判定的角色技能逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-    }, {
-        readonly type: "dealer_rule";
-        readonly name: "庄家规则";
-        readonly category: "boss_ability";
-        readonly value: 0;
-        readonly description: "每场第一次骰点可选择重投一次。";
-        readonly reason: "需要新增玩家重投决策流程与状态记录，当前 RogueliteRewardType 与 engine 均未支持。";
-    }, {
-        readonly type: "shield_king_order";
-        readonly name: "盾王号令";
-        readonly category: "boss_ability";
-        readonly value: 0;
-        readonly description: "每回合开始若无护盾，获得 4 护盾，并且每层获得 2 点护甲加成。";
-        readonly reason: "需要新增回合开始护盾检查与护甲加成逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-    }, {
-        readonly type: "cycle_bell";
-        readonly name: "轮回钟声";
-        readonly category: "boss_ability";
-        readonly value: 0;
-        readonly description: "Boss 战或精英战中伤害提高，作为进入下一轮循环的信号。";
-        readonly reason: "由文档中的旧钟声条目修正而来；需要新增按房间类型增伤逻辑，当前 RogueliteRewardType 与 engine 均未支持。";
-    }];
-    readonly unsupportedEnabledBosses: readonly [{
-        readonly id: "boss_dragon_spear_trial";
-        readonly name: "龙胆试炼";
-        readonly baseHp: 17;
-        readonly baseShield: 1;
-        readonly description: "攻击穿透护盾和护甲，1 血时触发龙胆，无敌一回合，伤害 +4，并且回复这一次攻击的生命值。";
-        readonly reason: "需要新增 Boss 专属穿透、1 血无敌、反击后回复等战斗触发逻辑；本轮未加入 ROGUELITE_BOSSES 实际轮换池。";
+        readonly notes: "第 15 关大 Boss 后给质变能力。";
     }];
     readonly mechanics: {
         readonly fatigue: {
@@ -1113,13 +927,13 @@ export declare const rogueliteBalance: {
                 readonly enemyId: "normal";
                 readonly hp: 12;
                 readonly shield: 0;
-                readonly description: "训练拳手";
+                readonly description: "训练敌人";
             }, {
                 readonly stage: 2;
                 readonly enemyId: "normal";
                 readonly hp: 12;
                 readonly shield: 0;
-                readonly description: "普通拳手";
+                readonly description: "普通敌人";
             }];
             readonly stage4To6: {
                 readonly 4: {

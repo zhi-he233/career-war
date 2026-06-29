@@ -44,16 +44,21 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 
     <section class="home-roguelite-cover" aria-labelledby="home-roguelite-title">
       <div class="home-cover-head">
-        <span class="home-cover-kicker">肉鸽挑战</span>
+        <span class="home-cover-kicker">冒险委托</span>
         <div class="home-cover-tools">
           <button class="ghost-btn home-rule-chip" type="button" @click="showRules = true">规则</button>
-          <span class="home-dice-mark" aria-hidden="true">🎲</span>
+          <span class="home-dice-mark" aria-hidden="true"><span class="cw-icon cw-icon-dice"></span></span>
         </div>
       </div>
       <div class="home-cover-copy">
-        <h2 id="home-roguelite-title">命运骰已就位</h2>
-        <p>击败敌人，选择词条，组出你的职业流派。</p>
+        <h2 id="home-roguelite-title">迷雾森林</h2>
+        <p>投下命运骰，踏入第一段冒险。</p>
         <p v-if="showRogueliteTutorialIntro" class="home-tutorial-line">首次挑战会带你熟悉路线、战斗和词条。</p>
+      </div>
+      <div class="home-forest-mark" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
       </div>
       <div class="home-run-preview" aria-label="本局预览">
         <div class="home-stage-line">
@@ -61,13 +66,13 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
           <strong>迷雾森林</strong>
         </div>
         <div class="home-stat-row">
-          <span><b>HP</b> {{ rogueliteStartHp }}</span>
-          <span><b>金币</b> 0</span>
-          <span><b>词条</b> 0</span>
+          <span><i class="cw-icon cw-icon-heart" aria-hidden="true"></i><b>HP</b> {{ rogueliteStartHp }}</span>
+          <span><i class="cw-icon cw-icon-coin" aria-hidden="true"></i><b>金币</b> 0</span>
+          <span><i class="cw-icon cw-icon-rune" aria-hidden="true"></i><b>祝福</b> 0</span>
         </div>
         <p class="home-start-career">初始职业：{{ rogueliteStartName }}</p>
       </div>
-      <button class="primary-btn home-start-btn" type="button" @click="emit('selectRoguelite')">开始肉鸽</button>
+      <button class="primary-btn home-start-btn" type="button" @click="emit('selectRoguelite')">进入迷雾</button>
     </section>
 
     <section class="home-quick-panel" aria-labelledby="home-quick-title">
@@ -95,7 +100,7 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 .home-page.game-home {
   display: grid !important;
   grid-template-rows: auto minmax(0, 1fr) auto auto !important;
-  gap: 10px !important;
+  gap: 12px !important;
   padding: 10px 2px 6px !important;
 }
 
@@ -110,10 +115,10 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
   align-items: center;
   gap: 8px;
   min-width: 0;
-  border: 1px solid rgba(17, 17, 17, 0.32);
+  border: 2px solid rgba(45, 36, 21, 0.42);
   border-radius: 12px;
   padding: 6px 8px;
-  background: rgba(255, 250, 240, 0.8);
+  background: rgba(255, 248, 223, 0.86);
 }
 
 .home-name-field span {
@@ -141,23 +146,36 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 .home-quick-panel,
 .home-dev-panel {
   min-width: 0;
-  border: 2px solid #1f1f1f;
-  border-radius: 18px;
-  background: #fffaf0;
-  box-shadow: 0 3px 0 rgba(17, 17, 17, 0.84), 0 8px 18px rgba(73, 54, 28, 0.12);
+  border: 2px solid var(--cw-table-line);
+  border-radius: 16px;
+  background: var(--cw-table-paper);
+  box-shadow: var(--cw-table-shadow-soft);
 }
 
 .home-roguelite-cover {
+  position: relative;
   display: grid;
   align-content: center;
-  gap: 12px;
+  gap: 13px;
   min-height: 0;
   overflow: hidden;
-  padding: 16px 14px;
+  padding: 16px 14px 14px;
   background:
-    radial-gradient(circle at 14% 8%, rgba(247, 207, 69, 0.38), transparent 23%),
-    radial-gradient(circle at 92% 24%, rgba(86, 116, 74, 0.18), transparent 28%),
-    linear-gradient(180deg, #fffdf6 0%, #fff4d9 100%);
+    linear-gradient(rgba(45, 36, 21, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45, 36, 21, 0.05) 1px, transparent 1px),
+    radial-gradient(circle at 14% 8%, rgba(128, 81, 201, 0.16), transparent 24%),
+    radial-gradient(circle at 92% 24%, rgba(36, 121, 200, 0.18), transparent 30%),
+    linear-gradient(180deg, #fffbed 0%, #ecdca8 100%);
+  background-size: 20px 20px, 20px 20px, auto, auto, auto;
+}
+
+.home-roguelite-cover::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px dashed rgba(45, 36, 21, 0.24);
+  border-radius: 12px;
+  pointer-events: none;
 }
 
 .home-cover-head {
@@ -174,7 +192,16 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 }
 
 .home-cover-kicker {
-  color: #2b2b2b;
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 2px solid rgba(45, 36, 21, 0.42);
+  border-radius: 999px;
+  padding: 0 10px;
+  background: rgba(255, 253, 240, 0.82);
+  color: var(--cw-table-ink);
   font-size: 15px;
   font-weight: 1000;
 }
@@ -188,35 +215,41 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 }
 
 .home-dice-mark {
+  position: relative;
+  z-index: 1;
   display: grid;
   place-items: center;
   width: 50px;
   height: 50px;
-  border: 2px solid #111111;
-  border-radius: 16px;
-  background: #f7cf45;
+  border: 2px solid var(--cw-table-line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffef6 0%, #f2d87d 100%);
+  color: var(--cw-type-fate);
   font-size: 28px;
+  box-shadow: 0 4px 0 rgba(45, 36, 21, 0.54);
   transform: rotate(-7deg);
 }
 
 .home-cover-copy {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 6px;
 }
 
 .home-cover-copy h2 {
   margin: 0;
-  color: #111111;
-  font-size: clamp(34px, 11vw, 52px);
+  color: var(--cw-table-ink);
+  font-size: clamp(36px, 10vw, 50px);
   font-weight: 1000;
-  line-height: 0.98;
-  letter-spacing: -0.04em;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .home-cover-copy p {
   margin: 0;
   max-width: 280px;
-  color: #4b5563;
+  color: #5e4a2b;
   font-size: 14px;
   font-weight: 800;
   line-height: 1.45;
@@ -227,13 +260,52 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
   font-size: 12px;
 }
 
+.home-forest-mark {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-height: 48px;
+  overflow: hidden;
+  border: 2px solid rgba(45, 36, 21, 0.28);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 253, 240, 0.75) 0%, rgba(168, 196, 169, 0.30) 100%),
+    linear-gradient(90deg, transparent 0 18%, rgba(45, 36, 21, 0.06) 18% 19%, transparent 19% 100%);
+}
+
+.home-forest-mark span {
+  align-self: end;
+  justify-self: center;
+  width: 54px;
+  height: 42px;
+  background: #5f7f59;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  opacity: 0.72;
+}
+
+.home-forest-mark span:nth-child(2) {
+  width: 70px;
+  height: 52px;
+  background: #496c50;
+  opacity: 0.8;
+}
+
+.home-forest-mark span:nth-child(3) {
+  background: #31526a;
+  opacity: 0.5;
+}
+
 .home-run-preview {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid rgba(17, 17, 17, 0.2);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.58);
+  border: 2px solid rgba(45, 36, 21, 0.30);
+  border-radius: 12px;
+  background: rgba(255, 253, 241, 0.74);
 }
 
 .home-stage-line {
@@ -267,15 +339,24 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 }
 
 .home-stat-row span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   min-width: 0;
   padding: 7px 6px;
-  border-radius: 12px;
-  background: #111111;
+  border: 2px solid var(--cw-table-line);
+  border-radius: 10px;
+  background: #1d2734;
   color: #ffffff;
   font-size: 13px;
   font-weight: 1000;
   text-align: center;
   white-space: nowrap;
+}
+
+.home-stat-row .cw-icon {
+  font-size: 12px;
 }
 
 .home-stat-row b {
@@ -291,8 +372,10 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 }
 
 .home-start-btn {
-  min-height: 56px !important;
-  border-radius: 16px !important;
+  position: relative;
+  z-index: 1;
+  min-height: 58px !important;
+  border-radius: 14px !important;
   font-size: 19px !important;
   font-weight: 1000 !important;
 }
@@ -325,7 +408,7 @@ const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 }
 
 .home-dev-panel {
-  opacity: 0.86;
+  opacity: 0.72;
 }
 
 .home-mode-entry,

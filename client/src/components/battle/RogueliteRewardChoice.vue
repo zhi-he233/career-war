@@ -147,10 +147,12 @@ function cardAccent(rarity?: RogueliteRewardOption["rarity"]): string {
           @click="handleSelect(reward)"
         >
           <div class="reward-card-top">
+            <span class="reward-card-mark" aria-hidden="true">
+              <span class="cw-icon" :class="reward.rarity === 'legendary' ? 'cw-icon-crown' : reward.rarity === 'epic' ? 'cw-icon-rune' : reward.rarity === 'rare' ? 'cw-icon-dice' : 'cw-icon-swords'"></span>
+            </span>
             <div class="reward-card-heading">
               <span class="reward-rarity">{{ rarityLabel(reward.rarity) }}</span>
               <strong class="reward-name">
-                <span v-if="reward.icon" class="reward-inline-icon" aria-hidden="true">{{ reward.icon }}</span>
                 {{ reward.name }}
               </strong>
             </div>
@@ -395,10 +397,23 @@ function cardAccent(rarity?: RogueliteRewardOption["rarity"]): string {
 }
 
 .reward-card-top {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 6px;
+}
+
+.reward-card-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 2px solid currentColor;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #7b5428;
+  font-size: 20px;
 }
 
 .reward-card-heading {
@@ -445,12 +460,6 @@ function cardAccent(rarity?: RogueliteRewardOption["rarity"]): string {
   color: #3e2811;
   font-size: 15px;
   line-height: 1.2;
-}
-
-.reward-inline-icon {
-  flex: 0 0 auto;
-  font-size: 11px;
-  line-height: 1;
 }
 
 .reward-description {

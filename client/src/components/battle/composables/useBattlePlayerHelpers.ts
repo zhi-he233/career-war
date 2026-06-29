@@ -76,10 +76,10 @@ export function useBattlePlayerHelpers(params: BattlePlayerHelpersParams) {
   }
 
   function lastRollText(player: Player): string {
-    if (pendingRollDecision.value?.actorId === player.id) return `🎲 ${pendingRollDecision.value.currentRoll}`;
+    if (pendingRollDecision.value?.actorId === player.id) return `骰点 ${pendingRollDecision.value.currentRoll}`;
     const rollEvent = room.value.battleLog.find((event) => event.type === "roll" && event.playerId === player.id && event.dice?.length);
     if (!rollEvent?.dice?.length) return "";
-    return `🎲 ${rollEvent.dice.join("、")}`;
+    return `骰点 ${rollEvent.dice.join("、")}`;
   }
 
   function isProtectedByGuardingMountainShield(player: Player): boolean {

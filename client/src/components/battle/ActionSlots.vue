@@ -41,7 +41,7 @@ const emit = defineEmits<{
     </div>
 
     <div class="slot-heading">
-      <strong>行动卡槽 · 🎲 {{ props.diceValue }}</strong>
+      <strong><span class="cw-icon cw-icon-dice" aria-hidden="true"></span>行动卡槽 · 骰点 {{ props.diceValue }}</strong>
     </div>
     <div class="slot-grid">
       <button
@@ -61,7 +61,7 @@ const emit = defineEmits<{
         :disabled="!props.canUseSlots || !slot.enabled || slot.requiresSelfDamage"
         @click="emit('selectAction', slot.id)"
       >
-        <span class="slot-dice">🎲 {{ props.diceValue }}</span>
+        <span class="slot-dice"><span class="cw-icon cw-icon-dice" aria-hidden="true"></span>骰点 {{ props.diceValue }}</span>
         <strong>{{ slot.settling && props.locked ? "结算中..." : slot.label }}</strong>
         <small>{{ slot.requiresSelfDamage ? "请先在上方选择扣血量" : slot.description }}</small>
       </button>

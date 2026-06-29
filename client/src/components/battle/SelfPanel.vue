@@ -44,8 +44,8 @@ const emit = defineEmits<{
       </div>
 
       <div class="self-hp-row">
-        <span class="self-hp-text">❤ {{ data.hp }}/{{ data.maxHp }}</span>
-        <span v-if="data.shield > 0" class="self-shield-text">🛡 {{ data.shield }}</span>
+        <span class="self-hp-text"><i class="cw-icon cw-icon-heart" aria-hidden="true"></i>{{ data.hp }}/{{ data.maxHp }}</span>
+        <span v-if="data.shield > 0" class="self-shield-text"><i class="cw-icon cw-icon-shield" aria-hidden="true"></i>{{ data.shield }}</span>
         <span v-if="data.isDead" class="self-dead-tag">阵亡</span>
       </div>
 

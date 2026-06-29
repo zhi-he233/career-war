@@ -31,12 +31,12 @@ function bossDist(c: number) { let t = c; while (getRogueliteMapStagePrimaryType
 
 const LABEL = ROGUELITE_ROOM_TYPE_LABELS;
 function phase(s: number): string {
-  if (s <= 3) return "第1阶段：职场试炼";
-  if (s <= 6) return "第2阶段：骰子乱斗";
-  if (s <= 9) return "第3阶段：精英压力";
+  if (s <= 3) return "第1阶段：迷雾浅径";
+  if (s <= 6) return "第2阶段：命运岔路";
+  if (s <= 9) return "第3阶段：精英营地";
   if (s <= 12) return "第4阶段：Boss前夜";
-  if (s <= 18) return "第5阶段：无尽挑战";
-  return "无尽挑战";
+  if (s <= 18) return "第5阶段：深雾回廊";
+  return "无尽回廊";
 }
 
 // ── derived ──
@@ -455,15 +455,15 @@ onUnmounted(() => {
 
     <!-- ═══ resource bar ═══ -->
     <header class="m-res">
-      <span class="chip c-red"><i>❤️</i>{{ hpVal }}/{{ maxHpVal }}</span>
-      <span class="chip c-amber"><i>🪙</i>{{ gold }}</span>
-      <span class="chip c-blue"><i>🚪</i>第{{ currentStage }}关</span>
-      <span class="chip c-pink"><i>👑</i>{{ bText }}</span>
+      <span class="chip c-red"><i class="cw-icon cw-icon-heart" aria-hidden="true"></i>{{ hpVal }}/{{ maxHpVal }}</span>
+      <span class="chip c-amber"><i class="cw-icon cw-icon-coin" aria-hidden="true"></i>{{ gold }}</span>
+      <span class="chip c-blue"><i class="cw-icon cw-icon-door" aria-hidden="true"></i>第{{ currentStage }}关</span>
+      <span class="chip c-pink"><i class="cw-icon cw-icon-crown" aria-hidden="true"></i>{{ bText }}</span>
     </header>
 
     <!-- ═══ info card ═══ -->
     <section class="m-info">
-      <div class="m-info-l"><h2>{{ phase(currentStage) }}</h2><p>选择路线，击败敌人，拿奖励成长。</p></div>
+      <div class="m-info-l"><h2>{{ phase(currentStage) }}</h2><p>翻开遭遇卡，沿着亮起的路线深入。</p></div>
       <button class="m-info-btn" type="button" @click.stop.prevent="emit('openBuild')">构筑</button>
     </section>
 
@@ -522,29 +522,41 @@ onUnmounted(() => {
 
 <style scoped>
 /* ══════ SHELL ══════ */
-.m-root { position:relative; display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; background:#f6f2e9; font-family:var(--font-body); }
+.m-root {
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  min-height:0;
+  overflow:hidden;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(128,81,201,.12), transparent 30%),
+    radial-gradient(circle at 100% 10%, rgba(36,121,200,.10), transparent 28%),
+    #f6efd8;
+  font-family:var(--font-body);
+}
 
 /* ══════ RESOURCE BAR ══════ */
-.m-res { flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:7px 10px; overflow-x:auto; background:rgba(255,255,255,.60); backdrop-filter:blur(4px); }
-.chip { flex:0 0 auto; display:flex; align-items:center; gap:3px; padding:4px 10px; border-radius:18px; font-size:12px; font-weight:800; line-height:1.2; white-space:nowrap; }
+.m-res { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:8px 10px; overflow-x:auto; background:rgba(255,248,223,.74); backdrop-filter:blur(4px); border-bottom:1px solid rgba(45,36,21,.16); }
+.chip { flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:5px 10px; border:2px solid currentColor; border-radius:12px; font-size:12px; font-weight:900; line-height:1.2; white-space:nowrap; background:#fffdf1; box-shadow:0 2px 0 rgba(45,36,21,.14); }
 .chip i { font-style:normal; font-size:13px; }
-.c-red{background:#fee2e2;color:#b91c1c} .c-amber{background:#fef3c7;color:#92400e} .c-amber.off{color:#b8a88a;background:#f4efe8} .c-blue{background:#dbeafe;color:#1e40af} .c-pink{background:#fce7f3;color:#9d174d}
+.c-red{color:#b91c1c} .c-amber{color:#9b6511} .c-amber.off{color:#8b8173;background:#f4efe8} .c-blue{color:#1e5f9e} .c-pink{color:#8f2a78}
 
 /* ══════ INFO CARD ══════ */
-.m-info { flex:0 0 auto; display:flex; align-items:center; gap:10px; margin:6px 10px 0; padding:10px 14px; border-radius:16px; background:#fff; box-shadow:0 1px 6px rgba(100,70,30,.05); }
+.m-info { flex:0 0 auto; display:flex; align-items:center; gap:10px; margin:8px 10px 0; padding:10px 14px; border:2px solid var(--cw-table-line); border-radius:14px; background:linear-gradient(180deg,#fffdf0 0%,#eadfbd 100%); box-shadow:var(--cw-table-shadow-soft); }
 .m-info-l{flex:1;min-width:0} .m-info-l h2{margin:0;font-size:16px;font-weight:900;color:#3e2e1a} .m-info-l p{margin:2px 0 0;font-size:11px;font-weight:700;color:#8b7355}
-.m-info-btn{flex:0 0 auto;padding:6px 16px;border:1.5px solid #d4c8a8;border-radius:20px;background:#fffdf5;color:#8b6914;font-size:13px;font-weight:800;cursor:pointer} .m-info-btn:active{transform:scale(.95)}
+.m-info-btn{flex:0 0 auto;padding:7px 14px;border:2px solid var(--cw-table-line);border-radius:12px;background:#fffdf5;color:#5b4216;font-size:13px;font-weight:900;box-shadow:0 2px 0 rgba(45,36,21,.36);cursor:pointer} .m-info-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(45,36,21,.36)}
 
 /* ══════ VIEWPORT ══════ */
 .map-viewport {
   flex:1 1 auto; min-height:380px; max-height:560px;
   position:relative; width:100%; max-width:460px;
-  margin:12px auto 0; border-radius:14px; overflow:hidden;
+  margin:12px auto 0; border:2px solid var(--cw-table-line); border-radius:14px; overflow:hidden;
   touch-action:none; overscroll-behavior:contain; cursor:grab;
   background: radial-gradient(circle at 18% 30%,rgba(210,190,150,.10) 0%,transparent 55%),
               radial-gradient(circle at 82% 68%,rgba(200,175,135,.08) 0%,transparent 55%),
               linear-gradient(176deg,#fdfaf2 0%,#f5efdf 40%,#efe6d0 100%);
-  box-shadow:inset 0 2px 6px rgba(140,110,70,.04);
+  box-shadow:inset 0 2px 6px rgba(140,110,70,.04), var(--cw-table-shadow-soft);
 }
 .map-viewport.dragging { cursor:grabbing; }
 .map-world {
@@ -574,7 +586,7 @@ onUnmounted(() => {
 .tutorial-target-node { filter:brightness(1.08) drop-shadow(0 0 10px rgba(245,158,11,.72)); }
 
 /* ══════ BOTTOM ══════ */
-.m-bot { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); min-height:60px; background:rgba(255,255,255,.88); backdrop-filter:blur(6px); border-top:1px solid rgba(180,155,120,.18); }
+.m-bot { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); min-height:60px; background:rgba(255,248,223,.92); backdrop-filter:blur(6px); border-top:2px solid rgba(45,36,21,.18); }
 .m-bot-info { flex:1; min-width:0; text-align:center; font-size:13px; font-weight:800; color:#5c4a2a; }
 .m-bot-back { flex:0 0 auto; min-width:72px; min-height:42px; padding:8px 14px; border:1.5px solid #d9ccb2; border-radius:18px; background:#fffaf0; color:#6f5a34; font-size:14px; font-weight:900; cursor:pointer; }
 .m-bot-back:active{transform:translateY(2px)}

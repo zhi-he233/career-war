@@ -149,61 +149,61 @@ export function useRogueliteViewModels(room, me, playerId) {
     }
     function rogueliteRewardIcon(type) {
         if (isBossRewardType(type))
-            return "👑";
+            return "boss";
         if (isRogueliteSkillRewardType(type))
-            return "✦";
+            return "skill";
         if (type.startsWith("starter_"))
-            return "◆";
+            return "starter";
         if (isGrowthRewardType(type))
-            return "▲";
-        return "★";
+            return "growth";
+        return "reward";
     }
     // ── roguelite alert text (battle log event → overlay popup) ──
     function getRogueliteAlertText(msg) {
         if (msg.includes("战后恢复至满血"))
-            return "🎉 战后恢复！满血！";
+            return "战后恢复！满血！";
         if (msg.includes("战后恢复"))
-            return "💚 战后恢复！";
+            return "战后恢复！";
         if (msg.includes("Boss 出现"))
-            return "⚠  Boss 出现！";
+            return "Boss 出现！";
         if (msg.includes("蓄力重拳"))
-            return "💥 蓄力重拳！";
+            return "蓄力重拳！";
         if (msg.includes("进入狂暴"))
-            return "🔥 狂暴！";
+            return "狂暴！";
         if (msg.includes("凝聚血盾"))
-            return "🛡 血盾！";
+            return "血盾！";
         if (msg.includes("发动血祭"))
-            return "🩸 血祭！";
+            return "血祭！";
         if (msg.includes("吸取生命"))
-            return "🩸 吸血！";
+            return "吸血！";
         if (msg.includes("架起巨盾"))
-            return "🛡 架盾！";
+            return "架盾！";
         if (msg.includes("盾击反击"))
-            return "⚔ 盾击反击！";
+            return "盾击反击！";
         if (msg.includes("狂怒之血"))
-            return "😡 狂怒之血！";
+            return "狂怒之血！";
         if (msg.includes("龙胆之力"))
-            return "🐉 龙胆之力！";
+            return "龙胆之力！";
         if (msg.includes("枪手") && msg.includes("三倍"))
-            return "💥 三倍射击！";
+            return "三倍射击！";
         if (msg.includes("血祭回复"))
-            return "🩸 血祭回复！";
+            return "血祭回复！";
         if (msg.includes("自爆"))
-            return "💣 自爆！";
+            return "自爆！";
         if (msg.includes("处决"))
-            return "⚔ 处决！";
+            return "处决！";
         if (msg.includes("碾压"))
-            return "🪨 巨岩碾压！";
+            return "巨岩碾压！";
         if (msg.includes("开始蓄力"))
-            return "⚡ 蓄力！";
+            return "蓄力！";
         if (msg.includes("生命阈值"))
-            return "🛡 生命阈值！";
+            return "生命阈值！";
         if (msg.includes("濒死不倒"))
-            return "💀 濒死一击！";
+            return "濒死一击！";
         if (msg.includes("燃尽最后生命"))
-            return "⚰ 神狂战倒下！";
+            return "神狂战倒下！";
         if (msg.includes("狂战增伤"))
-            return "💢 狂战增伤！";
+            return "狂战增伤！";
         return null;
     }
     // ── sub-VM builders ──

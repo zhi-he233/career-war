@@ -60,11 +60,11 @@ export function useBattlePlayerHelpers(params) {
     }
     function lastRollText(player) {
         if (pendingRollDecision.value?.actorId === player.id)
-            return `🎲 ${pendingRollDecision.value.currentRoll}`;
+            return `骰点 ${pendingRollDecision.value.currentRoll}`;
         const rollEvent = room.value.battleLog.find((event) => event.type === "roll" && event.playerId === player.id && event.dice?.length);
         if (!rollEvent?.dice?.length)
             return "";
-        return `🎲 ${rollEvent.dice.join("、")}`;
+        return `骰点 ${rollEvent.dice.join("、")}`;
     }
     function isProtectedByGuardingMountainShield(player) {
         if (!player.teamId || player.characterId === "mountain_shield")

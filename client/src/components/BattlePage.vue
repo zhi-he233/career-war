@@ -923,10 +923,18 @@ const rogueliteWaitHint = computed(() => {
   if (room.value.phase === "gameOver") return "";
   if (me.value?.isDead) return "躺平观战中，等待下一局...";
   if (!isMyTurn.value) return "对手正在思考战术...";
-  if (!selectedTargetId.value) return "先挑一个想揍的家伙 👆";
+  if (!selectedTargetId.value) return "先挑一个想揍的家伙";
   if (pendingRoll.value && isPendingMine.value) return "技能触发！再投一次...";
   if (pendingRollDecision.value) return "选个行动卡，给对手好看！";
-  return "骰子已经在手里发抖了 🎲";
+  return "骰子已经在手里发抖了";
+});
+
+const rogueliteWaitIconClass = computed(() => {
+  if (isRolling.value) return "cw-icon-dice";
+  if (pendingGuardCheck.value) return "cw-icon-shield";
+  if (isBotTurn.value) return "cw-icon-rune";
+  if (isMyTurn.value) return "cw-icon-swords";
+  return "cw-icon-rune";
 });
 
 const turnGuideText = computed(() => {
@@ -1527,7 +1535,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           />
           <!-- Roguelite: cute wait card instead of thin strip -->
           <div v-if="isRogueliteMode && !isActionPanelActive" class="roguelite-wait-card">
-            <span class="roguelite-wait-emoji" aria-hidden="true">{{ isBotTurn ? '🤖' : isRolling ? '🎲' : pendingGuardCheck ? '🛡' : isMyTurn ? '👆' : '🤔' }}</span>
+            <span class="roguelite-wait-emoji" aria-hidden="true"><span class="cw-icon" :class="rogueliteWaitIconClass"></span></span>
             <strong>{{ compactActionTitle }}</strong>
             <p>{{ rogueliteWaitHint }}</p>
             <small>{{ compactDiceText }}</small>

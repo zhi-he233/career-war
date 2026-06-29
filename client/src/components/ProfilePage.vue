@@ -96,7 +96,7 @@ function handleRetry() {
     <!-- Loading                                                          -->
     <!-- ================================================================ -->
     <div v-if="loading" class="state-card state-card--loading" aria-busy="true">
-      <span class="state-icon" aria-hidden="true">📋</span>
+      <span class="state-icon" aria-hidden="true"><span class="cw-icon cw-icon-rune"></span></span>
       <p class="state-text">正在读取玩家档案...</p>
     </div>
 
@@ -104,7 +104,7 @@ function handleRetry() {
     <!-- Error                                                            -->
     <!-- ================================================================ -->
     <div v-else-if="error" class="state-card state-card--error" role="alert">
-      <span class="state-icon" aria-hidden="true">⚠️</span>
+      <span class="state-icon" aria-hidden="true"><span class="cw-icon cw-icon-boss"></span></span>
       <p class="state-text">{{ error }}</p>
       <button class="retry-btn" type="button" @click="handleRetry">重新读取</button>
     </div>
@@ -188,7 +188,7 @@ function handleRetry() {
 
         <div class="resource-row">
           <div class="resource-chip">
-            <span aria-hidden="true">🪙</span>
+            <span aria-hidden="true"><span class="cw-icon cw-icon-coin"></span></span>
             <strong>{{ profile.progress.coins }}</strong>
             <span>金币</span>
           </div>
@@ -366,7 +366,7 @@ function handleRetry() {
     <!-- Empty / fallback                                                 -->
     <!-- ================================================================ -->
     <div v-else class="state-card">
-      <span class="state-icon" aria-hidden="true">🎲</span>
+      <span class="state-icon" aria-hidden="true"><span class="cw-icon cw-icon-dice"></span></span>
       <p class="state-text">暂无档案数据</p>
       <p class="state-hint">请先登录或创建角色</p>
     </div>

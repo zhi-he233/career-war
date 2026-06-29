@@ -41,7 +41,7 @@ const isEnemy = computed(() => props.seat.isSelf === false);
       <span v-if="props.seat.isSelected && props.seat.targetLabel" class="target-mark">{{ props.seat.targetLabel }}</span>
       <span v-if="props.seat.hasInvincible" class="invincible-mark" aria-label="无敌">✓</span>
       <span v-if="props.seat.isHost" class="seat-host-mark">房</span>
-      <span v-if="props.seat.shield > 0" class="shield-mark" aria-label="护盾">🛡</span>
+      <span v-if="props.seat.shield > 0" class="shield-mark" aria-label="护盾"><span class="cw-icon cw-icon-shield"></span></span>
 
       <!-- ═══ SPRITE: wrap in flip shell so enemy sprites face the player ═══ -->
       <span class="avatar-ring" :class="{ 'has-sprite': props.seat.spriteSrc }">
@@ -88,8 +88,8 @@ const isEnemy = computed(() => props.seat.isSelf === false);
     </div>
 
     <div class="seat-stats">
-      <span>❤ {{ props.seat.hp }}</span>
-      <span v-if="props.seat.shield > 0">🛡 {{ props.seat.shield }}</span>
+      <span><i class="cw-icon cw-icon-heart" aria-hidden="true"></i>{{ props.seat.hp }}</span>
+      <span v-if="props.seat.shield > 0"><i class="cw-icon cw-icon-shield" aria-hidden="true"></i>{{ props.seat.shield }}</span>
     </div>
     <div v-if="props.seat.lastRollText" class="seat-roll">{{ props.seat.lastRollText }}</div>
     <span class="seat-status">{{ props.seat.statusText }}</span>

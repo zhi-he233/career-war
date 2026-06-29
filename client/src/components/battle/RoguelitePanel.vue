@@ -32,10 +32,10 @@ function hasAnyResource(r: Record<string, unknown>): boolean {
 
     <!-- Dynamic resources -->
     <section v-if="data.resources && hasAnyResource(data.resources)" class="roguelite-resources">
-      <span v-if="data.resources.fateTokens" class="resource-chip dice-chip">🎲 命运筹码：{{ data.resources.fateTokens.current }}/{{ data.resources.fateTokens.max }}</span>
-      <span v-if="(data.resources.lowRollCharge ?? 0) > 0" class="resource-chip charge-chip">⚡ 蓄力：{{ data.resources.lowRollCharge }} 层</span>
-      <span v-if="data.resources.consecutiveLowRolls && data.resources.consecutiveLowRolls.current > 0" class="resource-chip low-chip">📉 连续低点：{{ data.resources.consecutiveLowRolls.current }}/{{ data.resources.consecutiveLowRolls.max }}</span>
-      <span v-if="data.resources.shieldOverloadUsed !== undefined" class="resource-chip overload-chip" :class="{ used: data.resources.shieldOverloadUsed }">💥 护盾过载：{{ data.resources.shieldOverloadUsed ? '已使用' : '可用' }}</span>
+      <span v-if="data.resources.fateTokens" class="resource-chip dice-chip"><i class="cw-icon cw-icon-dice" aria-hidden="true"></i>命运筹码：{{ data.resources.fateTokens.current }}/{{ data.resources.fateTokens.max }}</span>
+      <span v-if="(data.resources.lowRollCharge ?? 0) > 0" class="resource-chip charge-chip"><i class="cw-icon cw-icon-swords" aria-hidden="true"></i>蓄力：{{ data.resources.lowRollCharge }} 层</span>
+      <span v-if="data.resources.consecutiveLowRolls && data.resources.consecutiveLowRolls.current > 0" class="resource-chip low-chip"><i class="cw-icon cw-icon-rune" aria-hidden="true"></i>连续低点：{{ data.resources.consecutiveLowRolls.current }}/{{ data.resources.consecutiveLowRolls.max }}</span>
+      <span v-if="data.resources.shieldOverloadUsed !== undefined" class="resource-chip overload-chip" :class="{ used: data.resources.shieldOverloadUsed }"><i class="cw-icon cw-icon-shield" aria-hidden="true"></i>护盾过载：{{ data.resources.shieldOverloadUsed ? '已使用' : '可用' }}</span>
     </section>
 
     <!-- Enemy traits -->

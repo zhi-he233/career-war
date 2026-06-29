@@ -19,15 +19,24 @@ const emit = defineEmits<{
 const roomId = ref("");
 const inviteRoomId = ref("");
 const selectedMode = ref<GameMode | null>(null);
+const roomView = ref<"entry" | "list">("entry");
 const submitting = ref(false);
 const joinError = ref("");
 const isInviteMode = computed(() => Boolean(inviteRoomId.value));
 const visibleRoomList = computed(() => props.roomList.filter((room) => isRoomVisibleForSelectedMode(room)));
+const joinableRoomList = computed(() => visibleRoomList.value.filter((room) => room.canJoin));
 const isPveMode = computed(() => selectedMode.value === "pve_1v1");
+const isRoomEntryMode = computed(() => selectedMode.value === "classic" || selectedMode.value === "duo_2v2");
+const canJoinByCode = computed(() => roomId.value.trim().length === 4);
 const selectedModeTitle = computed(() => {
-  if (selectedMode.value === "duo_2v2") return "2V2 双角色房间";
+  if (selectedMode.value === "duo_2v2") return "2V2 双角色";
   if (selectedMode.value === "pve_1v1") return "人机练习";
-  return "经典对战房间";
+  return "经典对战";
+});
+const selectedModeSummary = computed(() => {
+  if (selectedMode.value === "duo_2v2") return "同样使用快速匹配、创建房间和公开房间入口。";
+  if (selectedMode.value === "pve_1v1") return "创建一局人机练习，进入选角后开打。";
+  return "快速进入可加入房间；没有公开房间时会创建新房间等待对手。";
 });
 
 onMounted(() => {
@@ -46,25 +55,25 @@ watch(
   () => props.initialMode,
   (mode) => {
     selectedMode.value = mode ?? null;
+    roomView.value = "entry";
   }
 );
 
 function openClassicMode(): void {
   selectedMode.value = "classic";
+  roomView.value = "entry";
   emit("refreshRoomList");
 }
 
 function openDuoMode(): void {
   selectedMode.value = "duo_2v2";
+  roomView.value = "entry";
   emit("refreshRoomList");
-}
-
-function openPveMode(): void {
-  selectedMode.value = "pve_1v1";
 }
 
 function backToModeSelect(): void {
   selectedMode.value = null;
+  roomView.value = "entry";
 }
 
 function normalizedNickname(): string {
@@ -108,8 +117,18 @@ function createRoom(): void {
   emit("createRoom", { nickname: normalizedNickname(), gameMode: selectedMode.value });
 }
 
-function joinRoom(): void {
+function startMatching(): void {
   if (!selectedMode.value || submitting.value) return;
+  const joinableRoom = joinableRoomList.value[0];
+  if (joinableRoom) {
+    selectRoom(joinableRoom);
+    return;
+  }
+  createRoom();
+}
+
+function joinRoom(): void {
+  if (!selectedMode.value || submitting.value || !canJoinByCode.value) return;
   startSubmitting(1600, "房间不存在，请检查房间号");
   rememberName();
   emit("joinRoom", { nickname: normalizedNickname(), roomId: roomId.value, gameMode: selectedMode.value });
@@ -121,6 +140,15 @@ function selectRoom(room: RoomListItem): void {
   roomId.value = room.roomId;
   rememberName();
   emit("joinRoom", { nickname: normalizedNickname(), roomId: room.roomId, gameMode: selectedMode.value });
+}
+
+function openRoomList(): void {
+  roomView.value = "list";
+  emit("refreshRoomList");
+}
+
+function backToRoomEntry(): void {
+  roomView.value = "entry";
 }
 
 onBeforeUnmount(clearSubmittingTimer);
@@ -145,6 +173,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
       <div>
         <p class="eyebrow">玩家对战</p>
         <h2>选择对战模式</h2>
+        <span class="pvp-user-chip">{{ normalizedNickname() }}</span>
       </div>
     </div>
 
@@ -162,17 +191,18 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
       </button>
     </div>
 
-    <section v-else class="page-panel pvp-room-flow">
+    <section v-else class="page-panel pvp-room-flow" :class="{ 'is-list-view': roomView === 'list' }">
       <div class="section-heading">
-        <h2>{{ selectedModeTitle }}</h2>
-        <button class="ghost-btn small-btn" type="button" @click="backToModeSelect">返回模式选择</button>
+        <div>
+          <p class="eyebrow">{{ roomView === "list" ? "公开房间" : "当前模式" }}</p>
+          <h2>{{ roomView === "list" ? `${selectedModeTitle}房间` : selectedModeTitle }}</h2>
+        </div>
+        <button class="ghost-btn small-btn" type="button" @click="roomView === 'list' ? backToRoomEntry() : backToModeSelect()">
+          {{ roomView === "list" ? "返回入口" : "返回模式选择" }}
+        </button>
       </div>
 
       <p v-if="joinError" class="pvp-alert">{{ joinError }}</p>
-
-      <button v-if="!isInviteMode" class="primary-btn" type="button" :disabled="submitting" @click="createRoom">{{ submitting ? "创建中……" : isPveMode ? "创建人机练习" : "创建房间" }}</button>
-
-      <div v-if="!isInviteMode && !isPveMode" class="divider">或</div>
 
       <template v-if="isInviteMode">
         <div class="room-code">
@@ -182,37 +212,60 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
         <button class="secondary-btn" type="button" :disabled="submitting" @click="joinRoom">{{ submitting ? "加入中……" : "加入该房间" }}</button>
       </template>
 
-      <template v-else-if="!isPveMode">
-        <section class="room-list-panel">
-          <div class="section-heading">
-            <h2>当前房间</h2>
-            <button class="ghost-btn small-btn" type="button" @click="emit('refreshRoomList')">刷新房间列表</button>
-          </div>
+      <template v-else-if="isPveMode">
+        <p class="pvp-mode-note">{{ selectedModeSummary }}</p>
+        <button class="primary-btn" type="button" :disabled="submitting" @click="createRoom">{{ submitting ? "创建中……" : "创建人机练习" }}</button>
+      </template>
 
-          <p v-if="visibleRoomList.length === 0" class="empty-state">暂无可加入房间</p>
+      <template v-else-if="isRoomEntryMode && roomView === 'entry'">
+        <div class="pvp-entry-card">
+          <p class="pvp-mode-note">{{ selectedModeSummary }}</p>
+          <button class="primary-btn match-btn" type="button" :disabled="submitting" @click="startMatching">
+            {{ submitting ? "匹配中……" : "开始匹配" }}
+          </button>
+          <button class="secondary-btn create-room-btn" type="button" :disabled="submitting" @click="createRoom">
+            {{ submitting ? "创建中……" : "创建房间" }}
+          </button>
+        </div>
 
-          <div v-else class="room-list">
-            <article v-for="room in visibleRoomList" :key="room.roomId" class="public-room-card">
-              <div>
-                <strong>{{ room.roomId }}</strong>
-                <p>房主：{{ room.hostName }}</p>
-              </div>
-              <div class="room-meta">
-                <span>{{ room.playerCount }}/{{ room.maxPlayers }} 人</span>
-                <span>{{ phaseLabel(room.phase) }}</span>
-              </div>
-              <button class="secondary-btn small-btn" type="button" :disabled="!room.canJoin || submitting" @click="selectRoom(room)">
-                {{ submitting ? "加入中……" : room.canJoin ? "加入" : room.playerCount >= room.maxPlayers ? "已满" : "不可加入" }}
-              </button>
-            </article>
-          </div>
+        <section class="join-code-panel">
+          <label class="field">
+            <span>房间号</span>
+            <input :value="roomId" maxlength="4" placeholder="例如 A8K2" @input="updateRoomId(($event.target as HTMLInputElement).value)" />
+          </label>
+          <button class="secondary-btn" type="button" :disabled="submitting || !canJoinByCode" @click="joinRoom">{{ submitting ? "加入中……" : "加入房间" }}</button>
         </section>
 
-        <label class="field">
-          <span>房间号</span>
-          <input :value="roomId" maxlength="4" placeholder="例如 A8K2" @input="updateRoomId(($event.target as HTMLInputElement).value)" />
-        </label>
-        <button class="secondary-btn" type="button" :disabled="submitting" @click="joinRoom">{{ submitting ? "加入中……" : "加入房间" }}</button>
+        <button class="ghost-btn room-list-link" type="button" @click="openRoomList">
+          查看公开房间<span v-if="visibleRoomList.length">（{{ visibleRoomList.length }}）</span>
+        </button>
+      </template>
+
+      <template v-else-if="isRoomEntryMode">
+        <div class="room-list-toolbar">
+          <button class="ghost-btn small-btn" type="button" @click="emit('refreshRoomList')">刷新房间列表</button>
+          <button class="secondary-btn small-btn" type="button" :disabled="submitting" @click="createRoom">
+            {{ submitting ? "创建中……" : "创建房间" }}
+          </button>
+        </div>
+
+        <p v-if="visibleRoomList.length === 0" class="empty-state room-list-empty">暂无可加入房间</p>
+
+        <div v-else class="room-list standalone-room-list">
+          <article v-for="room in visibleRoomList" :key="room.roomId" class="public-room-card">
+            <div>
+              <strong>{{ room.roomId }}</strong>
+              <p>房主：{{ room.hostName }}</p>
+            </div>
+            <div class="room-meta">
+              <span>{{ room.playerCount }}/{{ room.maxPlayers }} 人</span>
+              <span>{{ phaseLabel(room.phase) }}</span>
+            </div>
+            <button class="secondary-btn small-btn" type="button" :disabled="!room.canJoin || submitting" @click="selectRoom(room)">
+              {{ submitting ? "加入中……" : room.canJoin ? "加入" : room.playerCount >= room.maxPlayers ? "已满" : "不可加入" }}
+            </button>
+          </article>
+        </div>
       </template>
     </section>
   </section>
@@ -245,6 +298,20 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
   color: #172033;
   font-size: 24px;
   font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+}
+
+.pvp-user-chip {
+  display: inline-flex;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px solid rgba(17, 17, 17, 0.35);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #172033;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.1;
 }
 
 .pvp-heading .ghost-btn {
@@ -351,9 +418,119 @@ button.pvp-mode-card {
   box-shadow: 0 3px 0 rgba(17, 17, 17, 0.2) !important;
 }
 
+.pvp-room-flow.is-list-view {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden !important;
+}
+
 .pvp-room-flow .section-heading {
   min-width: 0;
   gap: 12px !important;
+}
+
+.pvp-room-flow .section-heading h2 {
+  margin: 2px 0 0 !important;
+}
+
+.pvp-mode-note {
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.pvp-entry-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid #111111;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 250, 240, 0.82)),
+    #fffaf0;
+  box-shadow: 0 3px 0 rgba(17, 17, 17, 0.18);
+}
+
+.pvp-entry-card .match-btn {
+  min-height: 68px !important;
+  border-width: 3px !important;
+  border-radius: 18px !important;
+  background: #111111 !important;
+  color: #fffaf0 !important;
+  font-size: 22px !important;
+  font-weight: 1000 !important;
+  letter-spacing: 0 !important;
+  box-shadow: 0 5px 0 rgba(17, 17, 17, 0.28) !important;
+}
+
+.pvp-entry-card .create-room-btn {
+  min-height: 48px !important;
+  border-width: 2px !important;
+  border-radius: 14px !important;
+  background: #fffaf0 !important;
+  color: #111111 !important;
+  font-size: 15px !important;
+  box-shadow: 0 2px 0 rgba(17, 17, 17, 0.2) !important;
+}
+
+.join-code-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid rgba(17, 17, 17, 0.36);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.join-code-panel .field {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.join-code-panel .secondary-btn {
+  min-width: 92px;
+  min-height: 46px !important;
+  border-radius: 12px !important;
+}
+
+.room-list-link {
+  justify-self: stretch;
+  min-height: 42px !important;
+  border-style: dashed !important;
+  background: #ffffff !important;
+  color: #172033 !important;
+  box-shadow: none !important;
+}
+
+.room-list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.room-list-toolbar .small-btn {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 42px !important;
+  padding: 8px 10px !important;
+  white-space: nowrap;
+}
+
+.room-list-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  border: 2px dashed rgba(17, 17, 17, 0.34);
+  border-radius: 16px;
+  background: #ffffff;
+  color: #4b5563;
+  font-weight: 900;
 }
 
 .pvp-room-flow .field {
@@ -395,9 +572,71 @@ button.pvp-mode-card {
   overscroll-behavior: contain;
 }
 
+.pvp-room-flow .standalone-room-list {
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding-right: 2px;
+}
+
 .pvp-room-flow .public-room-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
   border-width: 1px !important;
   box-shadow: none !important;
+}
+
+.pvp-room-flow .public-room-card .room-meta {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pvp-room-flow .public-room-card .small-btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 64px !important;
+  max-width: 82px !important;
+}
+
+@media (max-width: 430px) {
+  .pvp-page {
+    gap: 10px !important;
+  }
+
+  .pvp-heading {
+    padding: 10px !important;
+  }
+
+  .pvp-heading h2 {
+    font-size: 20px;
+  }
+
+  .pvp-room-flow {
+    gap: 10px !important;
+    padding: 12px !important;
+  }
+
+  .pvp-entry-card {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .pvp-entry-card .match-btn {
+    min-height: 62px !important;
+    font-size: 20px !important;
+  }
+
+  .join-code-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .join-code-panel .secondary-btn {
+    width: 100%;
+  }
 }
 
 @media (min-width: 760px) {

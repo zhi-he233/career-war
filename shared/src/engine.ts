@@ -1,5 +1,11 @@
 import { characters } from "./characters.js";
 import { resolveSkill, type SkillOutcome } from "./skillOutcomes.js";
+import {
+  applyLastStandOutcome,
+  createNonAttackSummonerSkillOutcome,
+  createSummonerRollChange,
+  type SummonerRollChange
+} from "./summonerSkillOutcomes.js";
 import { characterSkillDescription, getAvailableCharacterReactionSkill } from "./characterSkills.js";
 import {
   applyDamageToPlayer,
@@ -8,6 +14,13 @@ import {
   applyHpHealingToPlayer,
   getCombatArmor
 } from "./combatMath.js";
+import { resolveRogueliteDicePerks } from "./rogueliteDice.js";
+import {
+  createSummonerChangedRollResolution,
+  getAllowedRollDecisionAction,
+  normalizeRollDecisionChoice
+} from "./rollDecisions.js";
+import { getNextAlivePlayerIndex, getNextDuoControllerId } from "./turnOrder.js";
 import type {
   ActionSnapshot,
   CharacterHighlight,
@@ -369,44 +382,27 @@ export function rollForActivePlayer(room: Room, playerId: string, ctx: EngineCon
 
   let first = ctx.rollDice();
 
-  // ── Roguelite dice perks ──
-  if (room.gameMode === "pve_roguelite" && !actor.isBot) {
-    // 命运筹码: roll 1/2 → gain token; 3 tokens → auto +1
-    if (first === 1 || first === 2) {
-      actor.rogueliteFateTokens = (actor.rogueliteFateTokens ?? 0) + 1;
-      events.push(makeEvent(ctx.now, ctx.makeId, "skill", `命运筹码 +1（${actor.rogueliteFateTokens}/3）`, actor.id));
-    }
-    if ((actor.rogueliteFateTokens ?? 0) >= 3) {
-      const boosted = Math.min(6, first + 1);
-      if (boosted !== first) {
-        actor.rogueliteFateTokens = (actor.rogueliteFateTokens ?? 0) - 3;
-        first = boosted;
-        events.push(makeEvent(ctx.now, ctx.makeId, "skill", `命运筹码触发，骰点 +1 → ${first}`, actor.id));
-      }
-    }
-    // 幸运保底: track consecutive 1/2 rolls
-    if (actor.roguelitePerkStacks?.["lucky_floor"]) {
-      if (first <= 2) {
-        actor.rogueliteConsecutiveLowRolls = (actor.rogueliteConsecutiveLowRolls ?? 0) + 1;
-      } else {
-        actor.rogueliteConsecutiveLowRolls = 0;
-      }
-      if ((actor.rogueliteConsecutiveLowRolls ?? 0) >= 2) {
-        first = Math.max(first, 4);
-        actor.rogueliteConsecutiveLowRolls = 0;
-        events.push(makeEvent(ctx.now, ctx.makeId, "skill", "幸运保底触发，骰点保底为 4", actor.id));
-      }
-    }
-    // 低点蓄力: roll 1/2/3 → gain charge
-    if (actor.roguelitePerkStacks?.["low_roll_charge"] && first >= 1 && first <= 3) {
-      actor.rogueliteLowRollCharge = (actor.rogueliteLowRollCharge ?? 0) + 1;
-      events.push(makeEvent(ctx.now, ctx.makeId, "skill", `低点蓄力 +1（${actor.rogueliteLowRollCharge} 层）`, actor.id));
-    }
-    // 低点防御: roll 1/2 → gain shield
-    const defShield = actor.rogueliteLowRollDefenseShield ?? 0;
-    if (defShield > 0 && (first === 1 || first === 2)) {
-      actor.shield += defShield;
-      events.push(makeEvent(ctx.now, ctx.makeId, "skill", `低点防御触发，获得 ${defShield} 护盾`, actor.id));
+  const dicePerks = resolveRogueliteDicePerks({
+    roll: first,
+    isRoguelite: room.gameMode === "pve_roguelite",
+    actorIsBot: Boolean(actor.isBot),
+    hasFateTokens: Boolean(actor.roguelitePerkStacks?.["fate_tokens"]),
+    fateTokens: actor.rogueliteFateTokens,
+    hasLuckyFloor: Boolean(actor.roguelitePerkStacks?.["lucky_floor"]),
+    consecutiveLowRolls: actor.rogueliteConsecutiveLowRolls,
+    hasLowRollCharge: Boolean(actor.roguelitePerkStacks?.["low_roll_charge"]),
+    lowRollCharge: actor.rogueliteLowRollCharge,
+    lowRollDefenseShield: actor.rogueliteLowRollDefenseShield,
+    shield: actor.shield
+  });
+  if (dicePerks.applied) {
+    first = dicePerks.roll;
+    if (dicePerks.fateTokens !== undefined) actor.rogueliteFateTokens = dicePerks.fateTokens;
+    if (dicePerks.consecutiveLowRolls !== undefined) actor.rogueliteConsecutiveLowRolls = dicePerks.consecutiveLowRolls;
+    if (dicePerks.lowRollCharge !== undefined) actor.rogueliteLowRollCharge = dicePerks.lowRollCharge;
+    if (dicePerks.shield !== undefined) actor.shield = dicePerks.shield;
+    for (const message of dicePerks.messages) {
+      events.push(makeEvent(ctx.now, ctx.makeId, "skill", message, actor.id));
     }
   }
 
@@ -457,8 +453,8 @@ export function confirmRollDecision(
 
   const rollEvent = findRollEvent(room, decision.rollEventId) ?? makeEvent(ctx.now, ctx.makeId, "roll", `${actor.nickname} 投出了 ${decision.rawRoll} 点`, actor.id, target.id, [decision.rawRoll]);
 
-  const normalizedChoice = choice === "settle" ? "normal_attack" : choice;
-  ensureDecisionActionAllowed(decision, normalizedChoice, summonerSkillId);
+  const normalizedChoice = normalizeRollDecisionChoice(choice);
+  const selectedAction = getAllowedRollDecisionAction(decision, normalizedChoice, summonerSkillId);
 
   if (normalizedChoice === "summoner_skill") {
     return confirmSummonerSkill(room, actor, target, decision, rollEvent, ctx, summonerSkillId);
@@ -481,8 +477,7 @@ export function confirmRollDecision(
   }
 
   if (normalizedChoice === "roguelite_skill") {
-    const action = decision.availableActions?.find(a => a.id === "roguelite_skill" && a.enabled);
-    const skillId = (action?.skillId as string) ?? "";
+    const skillId = (selectedAction.skillId as string) ?? "";
 
     if (skillId === "gunner_triple_shot") {
       // Two-roll pattern: first roll (6) triggers, second roll determines damage
@@ -514,15 +509,6 @@ export function confirmRollDecision(
   return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
 }
 
-function ensureDecisionActionAllowed(decision: PendingRollDecision, choice: RollDecisionChoice, skillId?: SummonerSkillId): void {
-  const normalizedChoice = choice === "settle" ? "normal_attack" : choice;
-  const action = decision.availableActions?.find((item) => item.id === normalizedChoice);
-  if (!action) throw new Error("当前没有这个骰子卡槽");
-  if (!action.enabled) throw new Error(action.reason ?? "当前卡槽不可用");
-  if (normalizedChoice === "summoner_skill" && skillId && action.skillId !== skillId) throw new Error("召唤师技能不匹配");
-  if (normalizedChoice === "character_skill" && action.skillId !== decision.availableCharacterSkillId) throw new Error("职业技能不匹配");
-}
-
 function confirmSummonerSkill(
   room: Room,
   actor: Player,
@@ -540,119 +526,65 @@ function confirmSummonerSkill(
   if (decision.usedSummonerSkillId) throw new Error("本次行动已经发动过召唤师技能");
   if ((actor.summonerSkillCooldown ?? 0) > 0) throw new Error("召唤师技能冷却中");
 
-  if (skillId === "first_aid") {
+  if (skillId === "first_aid" || skillId === "iron_wall") {
     actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
     room.pendingRollDecision = undefined;
-    const outcome: SkillOutcome = {
-      damage: 0,
-      healing: decision.currentRoll,
-      shieldGain: 0,
-      selfDamage: 0,
-      ignoresShield: false,
-      grantsInvincible: false,
-      executesTarget: false,
-      flameMarksToAdd: 0,
-      clearsFlameMarks: false,
-      entersGuarding: false,
-      dice: [decision.currentRoll],
-      skillMessages: [`急救术发动，本次不攻击，回复 ${decision.currentRoll} 点血`],
-      skillHints: []
-    };
-    return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
-  }
-
-  if (skillId === "iron_wall") {
-    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
-    room.pendingRollDecision = undefined;
-    const outcome: SkillOutcome = {
-      damage: 0,
-      healing: 0,
-      shieldGain: decision.currentRoll,
-      selfDamage: 0,
-      ignoresShield: false,
-      grantsInvincible: false,
-      executesTarget: false,
-      flameMarksToAdd: 0,
-      clearsFlameMarks: false,
-      entersGuarding: false,
-      dice: [decision.currentRoll],
-      skillMessages: [`铁壁发动，本次不攻击，获得 ${decision.currentRoll} 点护盾`],
-      skillHints: []
-    };
+    const outcome = createNonAttackSummonerSkillOutcome(skillId, decision.currentRoll)!;
     return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
   }
 
   if (skillId === "last_stand") {
-    const outcome = resolveSkill(actor.characterId as CharacterId, decision.currentRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
+    const outcome = applyLastStandOutcome(resolveSkill(actor.characterId as CharacterId, decision.currentRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false }));
     actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
     room.pendingRollDecision = undefined;
-    outcome.damage += 2;
-    outcome.selfDamage = 2;
-    outcome.skillMessages.push("破釜发动，本次最终伤害 +2，自己受到 2 点反噬伤害");
     return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
   }
 
   if (skillId === "lucky_plus_one") {
-    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
-    const nextRoll = Math.min(6, decision.currentRoll + 1);
-    rollEvent.dice = [nextRoll];
-    rollEvent.message = `${actor.nickname} 发动幸运骰，骰点变为 ${nextRoll} 点`;
-    const characterSkill = getAvailableCharacterReactionSkill(actor.characterId, nextRoll);
-    const nextActions = createAvailableActions(room, actor, target, nextRoll, characterSkill, undefined, true);
-    const nextDecision: PendingRollDecision = {
-      ...decision,
-      id: ctx.makeId(),
-      currentRoll: nextRoll,
-      canUseCharacterSkill: Boolean(characterSkill),
-      availableCharacterSkillId: characterSkill?.id,
-      availableCharacterSkillName: characterSkill?.name,
-      availableSummonerSkillId: undefined,
-      availableSummonerSkillName: undefined,
-      availableActions: nextActions,
-      usedSummonerSkillId: skillId
-    };
-
-    if (characterSkill) {
-      room.pendingRollDecision = nextDecision;
-      return { room, events: [] };
-    }
-
-    room.pendingRollDecision = undefined;
-    const outcome = resolveSkill(actor.characterId as CharacterId, nextRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
-    return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
+    const rollChange = createSummonerRollChange(skillId, decision.currentRoll)!;
+    return confirmChangedRollSummonerSkill(room, actor, target, decision, rollEvent, ctx, skillId, rollChange);
   }
 
   if (skillId === "fate_reroll") {
-    actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
-    const nextRoll = ctx.rollDice();
-    rollEvent.dice = [nextRoll];
-    rollEvent.message = `${actor.nickname} 命运重掷发动，新的骰点为 ${nextRoll} 点`;
-    const characterSkill = getAvailableCharacterReactionSkill(actor.characterId, nextRoll);
-    const nextActions = createAvailableActions(room, actor, target, nextRoll, characterSkill, undefined, true);
-    const nextDecision: PendingRollDecision = {
-      ...decision,
-      id: ctx.makeId(),
-      currentRoll: nextRoll,
-      canUseCharacterSkill: Boolean(characterSkill),
-      availableCharacterSkillId: characterSkill?.id,
-      availableCharacterSkillName: characterSkill?.name,
-      availableSummonerSkillId: undefined,
-      availableSummonerSkillName: undefined,
-      availableActions: nextActions,
-      usedSummonerSkillId: skillId
-    };
-
-    if (characterSkill) {
-      room.pendingRollDecision = nextDecision;
-      return { room, events: [] };
-    }
-
-    room.pendingRollDecision = undefined;
-    const outcome = resolveSkill(actor.characterId as CharacterId, nextRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
-    return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
+    const rollChange = createSummonerRollChange(skillId, decision.currentRoll, { reroll: ctx.rollDice() })!;
+    return confirmChangedRollSummonerSkill(room, actor, target, decision, rollEvent, ctx, skillId, rollChange);
   }
 
   throw new Error("未知的召唤师技能");
+}
+
+function confirmChangedRollSummonerSkill(
+  room: Room,
+  actor: Player,
+  target: Player,
+  decision: PendingRollDecision,
+  rollEvent: GameEvent,
+  ctx: EngineContext,
+  skillId: SummonerSkillId,
+  rollChange: SummonerRollChange
+): RollResult {
+  actor.summonerSkillCooldown = getSummonerSkillCooldown(actor, 3);
+  rollEvent.dice = [rollChange.nextRoll];
+  rollEvent.message = `${actor.nickname} ${rollChange.message}`;
+
+  const characterSkill = getAvailableCharacterReactionSkill(actor.characterId, rollChange.nextRoll);
+  const nextActions = createAvailableActions(room, actor, target, rollChange.nextRoll, characterSkill, undefined, true);
+  const resolution = createSummonerChangedRollResolution(decision, {
+    id: ctx.makeId(),
+    nextRoll: rollChange.nextRoll,
+    characterSkill,
+    availableActions: nextActions,
+    usedSummonerSkillId: skillId
+  });
+
+  if (resolution.shouldWaitForCharacterSkill) {
+    room.pendingRollDecision = resolution.decision;
+    return { room, events: [] };
+  }
+
+  room.pendingRollDecision = undefined;
+  const outcome = resolveSkill(actor.characterId as CharacterId, rollChange.nextRoll, room.previousFinalDamage, actor.hp, actor.maxHp, target.hp, target.maxHp, actor.guarding ?? false, target.flameMarks ?? 0, { useOptionalCharacterSkill: false });
+  return finishDecisionAction(room, actor, target, outcome, rollEvent, ctx);
 }
 
 function finishDecisionAction(room: Room, actor: Player, target: Player, outcome: SkillOutcome, rollEvent: GameEvent, ctx: EngineContext): RollResult {
@@ -1682,16 +1614,10 @@ function hasInvincible(room: Room): boolean {
 
 function advanceTurn(room: Room): void {
   if (room.gameMode === "duo_2v2") {
-    // In duo mode, switch controller turn order
-    const order = room.controllerTurnOrder ?? [];
-    const current = room.activeControllerId;
-    const currentIndex = order.findIndex((id) => id === current);
-    if (currentIndex < 0 || order.length < 2) return;
-    const nextIndex = (currentIndex + 1) % order.length;
-    const nextControllerId = order[nextIndex];
+    const nextControllerId = getNextDuoControllerId(room.controllerTurnOrder, room.activeControllerId);
+    if (!nextControllerId) return;
     room.activeControllerId = nextControllerId;
     room.selectedActorId = undefined;
-    // Clear selected targets on all players when turn switches
     for (const player of room.players) {
       if (player.controllerId !== nextControllerId) {
         player.selectedTargetId = undefined;
@@ -1700,16 +1626,7 @@ function advanceTurn(room: Room): void {
     return;
   }
 
-  // classic mode
-  const aliveCount = room.players.filter((player) => !player.isDead).length;
-  if (aliveCount <= 1) return;
-  for (let offset = 1; offset <= room.players.length; offset += 1) {
-    const nextIndex = (room.activePlayerIndex + offset) % room.players.length;
-    if (!room.players[nextIndex].isDead) {
-      room.activePlayerIndex = nextIndex;
-      return;
-    }
-  }
+  room.activePlayerIndex = getNextAlivePlayerIndex(room.players, room.activePlayerIndex);
 }
 
 function getRogueliteFatigueBonus(room: Room): number {

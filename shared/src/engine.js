@@ -1,4 +1,6 @@
 import { characters } from "./characters.js";
+import { characterSkillDescription, getAvailableCharacterReactionSkill } from "./characterSkills.js";
+import { applyDamageToPlayer, applyDirectDamageToPlayer, applyHealingToPlayer, applyHpHealingToPlayer, getCombatArmor } from "./combatMath.js";
 /** Per-level stat effects for growth perks (used by 战利品 on-kill upgrade). */
 const GROWTH_PERK_UPGRADE = {
     heavy_punch: (p) => { p.rogueliteDamageBonus = (p.rogueliteDamageBonus ?? 0) + 1; p.maxHp += 2; p.hp = Math.min(p.maxHp, p.hp + 2); },
@@ -667,44 +669,6 @@ function createAvailableActions(room, actor, target, roll, characterSkill, summo
     }
     return actions;
 }
-function activeCharacterSkillReason(characterId, roll) {
-    if (characterId === "stone_titan")
-        return roll === 6 ? "发动碾压造成 9 点伤害" : "当前骰点不能发动";
-    if (characterId === "gunslinger")
-        return roll === 6 ? "继续投骰造成额外伤害" : "当前骰点不能发动";
-    if (characterId === "vampire")
-        return roll === 6 ? "继续投骰并根据结果回复生命" : "当前骰点不能发动";
-    if (characterId === "paladin")
-        return roll === 4 ? "全员无敌，自己获得护盾" : "当前骰点不能发动";
-    if (characterId === "self_destructor")
-        return roll === 6 ? "选择扣血并造成双倍伤害" : "当前骰点不能发动";
-    return "无可发动职业技能";
-}
-function characterSkillDescription(skillId, roll) {
-    if (skillId === "stone_titan_crush")
-        return `消耗 🎲 ${roll}，发动碾压造成 9 点伤害`;
-    if (skillId === "gunslinger_copy_damage")
-        return `消耗 🎲 ${roll}，复制上一名玩家刚刚造成的最终伤害`;
-    if (skillId === "gunslinger_barrage")
-        return `消耗 🎲 ${roll}，继续投骰造成额外伤害`;
-    if (skillId === "vampire_life_steal")
-        return `消耗 🎲 ${roll}，造成 1 点伤害并回复 2 点血`;
-    if (skillId === "vampire_blood_rite")
-        return `消耗 🎲 ${roll}，继续投骰并根据结果回复生命`;
-    if (skillId === "self_destruct")
-        return "选择扣除自己 1-9 点血量，对目标造成双倍普通伤害";
-    if (skillId === "war_knight_heal")
-        return `消耗 🎲 ${roll}，回复 3 点血，不造成伤害`;
-    if (skillId === "crescent_moon_strike")
-        return `消耗 🎲 ${roll}，造成固定 9 点伤害`;
-    if (skillId === "fire_lord_spark")
-        return `消耗 🎲 ${roll}，不造成伤害并添加 1 层火焰印记`;
-    if (skillId === "fire_lord_burst")
-        return "爆发目标身上的火焰印记，每层造成 3 点普通伤害并清空";
-    if (skillId === "mountain_shield_guard")
-        return `消耗 🎲 ${roll}，进入架盾状态，不造成伤害`;
-    return `消耗 🎲 ${roll}，全员无敌，自己获得护盾`;
-}
 function summonerSkillDescription(skillId, roll) {
     if (skillId === "lucky_plus_one")
         return `🎲 ${roll} → 🎲 ${Math.min(6, roll + 1)}`;
@@ -725,33 +689,6 @@ function summonerSkillUnavailableReason(room, actor, target, roll, usedSummonerS
     if ((actor.summonerSkillCooldown ?? 0) > 0)
         return `冷却中：${actor.summonerSkillCooldown} 次行动`;
     return "当前不可用";
-}
-function getAvailableCharacterReactionSkill(characterId, roll) {
-    if (characterId === "stone_titan" && roll === 6)
-        return { id: "stone_titan_crush", name: "碾压" };
-    if (characterId === "gunslinger" && roll === 1)
-        return { id: "gunslinger_copy_damage", name: "复制伤害" };
-    if (characterId === "gunslinger" && roll === 6)
-        return { id: "gunslinger_barrage", name: "连射" };
-    if (characterId === "vampire" && roll === 1)
-        return { id: "vampire_life_steal", name: "吸血" };
-    if (characterId === "vampire" && roll === 6)
-        return { id: "vampire_blood_rite", name: "血祭回复" };
-    if (characterId === "paladin" && roll === 4)
-        return { id: "paladin_invincible", name: "全员无敌" };
-    if (characterId === "self_destructor" && roll === 6)
-        return { id: "self_destruct", name: "自爆" };
-    if (characterId === "war_knight" && roll === 3)
-        return { id: "war_knight_heal", name: "战争复苏" };
-    if (characterId === "crescent_moon" && roll === 6)
-        return { id: "crescent_moon_strike", name: "残月斩" };
-    if (characterId === "fire_lord" && roll === 3)
-        return { id: "fire_lord_spark", name: "火焰印记" };
-    if (characterId === "fire_lord" && roll === 6)
-        return { id: "fire_lord_burst", name: "火焰爆发" };
-    if (characterId === "mountain_shield" && roll === 6)
-        return { id: "mountain_shield_guard", name: "架盾" };
-    return undefined;
 }
 function getAvailableSummonerSkill(room, actor, target, roll) {
     if (room.gameMode === "pve_roguelite")
@@ -1749,62 +1686,17 @@ function applyGodBerserkerThresholdProtection(target, hpBeforeDamage, events, ct
     return true;
 }
 function applyDamage(room, target, incomingDamage, ignoresShield) {
-    if (incomingDamage <= 0)
-        return { damage: 0, hpDamage: 0 };
     const armor = ignoresShield ? 0 : getArmor(room, target);
-    const damage = Math.max(0, incomingDamage - armor);
-    let hpDamage = damage;
-    if (!ignoresShield && target.shield > 0) {
-        const shieldBlocked = Math.min(target.shield, damage);
-        target.shield -= shieldBlocked;
-        hpDamage -= shieldBlocked;
-    }
-    target.hp = Math.max(0, target.hp - hpDamage);
-    if (target.hp <= 0)
-        target.isDead = true;
+    const { player, damage, hpDamage } = applyDamageToPlayer(target, incomingDamage, { armor, ignoresShield });
+    Object.assign(target, player);
     return { damage, hpDamage };
 }
 function getArmor(room, target) {
-    let armor = 0;
-    if (target.characterId === "war_knight")
-        armor += 1;
-    if (target.characterId === "mountain_shield")
-        armor += 1;
-    if (target.characterId === "mountain_shield" && target.guarding)
-        armor += 1;
-    if (hasMountainShieldGroupArmor(room, target))
-        armor += 2;
-    if (target.rogueliteArmorBonus)
-        armor += target.rogueliteArmorBonus;
-    // Roguelite perk: 绝境护甲 — armor when HP < 50%
-    if ((target.rogueliteLowHpArmor ?? 0) > 0 && target.hp < target.maxHp * 0.5) {
-        armor += target.rogueliteLowHpArmor;
-    }
-    // Roguelite boss: 山盾守卫 passive armor
-    if (target.rogueliteBossId === "boss_shield_guard")
-        armor += 1;
-    // Roguelite elite: 铁皮精英 passive armor
-    if (target.rogueliteBossId === "elite_iron_skin")
-        armor += 1;
-    // Perk: 稳固壁垒 — armor +1 when shield > 0
-    if (target.roguelitePerkStacks?.["sturdy_bulwark"] && target.shield > 0)
-        armor += 1;
-    // Enemy: 穿甲兵/穿甲精英 — reduce target armor (only affects this calculation)
-    if (room.gameMode === "pve_roguelite") {
-        const attacker = room.players[room.activePlayerIndex];
-        if (attacker?.isBot && attacker.rogueliteBossId === "normal_armor_piercer") {
-            armor = Math.max(0, armor - 1);
-        }
-        if (attacker?.isBot && attacker.rogueliteBossId === "elite_armor_piercing") {
-            const reduction = attacker.hp < attacker.maxHp * 0.5 ? 2 : 1;
-            armor = Math.max(0, armor - reduction);
-        }
-    }
-    // Roguelite boss: 山盾守卫 架盾额外减伤
-    const guardReduction = target.rogueliteBossState?.guardReduction;
-    if (guardReduction && guardReduction > 0)
-        armor += guardReduction;
-    return armor;
+    return getCombatArmor(target, {
+        gameMode: room.gameMode,
+        activeAttacker: room.players[room.activePlayerIndex],
+        hasMountainShieldGroupArmor: hasMountainShieldGroupArmor(room, target)
+    });
 }
 function hasMountainShieldGroupArmor(room, target) {
     return room.players.some((player) => {
@@ -1816,12 +1708,9 @@ function hasMountainShieldGroupArmor(room, target) {
     });
 }
 function applyDirectDamage(target, incomingDamage) {
-    if (incomingDamage <= 0)
-        return 0;
-    target.hp = Math.max(0, target.hp - incomingDamage);
-    if (target.hp <= 0)
-        target.isDead = true;
-    return incomingDamage;
+    const { player, hpDamage } = applyDirectDamageToPlayer(target, incomingDamage);
+    Object.assign(target, player);
+    return hpDamage;
 }
 function executeTarget(target) {
     const hpDamage = target.hp;
@@ -1830,19 +1719,13 @@ function executeTarget(target) {
     return hpDamage;
 }
 function applyHealing(player, amount, options = {}) {
-    const missingHp = Math.max(0, player.maxHp - player.hp);
-    const hpGain = Math.min(missingHp, amount);
-    const overflow = Math.max(0, amount - hpGain);
-    const shieldGain = options.overflowToShield === true ? overflow : 0;
-    player.hp += hpGain;
-    if (shieldGain > 0)
-        player.shield += shieldGain;
+    const { player: nextPlayer, hpGain, shieldGain } = applyHealingToPlayer(player, amount, options);
+    Object.assign(player, nextPlayer);
     return { hpGain, shieldGain };
 }
 function applyHpHealing(player, amount) {
-    const missingHp = Math.max(0, player.maxHp - player.hp);
-    const hpGain = Math.min(missingHp, amount);
-    player.hp += hpGain;
+    const { player: nextPlayer, hpGain } = applyHpHealingToPlayer(player, amount);
+    Object.assign(player, nextPlayer);
     return hpGain;
 }
 function saveSnapshot(room, currentPlayerId, ctx) {

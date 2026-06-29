@@ -11,6 +11,7 @@
     "dev": "concurrently -n server,client -c green,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
     "start": "npm run start -w server",
+    "test": "npm run test -w shared",
     "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
     "process:character-art": "node scripts/process-character-art.js"
   },

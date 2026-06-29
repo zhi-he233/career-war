@@ -638,31 +638,39 @@ function getTransportName(transport: unknown): string {
 
 .net-diagnostics {
   position: fixed;
-  right: 8px;
-  bottom: 8px;
+  right: 10px;
+  bottom: 4px;
   z-index: 30;
   display: flex;
   gap: 6px;
   align-items: center;
   max-width: calc(100vw - 16px);
-  padding: 4px 6px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.82);
-  color: #334155;
-  font-size: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(51, 65, 85, 0.72);
+  font-size: 9px;
   font-weight: 800;
   line-height: 1.2;
+  box-shadow: none;
   pointer-events: none;
 }
 
 @media (max-width: 480px) {
   .net-diagnostics {
-    right: 6px;
-    bottom: 6px;
+    right: 8px;
+    bottom: 3px;
     gap: 4px;
-    padding: 3px 5px;
-    font-size: 9px;
+    max-width: 46vw;
+    overflow: hidden;
+    font-size: 8px;
+    opacity: 0.62;
+    white-space: nowrap;
+  }
+
+  .net-diagnostics span:first-child {
+    display: none;
   }
 }
 

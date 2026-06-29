@@ -274,7 +274,7 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 <style scoped>
 .pvp-page {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) !important;
   gap: 16px !important;
   align-content: start;
   min-width: 0;
@@ -284,19 +284,23 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 
 .pvp-heading {
   display: grid;
-  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 12px;
   min-width: 0;
   border: 1px solid rgba(17, 17, 17, 0.38) !important;
   border-radius: 14px !important;
-  padding: 12px !important;
+  padding: 10px 12px !important;
   background: rgba(255, 250, 240, 0.72) !important;
   box-shadow: none !important;
 }
 
 .pvp-heading h2 {
   margin: 3px 0 0;
+  min-width: 0;
   color: #172033;
   font-size: 24px;
+  line-height: 1.05;
   font-family: "Trebuchet MS", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
 }
 
@@ -316,6 +320,15 @@ function phaseLabel(phase: RoomListItem["phase"]): string {
 
 .pvp-heading .ghost-btn {
   justify-self: start;
+  align-self: center;
+}
+
+.pvp-heading .ghost-btn.small-btn {
+  min-height: 40px !important;
+  max-width: none !important;
+  padding: 8px 13px !important;
+  border-radius: 14px !important;
+  font-size: 14px !important;
 }
 
 .pvp-page .ghost-btn.small-btn {

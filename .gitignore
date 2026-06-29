@@ -21,3 +21,6 @@ server/data/*.sqlite
 graphify-out/
 *.keep-*.css
 .claude/settings.local.json
+.claude/skills/
+.claude/workflows/
+skills-lock.json

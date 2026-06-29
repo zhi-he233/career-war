@@ -1,6 +1,65 @@
 /* ---- battle zone + action center ---- */
 .battle-zone, .action-center { border: 1px solid var(--color-border-card); border-radius: var(--radius-md); background: var(--color-bg-surface); }
 
+.tutorial-hint-host {
+  position: relative;
+}
+
+.tutorial-target-control {
+  outline: 3px solid #f7cf45 !important;
+  outline-offset: 3px !important;
+  box-shadow:
+    0 0 0 6px rgba(247, 207, 69, 0.24),
+    var(--tutorial-original-shadow, 0 6px 14px rgba(17, 17, 17, 0.16)) !important;
+}
+
+.tutorial-complete-toast {
+  position: absolute;
+  z-index: 90;
+  left: 50%;
+  top: 18px;
+  display: grid;
+  gap: 4px;
+  width: min(330px, calc(100vw - 28px));
+  padding: 12px 14px;
+  border: 2px solid #111111;
+  border-radius: 16px;
+  background: #fffaf0;
+  box-shadow: 0 4px 0 rgba(17, 17, 17, 0.86), 0 14px 24px rgba(17, 17, 17, 0.18);
+  color: #111111;
+  transform: translateX(-50%);
+}
+
+.tutorial-complete-toast strong {
+  font-size: 15px;
+  font-weight: 1000;
+  line-height: 1.2;
+}
+
+.tutorial-complete-toast span {
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.roguelite-reward-screen {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  height: 100%;
+  padding: 12px 10px calc(14px + env(safe-area-inset-bottom, 0px));
+  background:
+    radial-gradient(circle at 50% 0%, rgba(247, 207, 69, 0.28), transparent 34%),
+    linear-gradient(180deg, #fffaf0 0%, #f6edd9 100%);
+  overflow: hidden;
+}
+
+.roguelite-reward-screen .reward-choice-overlay {
+  align-self: stretch;
+  min-height: 0;
+}
+
 .battle-layout-fixed .battle-zone {
   flex: 1 1 auto;
   display: flex;

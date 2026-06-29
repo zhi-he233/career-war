@@ -15,11 +15,13 @@ import {
   getRogueliteMapWorldY,
 } from "@career-war/shared";
 import type { RogueliteMapNodeSelection, RogueliteMapRoomType, Room } from "@career-war/shared";
+import type { RogueliteTutorialStep } from "../../tutorial/rogueliteTutorial";
+import FocusHint from "../tutorial/FocusHint.vue";
 import RogueliteMapNode from "./RogueliteMapNode.vue";
 import RogueliteRoomPanel from "./RogueliteRoomPanel.vue";
 import type { NodeStatus } from "./RogueliteMapNode.vue";
 
-const p = defineProps<{ room: Room; playerId: string }>();
+const p = defineProps<{ room: Room; playerId: string; tutorialStep?: RogueliteTutorialStep | null }>();
 const emit = defineEmits<{ challenge: [node: RogueliteMapNodeSelection]; openBuild: []; back: [] }>();
 
 type RogueliteRoomFlow = "map" | "battle" | "event" | "shop" | "rest" | "reward";
@@ -363,6 +365,7 @@ const ENTER_BUTTON_TEXT: Record<RogueliteMapRoomType, string> = {
 };
 const primaryButtonText = computed(() => pendingNode.value ? "确认路线" : currentNode.value ? ENTER_BUTTON_TEXT[currentNode.value.type] : "开打");
 const primaryDisabled = computed(() => !pendingNode.value && !currentNode.value);
+const tutorialMapActive = computed(() => p.tutorialStep === "map-node");
 const bottomText = computed(() => {
   if (pendingNode.value) return `待选第${pendingNode.value.stage}关 · ${LABEL[pendingNode.value.type]}`;
   if (!currentNode.value) return `选择第${currentStage.value}关路线`;
@@ -376,6 +379,10 @@ function handlePrimaryAction() {
     return;
   }
   enterCurrentRoom();
+}
+
+function isTutorialTargetNode(nd: N): boolean {
+  return tutorialMapActive.value && (nd.status === "current" || nd.status === "pending" || nd.status === "available");
 }
 
 function syncViewportHeight(): void {
@@ -439,6 +446,13 @@ onUnmounted(() => {
 
 <template>
   <div class="m-root">
+    <FocusHint
+      v-if="tutorialMapActive"
+      title="选择路线"
+      message="选择一个节点，决定下一场遭遇。"
+      placement="bottom"
+    />
+
     <!-- ═══ resource bar ═══ -->
     <header class="m-res">
       <span class="chip c-red"><i>❤️</i>{{ hpVal }}/{{ maxHpVal }}</span>
@@ -476,7 +490,7 @@ onUnmounted(() => {
         <div
           v-for="nd in visibleNodes" :key="nd.id"
           class="map-node-anchor"
-          :class="{ 'm-cur': nd.status==='current', 'm-pending': nd.status==='pending', 'm-sel': selectedNodeId===nd.id || pendingNodeId===nd.id }"
+          :class="{ 'm-cur': nd.status==='current', 'm-pending': nd.status==='pending', 'm-sel': selectedNodeId===nd.id || pendingNodeId===nd.id, 'tutorial-target-node': isTutorialTargetNode(nd) }"
           :style="{ '--nx': nd.x, '--wy': nd.worldY + 'px' }"
         >
           <RogueliteMapNode
@@ -501,14 +515,14 @@ onUnmounted(() => {
     <footer class="m-bot">
       <button class="m-bot-back" type="button" @click.stop.prevent="handleBack">返回</button>
       <span class="m-bot-info">{{ bottomText }}</span>
-      <button class="m-bot-go" type="button" :disabled="primaryDisabled" @click.stop.prevent="handlePrimaryAction">{{ primaryButtonText }}</button>
+      <button class="m-bot-go" :class="{ 'tutorial-target-button': tutorialMapActive }" type="button" :disabled="primaryDisabled" @click.stop.prevent="handlePrimaryAction">{{ primaryButtonText }}</button>
     </footer>
   </div>
 </template>
 
 <style scoped>
 /* ══════ SHELL ══════ */
-.m-root { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; background:#f6f2e9; font-family:var(--font-body); }
+.m-root { position:relative; display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; background:#f6f2e9; font-family:var(--font-body); }
 
 /* ══════ RESOURCE BAR ══════ */
 .m-res { flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:7px 10px; overflow-x:auto; background:rgba(255,255,255,.60); backdrop-filter:blur(4px); }
@@ -557,6 +571,7 @@ onUnmounted(() => {
 .m-cur { z-index:8; }
 .m-pending { z-index:7; }
 .m-sel { z-index:7; filter:brightness(1.08) drop-shadow(0 0 8px rgba(245,158,11,.45)); }
+.tutorial-target-node { filter:brightness(1.08) drop-shadow(0 0 10px rgba(245,158,11,.72)); }
 
 /* ══════ BOTTOM ══════ */
 .m-bot { flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); min-height:60px; background:rgba(255,255,255,.88); backdrop-filter:blur(6px); border-top:1px solid rgba(180,155,120,.18); }
@@ -569,6 +584,7 @@ onUnmounted(() => {
   box-shadow:0 6px 0 #b85810,0 7px 16px rgba(170,80,20,.30); transition:all 70ms ease; }
 .m-bot-go:active:not(:disabled){transform:translateY(4px);box-shadow:0 2px 0 #b85810,0 3px 6px rgba(170,80,20,.18)}
 .m-bot-go:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.3)}
+.tutorial-target-button{outline:3px solid #f7cf45;outline-offset:3px}
 
 /* ══════ RESPONSIVE ══════ */
 @media(max-width:430px){

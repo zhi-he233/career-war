@@ -19,6 +19,7 @@ const props = withDefaults(
     confirmText?: string;
     disabled?: boolean;
     closable?: boolean;
+    tutorialActive?: boolean;
   }>(),
   {
     title: "选择一个奖励",
@@ -26,6 +27,7 @@ const props = withDefaults(
     confirmText: "选择奖励继续",
     disabled: false,
     closable: false,
+    tutorialActive: false,
   }
 );
 
@@ -126,7 +128,8 @@ function cardAccent(rarity?: RogueliteRewardOption["rarity"]): string {
       <p class="reward-count" aria-live="polite">可选 {{ rewardCount }} 项奖励</p>
 
       <div class="reward-body">
-        <div class="reward-list">
+        <p v-if="rewards.length === 0" class="reward-empty">奖励正在结算中，请稍等。</p>
+        <div v-else class="reward-list">
         <button
           v-for="reward in rewards"
           :key="reward.id"
@@ -136,6 +139,7 @@ function cardAccent(rarity?: RogueliteRewardOption["rarity"]): string {
             {
               selected: selectedRewardId === reward.id,
               disabled: reward.disabled || disabled,
+              'tutorial-target-control': tutorialActive,
             },
           ]"
           type="button"
@@ -191,7 +195,9 @@ function cardAccent(rarity?: RogueliteRewardOption["rarity"]): string {
   --paper-line: rgba(111, 78, 34, 0.18);
   position: relative;
   display: flex;
+  align-items: center;
   justify-content: center;
+  height: 100%;
   width: 100%;
   max-width: 100%;
   padding: 2px;
@@ -305,11 +311,25 @@ function cardAccent(rarity?: RogueliteRewardOption["rarity"]): string {
 }
 
 .reward-body {
+  flex: 1 1 auto;
   min-height: 0;
   margin-top: 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 1px;
+}
+
+.reward-empty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  border: 2px dashed rgba(111, 78, 34, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 253, 241, 0.68);
+  color: #7a5932;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
 }
 
 .reward-list {

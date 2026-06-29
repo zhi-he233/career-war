@@ -59,6 +59,7 @@ export interface DicePanelProps {
     showRollButton: boolean;
     canRoll: boolean;
     rollButtonText: string;
+    tutorialFocus?: "roll";
 }
 export interface ActionSlotVM {
     id: string;

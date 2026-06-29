@@ -51,6 +51,7 @@ const hasSkillTrigger = computed(() => props.skillHints.length > 0 || Boolean(pr
     <button
       v-if="props.showRollButton"
       class="roll-btn"
+      :class="{ 'tutorial-target-control': props.tutorialFocus === 'roll' }"
       type="button"
       :disabled="!props.canRoll"
       @click="emit('roll')"

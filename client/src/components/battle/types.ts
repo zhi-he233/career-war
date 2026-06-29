@@ -50,6 +50,7 @@ export interface DicePanelProps {
   showRollButton: boolean;
   canRoll: boolean;
   rollButtonText: string;
+  tutorialFocus?: "roll";
 }
 
 // ---- ActionSlots ----

@@ -6,10 +6,12 @@ import { getCharacterArt } from "../assets/art/characters";
 import { useDiceAnimation } from "../composables/useDiceAnimation";
 import type { RollMode } from "../composables/useDiceAnimation";
 import { useEmote } from "../composables/useEmote";
+import { useRogueliteTutorial } from "../tutorial/useRogueliteTutorial";
 import { useRogueliteViewModels } from "./battle/composables/useRogueliteViewModels";
 import { useBattleUiState } from "./battle/composables/useBattleUiState";
 import { useBattlePlayerHelpers } from "./battle/composables/useBattlePlayerHelpers";
 import { useBattleTexts } from "./battle/composables/useBattleTexts";
+import FocusHint from "./tutorial/FocusHint.vue";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 import EmotePanel from "./battle/EmotePanel.vue";
 import BattleLogDrawer from "./battle/BattleLogDrawer.vue";
@@ -84,6 +86,13 @@ const room = computed(() => displayedRoom.value);
 
 const { rollPhase, rollMode, rollingDice, isRolling, startAnimation, reveal, finishReveal, clearAllTimers } = useDiceAnimation();
 const { locked: emoteLocked, lock: lockEmote, showEmote, getEmote: lookupEmote, clearAll: clearEmotes } = useEmote();
+const {
+  currentStep: rogueliteTutorialStep,
+  isActive: isRogueliteTutorialActive,
+  startIfNeeded: startRogueliteTutorialIfNeeded,
+  advanceTo: advanceRogueliteTutorialTo,
+  complete: completeRogueliteTutorial,
+} = useRogueliteTutorial();
 
 const visibleRollId = ref<string | undefined>(getLatestRoll(props.room)?.id);
 const visibleGuardCheckId = ref<string | undefined>(getLatestGuardCheck(props.room)?.id);
@@ -98,8 +107,10 @@ const activeHighlight = ref<CharacterHighlight | null>(null);
 const activeSkillHints = ref<SkillHint[]>([]);
 const skillToast = ref<SkillToast | null>(null);
 const rogueliteAlert = ref<{ text: string; key: string } | null>(null);
+const tutorialCompleteVisible = ref(false);
 let rogueliteAlertTimer: number | undefined;
 let skillToastTimer: number | undefined;
+let tutorialCompleteTimer: number | undefined;
 
 // ── Roguelite map gate: show map before each new stage ──
 const rogueliteMapGateVisible = ref(false);
@@ -625,6 +636,9 @@ const actionSlots = computed<RollDecisionAvailableAction[]>(() => {
   if (!decision) return [];
   return decision.availableActions ?? [];
 });
+const showMapNodeTutorial = computed(() => isRogueliteTutorialActive.value && rogueliteTutorialStep.value === "map-node" && showRogueliteMap.value);
+const showRollDiceTutorial = computed(() => isRogueliteTutorialActive.value && rogueliteTutorialStep.value === "roll-dice" && isRogueliteMode.value && !showRogueliteMap.value && canRoll.value);
+const showChooseRewardTutorial = computed(() => isRogueliteTutorialActive.value && rogueliteTutorialStep.value === "choose-reward" && isRogueliteMode.value && showRogueliteRewardCenterPrompt.value);
 const activeDecisionActor = computed(() => {
   const decision = pendingRollDecision.value;
   if (!decision) return undefined;
@@ -728,6 +742,7 @@ onUnmounted(() => {
   clearSkillHintTimer();
   clearSkillToastTimer();
   window.clearTimeout(rogueliteAlertTimer);
+  window.clearTimeout(tutorialCompleteTimer);
   rogueliteMapGateVisible.value = false;
   lastMapStageShown.value = null;
 });
@@ -751,6 +766,21 @@ watch(
       rogueliteAlertTimer = window.setTimeout(() => {
         rogueliteAlert.value = null;
       }, 1500);
+    }
+  }
+);
+
+watch(showRogueliteMap, (visible) => {
+  if (visible && isRogueliteMode.value) {
+    startRogueliteTutorialIfNeeded();
+  }
+}, { immediate: true });
+
+watch(
+  () => [isRogueliteMode.value, room.value.phase, rogueliteRewardChoices.value.length] as const,
+  ([enabled, phase, rewardCount]) => {
+    if (enabled && phase === "reward" && rewardCount > 0 && rogueliteTutorialStep.value !== null) {
+      advanceRogueliteTutorialTo("choose-reward");
     }
   }
 );
@@ -1135,8 +1165,21 @@ function chooseRogueliteReward(reward: RogueliteReward): void {
 function onChooseRogueliteReward(rewardId: string): void {
   const reward = rogueliteRewardChoices.value.find((r) => r.id === rewardId);
   if (!reward) return;
+  if (rogueliteTutorialStep.value === "choose-reward") {
+    completeRogueliteTutorial();
+    showTutorialCompleteToast();
+  }
   chooseRogueliteReward(reward);
   closeRogueliteDetails();
+}
+
+function showTutorialCompleteToast(): void {
+  tutorialCompleteVisible.value = true;
+  window.clearTimeout(tutorialCompleteTimer);
+  tutorialCompleteTimer = window.setTimeout(() => {
+    tutorialCompleteVisible.value = false;
+    tutorialCompleteTimer = undefined;
+  }, 2600);
 }
 
 function chooseRogueliteEventOption(choiceId: RogueliteEventChoiceId): void {
@@ -1156,6 +1199,9 @@ function handleRogueliteMapChallenge(mapNode: RogueliteMapNodeSelection): void {
   if (room.value.phase === "roguelite_continue") {
     lastMapStageShown.value = room.value.roguelite?.stage ?? null;
     rogueliteMapGateVisible.value = false;
+    if (rogueliteTutorialStep.value === "map-node") {
+      advanceRogueliteTutorialTo("roll-dice");
+    }
     chooseRogueliteContinue("continue", mapNode);
     return;
   }
@@ -1164,6 +1210,9 @@ function handleRogueliteMapChallenge(mapNode: RogueliteMapNodeSelection): void {
   if (room.value.phase === "battle" && rogueliteMapGateVisible.value) {
     lastMapStageShown.value = room.value.roguelite?.stage ?? null;
     rogueliteMapGateVisible.value = false;
+    if (rogueliteTutorialStep.value === "map-node") {
+      advanceRogueliteTutorialTo("roll-dice");
+    }
     return;
   }
 
@@ -1338,9 +1387,30 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         v-if="showRogueliteMap"
         :room="room"
         :player-id="playerId"
+        :tutorial-step="showMapNodeTutorial ? rogueliteTutorialStep : null"
         @challenge="handleRogueliteMapChallenge"
         @open-build="handleRogueliteMapOpenBuild"
       />
+
+      <section
+        v-else-if="showRogueliteRewardCenterPrompt && roguelitePanelVM.rewardPhase"
+        class="roguelite-reward-screen tutorial-hint-host"
+      >
+        <FocusHint
+          v-if="showChooseRewardTutorial"
+          title="选择词条"
+          message="选择一个词条，本局会越来越强。"
+          placement="top"
+        />
+        <RogueliteRewardChoice
+          :rewards="roguelitePanelVM.rewardPhase.options"
+          :title="roguelitePanelVM.rewardPhase.title"
+          :subtitle="roguelitePanelVM.rewardPhase.hint"
+          :show-close="false"
+          :tutorial-active="showChooseRewardTutorial"
+          @select="onChooseRogueliteReward"
+        />
+      </section>
 
       <!-- ── Normal battle layout ── -->
       <section v-else class="battle-layout battle-layout-fixed" :class="{ 'is-duo-layout': isDuoMode }">
@@ -1448,7 +1518,13 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
           />
         </section>
 
-        <section v-if="!isDuoMode" class="action-center" :class="[`turn-guide-${turnGuideTone}`, { 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive, 'roguelite-action': isRogueliteMode }]">
+        <section v-if="!isDuoMode" class="action-center" :class="[`turn-guide-${turnGuideTone}`, { 'is-compact': !isActionPanelActive, 'is-active': isActionPanelActive, 'roguelite-action': isRogueliteMode, 'tutorial-hint-host': showRollDiceTutorial }]">
+          <FocusHint
+            v-if="showRollDiceTutorial"
+            title="投骰"
+            message="先投骰，决定本回合能做什么。"
+            placement="top"
+          />
           <!-- Roguelite: cute wait card instead of thin strip -->
           <div v-if="isRogueliteMode && !isActionPanelActive" class="roguelite-wait-card">
             <span class="roguelite-wait-emoji" aria-hidden="true">{{ isBotTurn ? '🤖' : isRolling ? '🎲' : pendingGuardCheck ? '🛡' : isMyTurn ? '👆' : '🤔' }}</span>
@@ -1474,6 +1550,7 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
               v-bind="dicePanelCommon"
               :is-ready="isMyTurn"
               :can-roll="pendingGuardCheck ? canRollGuardCheck : canRoll"
+              :tutorial-focus="showRollDiceTutorial ? 'roll' : undefined"
               @roll="rollMainDice"
             >
               <template #action-slots>
@@ -1518,25 +1595,12 @@ function cloneRoomForDisplay(targetRoom: Room): Room {
         </div>
       </transition>
 
-      <div v-if="showRogueliteRewardCenterPrompt && roguelitePanelVM.rewardPhase" class="roguelite-reward-center-layer">
-        <RogueliteRewardChoice
-          :rewards="roguelitePanelVM.rewardPhase.options"
-          :title="roguelitePanelVM.rewardPhase.title"
-          :subtitle="roguelitePanelVM.rewardPhase.hint"
-          :show-close="false"
-          @select="onChooseRogueliteReward"
-        />
-        <!-- legacy reward prompt removed
-          <span class="reward-center-icon">★</span>
-
-          <div>
-            <strong>获得奖励</strong>
-            <p>选择一个奖励继续</p>
-          </div>
-          <button class="primary-btn" type="button" @click="openRogueliteDetails">选择奖励</button>
-        </section>
-        -->
-      </div>
+      <transition name="skill-toast">
+        <div v-if="tutorialCompleteVisible" class="tutorial-complete-toast" aria-live="polite">
+          <strong>基础循环已掌握</strong>
+          <span>你已经学会基础循环：选路线、打敌人、拿词条。继续深入吧。</span>
+        </div>
+      </transition>
 
       <RogueliteEventChoice
         v-if="isRogueliteMode && room.phase === 'roguelite_event' && pendingRogueliteEvent"

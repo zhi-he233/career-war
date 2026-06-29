@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { characterList, ROGUELITE_PLAYER_START } from "@career-war/shared";
 import { ref } from "vue";
+import { hasDoneRogueliteTutorial } from "../tutorial/rogueliteTutorial";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
 
 defineProps<{
@@ -23,6 +24,7 @@ const showRules = ref(false);
 const rogueliteStartCharacter = characterList.find((item) => item.id === ROGUELITE_PLAYER_START.characterId);
 const rogueliteStartHp = rogueliteStartCharacter?.maxHp ?? 20;
 const rogueliteStartName = rogueliteStartCharacter?.name ?? "拳手";
+const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 </script>
 
 <template>
@@ -51,6 +53,7 @@ const rogueliteStartName = rogueliteStartCharacter?.name ?? "拳手";
       <div class="home-cover-copy">
         <h2 id="home-roguelite-title">命运骰已就位</h2>
         <p>击败敌人，选择词条，组出你的职业流派。</p>
+        <p v-if="showRogueliteTutorialIntro" class="home-tutorial-line">首次挑战会带你熟悉路线、战斗和词条。</p>
       </div>
       <div class="home-run-preview" aria-label="本局预览">
         <div class="home-stage-line">
@@ -217,6 +220,11 @@ const rogueliteStartName = rogueliteStartCharacter?.name ?? "拳手";
   font-size: 14px;
   font-weight: 800;
   line-height: 1.45;
+}
+
+.home-cover-copy .home-tutorial-line {
+  color: #6f4e22;
+  font-size: 12px;
 }
 
 .home-run-preview {

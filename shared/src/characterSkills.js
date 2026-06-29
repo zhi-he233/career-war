@@ -18,17 +18,10 @@ export function getAvailableCharacterReactionSkill(characterId, roll) {
     return CHARACTER_REACTION_SKILLS[`${characterId}:${roll}`];
 }
 export function activeCharacterSkillReason(characterId, roll) {
-    if (characterId === "stone_titan")
-        return roll === 6 ? "发动碾压造成 9 点伤害" : "当前骰点不能发动";
-    if (characterId === "gunslinger")
-        return roll === 6 ? "继续投骰造成额外伤害" : "当前骰点不能发动";
-    if (characterId === "vampire")
-        return roll === 6 ? "继续投骰并根据结果回复生命" : "当前骰点不能发动";
-    if (characterId === "paladin")
-        return roll === 4 ? "全员无敌，自己获得护盾" : "当前骰点不能发动";
-    if (characterId === "self_destructor")
-        return roll === 6 ? "选择扣血并造成双倍伤害" : "当前骰点不能发动";
-    return "无可发动职业技能";
+    const skill = getAvailableCharacterReactionSkill(characterId, roll);
+    if (!skill)
+        return "当前骰点不能发动";
+    return characterSkillDescription(skill.id, roll);
 }
 export function characterSkillDescription(skillId, roll) {
     if (skillId === "stone_titan_crush")

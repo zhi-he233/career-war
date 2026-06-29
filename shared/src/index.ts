@@ -3,6 +3,7 @@ export * from "./characters.js";
 export * from "./characterSkills.js";
 export * from "./combatMath.js";
 export * from "./engine.js";
+export * from "./skillOutcomes.js";
 export * from "./data/characters.js";
 export * from "./data/rogueliteBalance.js";
 export * from "./data/rogueliteRoomTypes.js";

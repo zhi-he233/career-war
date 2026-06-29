@@ -27,6 +27,26 @@ describe("character skill helpers", () => {
     }
   );
 
+  it.each([
+    ["stone_titan", 6],
+    ["gunslinger", 1],
+    ["gunslinger", 6],
+    ["vampire", 1],
+    ["vampire", 6],
+    ["paladin", 4],
+    ["self_destructor", 6],
+    ["war_knight", 3],
+    ["crescent_moon", 6],
+    ["fire_lord", 3],
+    ["fire_lord", 6],
+    ["mountain_shield", 6]
+  ] satisfies Array<[CharacterId, number]>)("returns a reason for %s roll %i", (characterId, roll) => {
+    const skill = getAvailableCharacterReactionSkill(characterId, roll);
+
+    expect(skill).toBeDefined();
+    expect(activeCharacterSkillReason(characterId, roll)).toBe(characterSkillDescription(skill!.id, roll));
+  });
+
   it("returns undefined when the roll does not trigger a character skill", () => {
     expect(getAvailableCharacterReactionSkill("gunslinger", 2)).toBeUndefined();
     expect(getAvailableCharacterReactionSkill(undefined, 6)).toBeUndefined();
@@ -41,6 +61,6 @@ describe("character skill helpers", () => {
   it("explains active skill availability for highlighted characters", () => {
     expect(activeCharacterSkillReason("paladin", 4)).toContain("全员无敌");
     expect(activeCharacterSkillReason("paladin", 5)).toBe("当前骰点不能发动");
-    expect(activeCharacterSkillReason("boxer", 6)).toBe("无可发动职业技能");
+    expect(activeCharacterSkillReason("boxer", 6)).toBe("当前骰点不能发动");
   });
 });

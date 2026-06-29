@@ -15,6 +15,7 @@ const emit = defineEmits<{
   selectRoguelite: [];
   selectProfile: [];
   selectEditor: [];
+  selectCharacterEditor: [];
 }>();
 
 const showRules = ref(false);
@@ -49,7 +50,8 @@ const showRules = ref(false);
         <button class="home-mode-entry ghost-btn" type="button" @click="emit('selectPve')">人机练习</button>
       </div>
       <button class="ghost-btn home-profile-btn" type="button" @click="emit('selectProfile')">玩家档案</button>
-      <button v-if="editorUiEnabled" class="ghost-btn home-profile-btn" type="button" @click="emit('selectEditor')">数据编辑器</button>
+      <button v-if="editorUiEnabled" class="ghost-btn home-profile-btn" type="button" @click="emit('selectEditor')">肉鸽数据编辑器</button>
+      <button v-if="editorUiEnabled" class="ghost-btn home-profile-btn" type="button" @click="emit('selectCharacterEditor')">职业编辑器</button>
     </div>
 
     <RuleGuideDialog v-if="showRules" @close="showRules = false" />

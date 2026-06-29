@@ -1,5 +1,5 @@
 import type { RogueliteMapNodeSelection } from "./data/rogueliteRoomTypes.js";
-export type CharacterId = "boxer" | "gunslinger" | "vampire" | "zhaoZilong" | "assassin" | "paladin" | "berserker" | "stone_titan" | "fearless_assassin" | "execution_assassin" | "self_destructor" | "war_knight" | "crescent_moon" | "fire_lord" | "mountain_shield";
+export type CharacterId = string;
 export type RoomPhase = "lobby" | "battle" | "reward" | "roguelite_event" | "roguelite_continue" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
 export type GameMode = "classic" | "duo_2v2" | "pve_1v1" | "pve_roguelite";
@@ -11,6 +11,7 @@ export type EmoteId = (typeof EMOTE_IDS)[number];
 export interface Character {
     id: CharacterId;
     name: string;
+    title?: string;
     maxHp: number;
     description: string[];
     difficulty?: CharacterDifficulty;
@@ -20,6 +21,27 @@ export interface Character {
     fullDescription?: string[];
     isImplemented?: boolean;
     isHidden?: boolean;
+    avatarUrl?: string;
+    spriteUrl?: string;
+    availability?: {
+        classic: boolean;
+        duo: boolean;
+        pve: boolean;
+        roguelite: boolean;
+        hidden?: boolean;
+    };
+    implementation?: {
+        mode: "data_driven" | "code_driven";
+        handlerId?: string;
+    };
+    diceFaces?: Array<{
+        roll: 1 | 2 | 3 | 4 | 5 | 6;
+        name: string;
+        description: string;
+        presetId?: string;
+        params?: Record<string, unknown>;
+    }>;
+    sortOrder?: number;
 }
 export interface Effect {
     id: string;
@@ -135,7 +157,7 @@ export interface RoomSettings {
     allowDuplicateCharacters: boolean;
     gameMode?: GameMode;
 }
-export type RogueliteRewardType = "starter_heavy_punch" | "starter_blood_punch" | "starter_iron_wall" | "starter_recovery" | "heavy_punch_training" | "iron_body" | "breathing_recovery" | "blood_punch" | "battle_instinct" | "guard_training" | "gunner_triple_shot" | "vampire_skill" | "zhaoyun_pierce" | "flame_lord_mark" | "berserker_blood" | "vampire_instinct" | "dragon_courage" | "vitality_boost" | "shield_wall" | "first_strike" | "low_hp_armor" | "kill_heal" | "drink_blood" | "comeback" | "low_roll_defense" | "shield_strike" | "shield_overload" | "sturdy_bulwark" | "fate_tokens" | "low_roll_charge" | "desperate_reroll" | "lucky_floor" | "drink_blood";
+export type RogueliteRewardType = "starter_heavy_punch" | "starter_blood_punch" | "starter_iron_wall" | "starter_recovery" | "heavy_punch_training" | "iron_body" | "breathing_recovery" | "blood_punch" | "battle_instinct" | "guard_training" | "gunner_triple_shot" | "vampire_skill" | "zhaoyun_pierce" | "flame_lord_mark" | "berserker_blood" | "vampire_instinct" | "dragon_courage" | "vitality_boost" | "shield_wall" | "first_strike" | "low_hp_armor" | "kill_heal" | "drink_blood" | "comeback" | "low_roll_defense" | "shield_strike" | "shield_overload" | "sturdy_bulwark" | "fate_tokens" | "low_roll_charge" | "desperate_reroll" | "lucky_floor";
 export interface RogueliteReward {
     id: string;
     name: string;

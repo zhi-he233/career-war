@@ -11,7 +11,7 @@ export declare function useRogueliteViewModels(room: ComputedRef<Room>, me: Comp
     rogueliteRewardChoices: ComputedRef<import("@career-war/shared").RogueliteReward[]>;
     rogueliteAppliedRewards: ComputedRef<import("@career-war/shared").RogueliteReward[]>;
     currentRogueliteRound: ComputedRef<number>;
-    rogueliteStageType: ComputedRef<"normal" | "elite" | "boss">;
+    rogueliteStageType: ComputedRef<"normal" | "boss" | "elite">;
     rogueliteStageTypeLabel: ComputedRef<"Boss 战" | "精英关" | "普通关">;
     rogueliteEnemyInfo: ComputedRef<{
         stageType: "normal" | "elite" | "boss";

@@ -15,6 +15,7 @@ import BattlePage from "./components/BattlePage.vue";
 import AuthDialog from "./components/AuthDialog.vue";
 import ProfilePage from "./components/ProfilePage.vue";
 import RogueliteEditorPage from "./components/RogueliteEditorPage.vue";
+import CharacterEditorPage from "./components/CharacterEditorPage.vue";
 import { useAuth } from "./composables/useAuth";
 
 const ROOM_ID_KEY = "career-war-room-id";
@@ -112,6 +113,7 @@ onMounted(() => {
   socket.on("errorMessage", showError);
   socket.on("kickedFromRoom", handleKickedFromRoom);
   handleSocketConnected();
+  void refreshCharactersFromApi();
   enterFromCurrentUrl();
 });
 
@@ -331,8 +333,23 @@ function openEditor(): void {
   router.push("/editor/roguelite");
 }
 
+function openCharacterEditor(): void {
+  router.push("/editor/characters");
+}
+
 function backToHome(): void {
   router.push("/");
+}
+
+async function refreshCharactersFromApi(): Promise<void> {
+  try {
+    const response = await fetch("/api/game/characters", { credentials: "same-origin" });
+    const data = await response.json();
+    if (!response.ok || !Array.isArray(data.characters)) return;
+    characters.value = data.characters.length > 0 ? data.characters : [...characterList];
+  } catch {
+    characters.value = [...characterList];
+  }
 }
 
 function chooseCharacter(characterId: string): void {
@@ -530,6 +547,7 @@ function getTransportName(transport: unknown): string {
       @select-roguelite="openRogueliteMode"
       @select-profile="openProfile"
       @select-editor="openEditor"
+      @select-character-editor="openCharacterEditor"
     />
     <ProfilePage
       v-else-if="route.name === 'profile'"
@@ -539,6 +557,10 @@ function getTransportName(transport: unknown): string {
     />
     <RogueliteEditorPage
       v-else-if="route.name === 'roguelite-editor' && editorUiEnabled"
+      @back="backToHome"
+    />
+    <CharacterEditorPage
+      v-else-if="route.name === 'character-editor' && editorUiEnabled"
       @back="backToHome"
     />
     <PvpModePage

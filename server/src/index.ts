@@ -6,26 +6,34 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import { authMiddleware, authRouter } from "./auth.js";
+import { getCharacterDataStatus, getGameCharacters, refreshCharacterData } from "./characterDataCache.js";
+import { loadEditableCharacters, saveEditableCharacters } from "./editor/characterEditor.js";
 import { loadEditableRogueliteBalance, saveEditableRogueliteBalance } from "./editor/rogueliteBalanceEditor.js";
 import { loadEditableRogueliteEvents, saveEditableRogueliteEvents } from "./editor/rogueliteEventsEditor.js";
 import { loadEditableRogueliteRestSites, saveEditableRogueliteRestSites } from "./editor/rogueliteRestSitesEditor.js";
 import { loadEditableRogueliteShop, saveEditableRogueliteShop } from "./editor/rogueliteShopEditor.js";
 import {
+  getRogueliteBossConfigMap,
+  getRogueliteBossPool,
+  getRogueliteEnemyConfigMap,
+  getRogueliteEnemies,
+  getRogueliteEvents,
+  getRogueliteRewardPools,
+  refreshRogueliteBalance,
+  refreshRogueliteEvents,
+  type RogueliteBossConfig,
+  type RogueliteEnemyConfig,
+  type RogueliteRewardDraft,
+} from "./rogueliteDataCache.js";
+import {
   EMOTE_IDS,
   ROGUELITE_BALANCE_MECHANICS,
   ROGUELITE_BOT_BASE,
-  ROGUELITE_BOSS_ABILITY_REWARDS,
-  ROGUELITE_BOSSES,
-  ROGUELITE_CHARACTER_SKILL_REWARDS,
-  ROGUELITE_ENEMIES,
-  ROGUELITE_EVENTS,
-  ROGUELITE_GROWTH_REWARDS,
   ROGUELITE_ROOM_TYPES,
   ROGUELITE_MAX_STAGE,
   ROGUELITE_PLAYER_START,
   ROGUELITE_REWARD_RHYTHM,
   ROGUELITE_STAGE_SCALING,
-  ROGUELITE_STARTER_REWARDS,
   beginControllerGuardCheckIfNeeded,
   characterList,
   chooseCharacter,
@@ -59,7 +67,6 @@ import {
   type RoomListStatus,
   type RoomSettings,
   type RogueliteReward,
-  type RogueliteBossId as BalanceRogueliteBossId,
   type RogueliteEnemyId as BalanceRogueliteEnemyId,
   type RollActionType,
   type RollDecisionChoice,
@@ -84,102 +91,25 @@ const DUO_MAX_CONTROLLERS = 2;
 const PVE_BOT_ID = "bot";
 const PVE_BOT_CLIENT_ID = "bot";
 const PVE_BOT_NICKNAME = "AI";
-const ROGUELITE_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_GROWTH_REWARDS;
-const ROGUELITE_SKILL_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_CHARACTER_SKILL_REWARDS;
-const ROGUELITE_BOSS_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_BOSS_ABILITY_REWARDS;
-const ROGUELITE_STARTER_REWARD_POOL: ReadonlyArray<RogueliteRewardDraft> = ROGUELITE_STARTER_REWARDS;
-const ROGUELITE_BOSS_POOL = ROGUELITE_BOSSES.map((boss) => boss.id);
-type RogueliteBossId = BalanceRogueliteBossId;
+type RogueliteBossId = RogueliteBossConfig["id"];
 type CombatRogueliteRoomType = Extract<RogueliteMapRoomType, "normal" | "elite" | "boss">;
+type RogueliteEnemyType = BalanceRogueliteEnemyId;
 
-interface RogueliteBossConfig {
-  id: RogueliteBossId;
-  name: string;
-  enemyTemplateId: string;
-  displayName: string;
-  enemyKind: "boss";
-  spriteKey?: string;
-  portraitKey?: string;
-  baseCharacterId?: CharacterId;
-  baseHp: number;
-  fixedHp?: number;
-  baseShield: number;
-  skills: string[];
-}
-
-function toRogueliteBossConfig(boss: (typeof ROGUELITE_BOSSES)[number]): RogueliteBossConfig {
-  const config: RogueliteBossConfig = {
-    id: boss.id,
-    name: boss.name,
-    enemyTemplateId: boss.enemyTemplateId,
-    displayName: boss.displayName,
-    enemyKind: boss.enemyKind,
-    spriteKey: boss.spriteKey,
-    portraitKey: boss.portraitKey,
-    baseCharacterId: boss.baseCharacterId as CharacterId | undefined,
-    baseHp: boss.baseHp,
-    baseShield: boss.baseShield,
-    skills: [...boss.skills]
-  };
-  if ("fixedHp" in boss && boss.fixedHp !== undefined) config.fixedHp = boss.fixedHp;
+function getRogueliteEnemyConfig(type: RogueliteEnemyType): RogueliteEnemyConfig {
+  const configs = getRogueliteEnemyConfigMap();
+  const config = configs[type] ?? configs.normal;
+  if (!config) throw new Error("肉鸽敌人配置为空");
   return config;
 }
 
-const ROGUELITE_BOSS_CONFIGS = Object.fromEntries(
-  ROGUELITE_BOSSES.map((boss) => [boss.id, toRogueliteBossConfig(boss)])
-) as Record<RogueliteBossId, RogueliteBossConfig>;
-
-type RogueliteEnemyType = BalanceRogueliteEnemyId;
-
-interface RogueliteEnemyConfig {
-  type: RogueliteEnemyType;
-  name: string;
-  enemyTemplateId: string;
-  displayName: string;
-  enemyKind: "monster" | "duelist";
-  spriteKey?: string;
-  portraitKey?: string;
-  baseCharacterId?: CharacterId;
-  hpBonus: number;
-  shieldBonus: number;
-  damageBonus: number;
-  skills: string[];
-}
-
-function toRogueliteEnemyConfig(enemy: (typeof ROGUELITE_ENEMIES)[number]): RogueliteEnemyConfig {
-  const skills = enemy.id === "normal" ? [] : [...enemy.skills];
-  return {
-    type: enemy.id,
-    name: enemy.name,
-    enemyTemplateId: enemy.enemyTemplateId,
-    displayName: enemy.displayName,
-    enemyKind: enemy.enemyKind,
-    spriteKey: enemy.spriteKey,
-    portraitKey: enemy.portraitKey,
-    baseCharacterId: enemy.baseCharacterId as CharacterId | undefined,
-    hpBonus: enemy.hpBonus,
-    shieldBonus: enemy.shieldBonus,
-    damageBonus: enemy.damageBonus,
-    skills
-  };
-}
-
-const ROGUELITE_ENEMY_CONFIGS = Object.fromEntries(
-  ROGUELITE_ENEMIES.map((enemy) => [enemy.id, toRogueliteEnemyConfig(enemy)])
-) as Record<RogueliteEnemyType, RogueliteEnemyConfig>;
-
-function getRogueliteEnemyConfig(type: RogueliteEnemyType): RogueliteEnemyConfig {
-  return ROGUELITE_ENEMY_CONFIGS[type] ?? ROGUELITE_ENEMY_CONFIGS.normal;
-}
-
 function isRogueliteEnemyType(value: unknown): value is RogueliteEnemyType {
-  return typeof value === "string" && value in ROGUELITE_ENEMY_CONFIGS;
+  return typeof value === "string" && value in getRogueliteEnemyConfigMap();
 }
 
 function getRogueliteEnemyConfigByTemplateId(value: unknown): RogueliteEnemyConfig | undefined {
   if (isRogueliteEnemyType(value)) return getRogueliteEnemyConfig(value);
   if (typeof value !== "string") return undefined;
-  return ROGUELITE_ENEMIES
+  return getRogueliteEnemies()
     .map((enemy) => getRogueliteEnemyConfig(enemy.id))
     .find((enemy) => enemy.enemyTemplateId === value);
 }
@@ -361,10 +291,12 @@ function getRogueliteEnemyForStage(stage: number): RogueliteEnemyConfig {
 
 function getRogueliteBossForStage(stage: number): RogueliteBossConfig {
   const bossCycleLength = ROGUELITE_STAGE_SCALING.bossInterval;
-  const bossIndex = Math.floor((stage - 1) / bossCycleLength) % ROGUELITE_BOSS_POOL.length;
-  const bossId = ROGUELITE_BOSS_POOL[bossIndex] ?? ROGUELITE_BOSS_POOL[0];
-  if (!bossId) throw new Error("肉鸽 Boss 配置为空");
-  return ROGUELITE_BOSS_CONFIGS[bossId];
+  const bossPool = getRogueliteBossPool();
+  const bossIndex = Math.floor((stage - 1) / bossCycleLength) % bossPool.length;
+  const bossId = bossPool[bossIndex] ?? bossPool[0];
+  const bossConfig = bossId ? getRogueliteBossConfigMap()[bossId] : undefined;
+  if (!bossConfig) throw new Error("肉鸽 Boss 配置为空");
+  return bossConfig;
 }
 
 function getRogueliteBossHp(config: RogueliteBossConfig, hpBonus: number): number {
@@ -544,6 +476,33 @@ function ensureEditorAccess(req: express.Request, res: express.Response): boolea
   return true;
 }
 
+app.get("/api/game/characters", (_req, res) => {
+  res.json({ characters: getGameCharacters() });
+});
+
+app.get("/api/editor/characters", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const characters = await loadEditableCharacters();
+    res.json({ characters });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "读取失败";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/editor/characters", async (req, res) => {
+  if (!ensureEditorAccess(req, res)) return;
+  try {
+    const characters = await saveEditableCharacters(req.body?.characters);
+    await refreshCharacterData();
+    res.json({ ok: true, characters });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "保存失败";
+    res.status(400).json({ error: message });
+  }
+});
+
 app.get("/api/editor/roguelite/events", async (req, res) => {
   if (!ensureEditorAccess(req, res)) return;
   try {
@@ -559,6 +518,7 @@ app.post("/api/editor/roguelite/events", async (req, res) => {
   if (!ensureEditorAccess(req, res)) return;
   try {
     const events = await saveEditableRogueliteEvents(req.body?.events);
+    await refreshRogueliteEvents();
     res.json({ ok: true, events });
   } catch (error) {
     const message = error instanceof Error ? error.message : "保存失败";
@@ -581,6 +541,7 @@ app.post("/api/editor/roguelite/balance", async (req, res) => {
   if (!ensureEditorAccess(req, res)) return;
   try {
     const balance = await saveEditableRogueliteBalance(req.body?.balance);
+    await refreshRogueliteBalance();
     res.json({ ok: true, balance });
   } catch (error) {
     const message = error instanceof Error ? error.message : "保存失败";
@@ -633,7 +594,8 @@ app.post("/api/editor/roguelite/rest-sites", async (req, res) => {
 });
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, rooms: rooms.size });
+  const characterData = getCharacterDataStatus();
+  res.json({ ok: characterData.ok, rooms: rooms.size, characterData });
 });
 
 if (!isLocalDev) {
@@ -664,7 +626,7 @@ const allowedEmoteIds = new Set<string>(EMOTE_IDS);
 const botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 io.on("connection", (socket) => {
-  socket.emit("characters", characterList);
+  socket.emit("characters", getGameCharacters());
 
   socket.on("clientPing", (payload: { clientSentAt?: unknown } | undefined) => {
     const clientSentAt = typeof payload?.clientSentAt === "number" ? payload.clientSentAt : Date.now();
@@ -1155,7 +1117,7 @@ io.on("connection", (socket) => {
       const choiceId = payload.choiceId;
       if (choiceId !== "a" && choiceId !== "b") throw new Error("请选择事件选项");
       const choiceIndex = choiceId === "a" ? 0 : 1;
-      const eventDraft = ROGUELITE_EVENTS.find((event) => event.id === pendingEvent.id);
+      const eventDraft = getRogueliteEvents().find((event) => event.id === pendingEvent.id);
       const choiceDraft = eventDraft?.choices[choiceIndex];
       const publicChoice = pendingEvent.choices[choiceIndex];
       if (!eventDraft || !choiceDraft || !publicChoice) throw new Error("事件配置不存在");
@@ -1505,7 +1467,6 @@ function getRogueliteBattleGoldReward(stage: number, stageType: "normal" | "elit
   return 18 + cycle * 4;
 }
 
-type RogueliteRewardDraft = Omit<RogueliteReward, "id">;
 type RogueliteEventChoiceDraft = RogueliteEventDraft["choices"][number];
 
 function startRogueliteEventRoom(room: Room, player: Room["players"][number], roguelite: NonNullable<Room["roguelite"]>, mapNode: RogueliteMapNodeSelection): void {
@@ -1521,8 +1482,11 @@ function startRogueliteEventRoom(room: Room, player: Room["players"][number], ro
 
 function pickRogueliteEventForStage(stage: number): RogueliteEventDraft {
   const stageBand = getRogueliteEventStageBand(stage);
-  const candidates = ROGUELITE_EVENTS.filter((event) => event.stage === "any" || event.stage === stageBand);
-  return pickOne(candidates) ?? ROGUELITE_EVENTS[0]!;
+  const events = getRogueliteEvents();
+  const candidates = events.filter((event) => event.stage === "any" || event.stage === stageBand);
+  const event = pickOne(candidates) ?? events[0];
+  if (!event) throw new Error("肉鸽事件配置为空");
+  return event;
 }
 
 function getRogueliteEventStageBand(stage: number): "early" | "mid" | "late" {
@@ -1659,7 +1623,8 @@ const ARCHETYPE_STARTER_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogue
 const CORE_REWARD_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogueliteRewardRhythm("3")?.rewardTypes ?? [];
 
 function createRogueliteRewardChoices(currentStacks?: Record<string, number>, appliedRewards: readonly RogueliteReward[] = [], stage = 1): RogueliteReward[] {
-  const pool = getAvailableRogueliteDrafts([...ROGUELITE_SKILL_REWARD_POOL, ...ROGUELITE_REWARD_POOL], currentStacks);
+  const rewardPools = getRogueliteRewardPools();
+  const pool = getAvailableRogueliteDrafts([...rewardPools.characterSkill, ...rewardPools.growth], currentStacks);
   const choices: RogueliteReward[] = [];
   const preferredTags = stage >= ROGUELITE_TAG_BIAS_STAGE_START && stage <= ROGUELITE_TAG_BIAS_STAGE_END ? getPreferredRogueliteTags(appliedRewards) : [];
   for (const tag of preferredTags.slice(0, 2)) {
@@ -1686,7 +1651,7 @@ function isRogueliteSkillRewardType(type: string): boolean {
 }
 
 function createRogueliteBossRewardChoices(): RogueliteReward[] {
-  return ROGUELITE_BOSS_REWARD_POOL.map((draft) => ({ ...draft, id: crypto.randomUUID() }));
+  return getRogueliteRewardPools().bossAbility.map((draft) => ({ ...draft, id: crypto.randomUUID() }));
 }
 
 function createRogueliteBasicRewardChoices(currentStacks?: Record<string, number>): RogueliteReward[] {
@@ -1710,7 +1675,8 @@ function createRogueliteArchetypeStarterChoices(currentStacks?: Record<string, n
 function createRogueliteCoreRewardChoices(currentStacks?: Record<string, number>): RogueliteReward[] {
   const choices = createRogueliteChoicesFromTypes(CORE_REWARD_TYPES, currentStacks);
   if (choices.length >= 3) return choices;
-  return fillRogueliteChoices(choices, getAvailableRogueliteDrafts([...ROGUELITE_SKILL_REWARD_POOL, ...ROGUELITE_REWARD_POOL], currentStacks));
+  const rewardPools = getRogueliteRewardPools();
+  return fillRogueliteChoices(choices, getAvailableRogueliteDrafts([...rewardPools.characterSkill, ...rewardPools.growth], currentStacks));
 }
 
 function createRogueliteChoicesFromTypes(types: readonly RogueliteReward["type"][], currentStacks?: Record<string, number>): RogueliteReward[] {
@@ -1728,7 +1694,8 @@ function fillRogueliteChoices(choices: RogueliteReward[], pool: RogueliteRewardD
 }
 
 function getRogueliteDraftsByType(types: readonly RogueliteReward["type"][]): RogueliteRewardDraft[] {
-  const allDrafts = [...ROGUELITE_SKILL_REWARD_POOL, ...ROGUELITE_REWARD_POOL, ...ROGUELITE_STARTER_REWARD_POOL, ...ROGUELITE_BOSS_REWARD_POOL];
+  const rewardPools = getRogueliteRewardPools();
+  const allDrafts = [...rewardPools.characterSkill, ...rewardPools.growth, ...rewardPools.starter, ...rewardPools.bossAbility];
   return types
     .map((type) => allDrafts.find((draft) => draft.type === type))
     .filter((draft): draft is RogueliteRewardDraft => Boolean(draft));
@@ -2290,9 +2257,11 @@ function ensurePveBot(room: Room): void {
   // Early fixed stages: beginner-friendly difficulty from roguelite balance.
   const earlyStage = getRogueliteEarlyStage(stage);
   if (forcedRoomType === "boss") {
-    const bossConfig = mapNode?.bossTemplateId && mapNode.bossTemplateId in ROGUELITE_BOSS_CONFIGS
-      ? ROGUELITE_BOSS_CONFIGS[mapNode.bossTemplateId as RogueliteBossId]
+    const bossConfigs = getRogueliteBossConfigMap();
+    const bossConfig = mapNode?.bossTemplateId && mapNode.bossTemplateId in bossConfigs
+      ? bossConfigs[mapNode.bossTemplateId as RogueliteBossId]
       : getRogueliteBossForStage(stage);
+    if (!bossConfig) throw new Error("肉鸽 Boss 配置为空");
     const bonus = forcedRoomType === "boss" ? getRogueliteStageBonus(stage) : { hpBonus: 0, shieldBonus: 0 };
     const bossHp = getRogueliteBossHp(bossConfig, bonus.hpBonus);
     const bot = createPlayer(PVE_BOT_ID, PVE_BOT_CLIENT_ID, bossConfig.displayName, false);

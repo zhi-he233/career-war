@@ -256,6 +256,41 @@ const maxStackOptions: Array<{ value: number | undefined; label: string }> = [
   { value: 3, label: "3 层" },
 ];
 
+const rewardValueOptionMap: Record<string, number[]> = {
+  starter_heavy_punch: [2],
+  starter_blood_punch: [1],
+  starter_iron_wall: [1],
+  starter_recovery: [8],
+  heavy_punch_training: [1],
+  iron_body: [1],
+  breathing_recovery: [20, 30, 40, 50],
+  blood_punch: [1],
+  battle_instinct: [1],
+  guard_training: [2, 3, 4, 5, 6],
+  vitality_boost: [4, 6, 8, 10, 12],
+  shield_wall: [2, 4, 6, 8, 10],
+  first_strike: [1, 2, 3, 4, 5],
+  low_hp_armor: [1, 2, 3, 4],
+  kill_heal: [1],
+  drink_blood: [1, 2, 3, 4, 5],
+  comeback: [1, 2, 3, 4, 5],
+  low_roll_defense: [1, 2, 3, 4, 5],
+  shield_strike: [1, 2, 3, 4],
+  shield_overload: [1],
+  sturdy_bulwark: [1],
+  fate_tokens: [1],
+  low_roll_charge: [1],
+  desperate_reroll: [1],
+  lucky_floor: [1],
+  gunner_triple_shot: [1],
+  vampire_skill: [1],
+  zhaoyun_pierce: [1],
+  flame_lord_mark: [1],
+  berserker_blood: [0],
+  vampire_instinct: [1, 2, 3, 4, 5],
+  dragon_courage: [0],
+};
+
 const enemySkillOptions = [
   "无特殊机制",
   "赌徒：投 1 自伤 1，投 6 伤害 +2",
@@ -412,13 +447,27 @@ function blankEvent(): EditableEvent {
 
 function blankReward(): EditableReward {
   const option = rewardTypeOptions.find((item) => item.category === rewardCategory.value) ?? rewardTypeOptions[0];
+  const type = option?.id ?? "heavy_punch_training";
   return {
     name: option?.label ?? "新奖励",
     description: "",
-    type: option?.id ?? "heavy_punch_training",
-    value: 1,
+    type,
+    value: rewardValueOptionsForType(type)[0] ?? 1,
     tag: "",
   };
+}
+
+function rewardValueOptionsForType(type: string, currentValue?: number): number[] {
+  const baseOptions = rewardValueOptionMap[type] ?? [0, 1, 2, 3, 4, 5, 6, 8, 10, 20, 30, 40, 50];
+  if (currentValue === undefined || baseOptions.includes(currentValue)) return baseOptions;
+  return [...baseOptions, currentValue].sort((a, b) => a - b);
+}
+
+function normalizeRewardValue(reward: EditableReward): void {
+  const options = rewardValueOptionsForType(reward.type);
+  if (!options.includes(reward.value)) {
+    reward.value = options[0] ?? 1;
+  }
 }
 
 function blankEnemy(): EditableEnemy {
@@ -837,6 +886,7 @@ function validateBeforeSave(): string | null {
   for (const reward of Object.values(balance.value.rewards).flat()) {
     if (!reward.name.trim() || !reward.type.trim() || !reward.description.trim()) return "奖励名称、type、说明不能为空";
     if (!validRewardTypes.has(reward.type)) return `奖励 type 不在可选规则内：${reward.type}`;
+    if (!Number.isFinite(Number(reward.value))) return `奖励 ${reward.name || reward.type} 的数值必须是数字`;
     if (reward.tag && !validRewardTags.has(reward.tag)) return `奖励 tag 不在可选标签内：${reward.tag}`;
   }
   for (const enemy of balance.value.enemies) {
@@ -1473,13 +1523,21 @@ onBeforeUnmount(() => {
             </label>
             <label class="field">
               <span>type</span>
-              <select v-model="selectedReward.type">
+              <select v-model="selectedReward.type" @change="normalizeRewardValue(selectedReward)">
                 <option v-for="option in currentRewardTypeOptions" :key="option.id" :value="option.id">{{ option.label }} · {{ option.id }}</option>
               </select>
             </label>
             <label class="field">
               <span>数值</span>
-              <input v-model.number="selectedReward.value" type="number" />
+              <select v-model.number="selectedReward.value">
+                <option
+                  v-for="value in rewardValueOptionsForType(selectedReward.type, selectedReward.value)"
+                  :key="value"
+                  :value="value"
+                >
+                  {{ value }}
+                </option>
+              </select>
             </label>
             <label class="field">
               <span>最大层数</span>

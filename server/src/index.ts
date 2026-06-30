@@ -76,6 +76,19 @@ import {
   type TeamId
 } from "@career-war/shared";
 
+// --- New module imports (extracted from this file) ---
+import type { ServerContext } from "./context.js";
+import * as rm from "./services/roomService.js";
+import * as gm from "./services/gameService.js";
+import * as eh from "./roguelite/enemyHelpers.js";
+import * as rh from "./roguelite/rewardHelpers.js";
+import * as rs from "./roguelite/rogueliteService.js";
+
+// These bridge imports only bring in modules that don't conflict with local declarations.
+// Constants, handle(), and utils have local declarations that will be migrated later.
+
+
+
 const MAX_BATTLE_LOG = 80;
 const EMOTE_COOLDOWN_MS = 1000;
 const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000;
@@ -1392,42 +1405,40 @@ function handle(socketId: string, reply: Ack | undefined, fn: () => Record<strin
   }
 }
 
-function broadcastRoom(room: Room, _events: GameEvent[]): void {
-  trimBattleLog(room);
-  emitRoomToParticipants(room);
-}
+// --- ServerContext (assembled from existing globals; used by new modules) ---
+const _allowedEmoteIds = new Set<string>(EMOTE_IDS);
+const ctx: ServerContext = { rooms, socketToRoom, socketToClient, emoteCooldowns, botTurnTimers, allowedEmoteIds: _allowedEmoteIds, io, now: serverContext.now, makeId: serverContext.makeId, rollDice: serverContext.rollDice };
 
-function emitRoomToParticipants(room: Room): void {
-  trimBattleLog(room);
-  if (ensureRoomGameMode(room) === "pve_roguelite" && room.phase === "battle") {
-    const enemy = room.players.find((player) => player.isBot);
-    if (enemy) logRogueliteEnemyBattleState("before_broadcast", enemy);
-  }
-  for (const [socketId, roomId] of Array.from(socketToRoom.entries())) {
-    if (roomId !== room.id) continue;
-    const socket = io.sockets.sockets.get(socketId);
-    socket?.emit("gameStateUpdated", serializeRoomForViewer(room, socketId, socketToClient.get(socketId)));
-  }
-}
+// Thin wrappers: delegate to new module functions, closing over ctx.
+// Prefix _ avoids shadowing existing function declarations while migrating.
+const _addEvent = (room: Room, type: GameEvent["type"], msg: string) => rm.addEvent(room, type, msg);
+const _getRoom = (roomId: string) => rm.getRoom(roomId, ctx);
+const _emitRoomToParticipants = (room: Room) => rm.emitRoomToParticipants(room, ctx);
+const _broadcastRoomList = () => rm.broadcastRoomList(ctx);
+const _broadcastRoom = (room: Room, events: GameEvent[]) => rm.broadcastRoom(room, events, ctx);
+const _getPublicRoomList = () => rm.getPublicRoomList(ctx);
+const _cleanupExpiredEmptyRooms = (now?: number) => rm.cleanupExpiredEmptyRooms(ctx, now);
+const _handleRogueliteBattleEnd = (room: Room, go: { winnerId: string; winnerName: string }) => rs.handleRogueliteBattleEnd(room, go, ctx);
+const _emitEmoteToRoomPeers = (roomId: string, senderSocketId: string, event: PlayerEmoteEvent) => rm.emitEmoteToRoomPeers(roomId, senderSocketId, event, ctx);
+const _bindSocketToRoom = (sid: string, cid: string, rid: string) => rm.bindSocketToRoom(sid, cid, rid, ctx);
+const _removePlayerFromRoom = (sid: string) => rm.removePlayerFromRoom(sid, ctx);
+const _removeClientFromRooms = (cid: string) => rm.removeClientFromRooms(cid, ctx);
+const _markPlayerOffline = (sid: string) => rm.markPlayerOffline(sid, ctx);
+const _deleteRoomAndUnbindSockets = (rid: string) => rm.deleteRoomAndUnbindSockets(rid, ctx);
+const _rebindPlayerReferences = (room: Room, prev: string, next: string) => rm.rebindPlayerReferences(room, prev, next);
+const _rebindDuoControllerReferences = (room: Room, prev: string, next: string, cid: string, uid?: string) => rm.rebindDuoControllerReferences(room, prev, next, cid, uid);
+const _getSocketRoom = (sid: string) => rm.getSocketRoom(sid, ctx);
+const _ensureRoomGameMode = (room: Room) => rm.ensureRoomGameMode(room);
+const _ensureRoomSettings = (room: Room) => rm.ensureRoomSettings(room);
+const _isSinglePlayerPveMode = (room: Room) => rm.isSinglePlayerPveMode(room);
 
-function broadcastRoomList(): void {
-  io.emit("roomListUpdated", getPublicRoomList());
-}
+const broadcastRoom = _broadcastRoom;
 
-function emitEmoteToRoomPeers(roomId: string, senderSocketId: string, event: PlayerEmoteEvent): void {
-  const targetSocketIds = new Set<string>();
-  for (const [socketId, mappedRoomId] of Array.from(socketToRoom.entries())) {
-    if (mappedRoomId === roomId) targetSocketIds.add(socketId);
-  }
-  for (const socketId of io.sockets.adapter.rooms.get(roomId) ?? []) {
-    targetSocketIds.add(socketId);
-  }
-  targetSocketIds.delete(senderSocketId);
+const emitRoomToParticipants = _emitRoomToParticipants;
 
-  for (const socketId of targetSocketIds) {
-    io.sockets.sockets.get(socketId)?.emit("playerEmote", event);
-  }
-}
+const broadcastRoomList = _broadcastRoomList;
+
+const emitEmoteToRoomPeers = _emitEmoteToRoomPeers;
 
 function scheduleBotTurnIfNeeded(room: Room): void {
   if (!isSinglePlayerPveMode(room) || room.phase !== "battle") return;
@@ -1479,103 +1490,12 @@ function runBotTurn(room: Room): void {
 
 function emitGameOverIfNeeded(room: Room, result: { gameOver?: { winnerId: string; winnerName: string } }): boolean {
   if (!result.gameOver) return false;
-  if (handleRogueliteBattleEnd(room, result.gameOver)) return true;
+  if (_handleRogueliteBattleEnd(room, result.gameOver)) return true;
   io.to(room.id).emit("gameOver", result.gameOver);
   return true;
 }
 
-function handleRogueliteBattleEnd(room: Room, gameOver: { winnerId: string; winnerName: string }): boolean {
-  if (ensureRoomGameMode(room) !== "pve_roguelite") return false;
-  if (room.phase !== "battle" && room.phase !== "gameOver") return true;
-  const winner = room.players.find((player) => player.id === gameOver.winnerId);
-  if (!winner || winner.isBot) return false;
-
-  const roguelite = ensureRogueliteState(room);
-  const stage = roguelite.stage;
-  const enemyBot = room.players.find((p) => p.isBot);
-  const enemyName = enemyBot?.nickname ?? "敌人";
-  const isBossStage = enemyBot?.rogueliteEnemyInfo?.stageType === "boss" || isRogueliteBossStage(stage);
-  const goldGained = getRogueliteBattleGoldReward(stage, enemyBot?.rogueliteEnemyInfo?.stageType ?? (isBossStage ? "boss" : "normal"));
-  roguelite.runGold = (roguelite.runGold ?? 0) + goldGained;
-  addEvent(room, "system", `获得金币 +${goldGained}，当前金币 ${roguelite.runGold}`);
-
-  // Stage-specific post-battle heal
-  let actualHeal = 0;
-  if (stage === 1) {
-    actualHeal = winner.maxHp - winner.hp;
-    winner.hp = winner.maxHp;
-    addEvent(room, "heal", `战后恢复至满血（${winner.maxHp} 点）`);
-  } else if (stage === 2) {
-    const healAmount = Math.max(8, Math.floor(winner.maxHp * 0.5));
-    const bonusHeal = winner.roguelitePostBattleHealBonus ?? 0;
-    actualHeal = Math.min(winner.maxHp - winner.hp, healAmount + bonusHeal);
-    if (actualHeal > 0) {
-      winner.hp += actualHeal;
-      addEvent(room, "heal", `战后恢复 ${actualHeal} 点生命`);
-    }
-  } else {
-    const baseHeal = Math.max(5, Math.floor(winner.maxHp * 0.3));
-    const bonusHeal = winner.roguelitePostBattleHealBonus ?? 0;
-    actualHeal = Math.min(winner.maxHp - winner.hp, baseHeal + bonusHeal);
-    if (actualHeal > 0) {
-      winner.hp += actualHeal;
-      addEvent(room, "heal", `战后恢复 ${actualHeal} 点生命`);
-    }
-  }
-
-  room.phase = "reward";
-  room.winnerId = undefined;
-  room.rematchReadyPlayerIds = [];
-
-  const stageSummary = {
-    defeatedEnemyName: enemyName,
-    postBattleHeal: actualHeal,
-    goldGained,
-    hpAfterHeal: winner.hp,
-    maxHp: winner.maxHp,
-    isBoss: isBossStage
-  };
-
-  if (stage === ROGUELITE_BOSS_REWARD_STAGE && isBossStage) {
-    room.roguelite = {
-      ...roguelite,
-      lastStageSummary: stageSummary,
-      rewardChoices: createRogueliteBossRewardChoices()
-    };
-    addEvent(room, "system", `第 ${ROGUELITE_BOSS_REWARD_STAGE} 关大 Boss 胜利！选择 1 个 Boss 能力`);
-  } else if (stage === ROGUELITE_BASIC_REWARD_STAGE) {
-    room.roguelite = {
-      ...roguelite,
-      lastStageSummary: stageSummary,
-      rewardChoices: createRogueliteBasicRewardChoices(winner.roguelitePerkStacks)
-    };
-    addEvent(room, "system", `第 1 关胜利！选择 1 个基础奖励`);
-  } else if (stage === ROGUELITE_ARCHETYPE_REWARD_STAGE) {
-    room.roguelite = {
-      ...roguelite,
-      lastStageSummary: stageSummary,
-      rewardChoices: createRogueliteArchetypeStarterChoices(winner.roguelitePerkStacks)
-    };
-    addEvent(room, "system", `第 2 关胜利！选择 1 个流派启动奖励`);
-  } else if (stage === ROGUELITE_CORE_REWARD_STAGE) {
-    room.roguelite = {
-      ...roguelite,
-      lastStageSummary: stageSummary,
-      rewardChoices: createRogueliteCoreRewardChoices(winner.roguelitePerkStacks)
-    };
-    addEvent(room, "system", `第 3 关 Boss 胜利！选择 1 个核心技能奖励`);
-  } else {
-    room.roguelite = {
-      ...roguelite,
-      lastStageSummary: stageSummary,
-      rewardChoices: createRogueliteRewardChoices(winner.roguelitePerkStacks, roguelite.appliedRewards ?? [], stage)
-    };
-    addEvent(room, "system", `第 ${stage} 关胜利，选择 1 个奖励后进入下一关`);
-  }
-
-  emitRoomToParticipants(room);
-  return true;
-}
+const handleRogueliteBattleEnd = _handleRogueliteBattleEnd;
 
 function ensureRogueliteState(room: Room): NonNullable<Room["roguelite"]> {
   room.roguelite ??= { stage: 1, maxStage: ROGUELITE_MAX_STAGE, appliedRewards: [] };
@@ -2094,17 +2014,7 @@ function prepareNextRogueliteStage(room: Room, player: Room["players"][number], 
   trimBattleLog(room);
 }
 
-function addEvent(room: Room, type: GameEvent["type"], message: string): GameEvent {
-  const event: GameEvent = {
-    id: crypto.randomUUID(),
-    createdAt: Date.now(),
-    type,
-    message
-  };
-  room.battleLog.unshift(event);
-  trimBattleLog(room);
-  return event;
-}
+const addEvent = _addEvent;
 
 function serializePublicRoom(room: Room): Room {
   ensureRoomSettings(room);
@@ -2169,26 +2079,7 @@ function getViewerDuoControllerId(room: Room, viewerSocketId: string, viewerClie
   return player?.controllerId ?? player?.id;
 }
 
-function getPublicRoomList(): RoomListItem[] {
-  cleanupExpiredEmptyRooms();
-  return Array.from(rooms.values())
-    .filter((room) => room.phase !== "gameOver" && getRoomOnlineCount(room) > 0)
-    .map((room) => {
-      const gameMode = ensureRoomGameMode(room);
-      const playerCount = getRoomParticipantCount(room);
-      const maxPlayers = getRoomMaxPlayers(room);
-      const host = getRoomHost(room);
-      return {
-        roomId: room.id,
-        hostName: host?.nickname ?? "未知房主",
-        playerCount,
-        maxPlayers,
-        phase: mapRoomPhase(room.phase),
-        canJoin: room.phase === "lobby" && playerCount < maxPlayers,
-        gameMode
-      };
-    });
-}
+const getPublicRoomList = _getPublicRoomList;
 
 function getRoomParticipantCount(room: Room): number {
   if (isSinglePlayerPveMode(room)) return room.players.filter((player) => !player.isBot).length;
@@ -2215,26 +2106,11 @@ function getRoomHost(room: Room): Room["players"][number] | undefined {
   return room.players.find((player) => player.id === room.hostId || player.controllerId === room.hostId) ?? room.players.find((player) => player.isHost);
 }
 
-function ensureRoomSettings(room: Room): RoomSettings {
-  const gameMode = ensureRoomGameMode(room);
-  room.settings = {
-    ...DEFAULT_ROOM_SETTINGS,
-    ...(room.settings ?? {}),
-    gameMode,
-    maxPlayers: gameMode === "duo_2v2" ? DUO_MAX_CONTROLLERS : isSinglePlayerPveGameMode(gameMode) ? 1 : room.settings?.maxPlayers ?? DEFAULT_ROOM_SETTINGS.maxPlayers
-  };
-  return room.settings;
-}
+const ensureRoomSettings = _ensureRoomSettings;
 
-function ensureRoomGameMode(room: Room): GameMode {
-  const currentMode = room.gameMode ?? room.settings?.gameMode;
-  room.gameMode = isGameMode(currentMode) ? currentMode : DEFAULT_GAME_MODE;
-  return room.gameMode;
-}
+const ensureRoomGameMode = _ensureRoomGameMode;
 
-function isSinglePlayerPveMode(room: Room): boolean {
-  return isSinglePlayerPveGameMode(ensureRoomGameMode(room));
-}
+const isSinglePlayerPveMode = _isSinglePlayerPveMode;
 
 function isSinglePlayerPveGameMode(gameMode: GameMode): boolean {
   return gameMode === "pve_1v1" || gameMode === "pve_roguelite";
@@ -2678,17 +2554,9 @@ function trimBattleLog(room: Room): void {
   }
 }
 
-function getSocketRoom(socketId: string): Room {
-  const roomId = socketToRoom.get(socketId);
-  if (!roomId) throw new Error("你还没有加入房间");
-  return getRoom(roomId);
-}
+const getSocketRoom = _getSocketRoom;
 
-function getRoom(roomId: string): Room {
-  const room = rooms.get(roomId);
-  if (!room) throw new Error("房间不存在");
-  return room;
-}
+const getRoom = _getRoom;
 
 function findReconnectPlayer(room: Room, playerId: string | undefined, clientId: string, userId: string | undefined): Room["players"][number] | undefined {
   const players = room.players.filter((player) => !player.isBot);
@@ -2780,82 +2648,9 @@ function isGameMode(value: unknown): value is GameMode {
   return value === "classic" || value === "duo_2v2" || value === "pve_1v1" || value === "pve_roguelite";
 }
 
-function bindSocketToRoom(socketId: string, clientId: string, roomId: string): void {
-  const previousRoomId = socketToRoom.get(socketId);
-  if (previousRoomId && previousRoomId !== roomId) {
-    const previousSocket = io.sockets.sockets.get(socketId);
-    previousSocket?.leave(previousRoomId);
-  }
-  socketToRoom.set(socketId, roomId);
-  socketToClient.set(socketId, clientId);
-  const socket = io.sockets.sockets.get(socketId);
-  socket?.join(roomId);
-  const room = rooms.get(roomId);
-  if (room) refreshRoomEmptySince(room);
-}
+const bindSocketToRoom = _bindSocketToRoom;
 
-function removePlayerFromRoom(socketId: string): void {
-  const roomId = socketToRoom.get(socketId);
-  if (!roomId) return;
-  const clientId = socketToClient.get(socketId);
-  const room = rooms.get(roomId);
-  const socket = io.sockets.sockets.get(socketId);
-  socket?.leave(roomId);
-  socketToRoom.delete(socketId);
-  socketToClient.delete(socketId);
-
-  if (!room || !clientId) return;
-  if (isSinglePlayerPveMode(room)) {
-    deleteRoomAndUnbindSockets(room.id);
-    broadcastRoomList();
-    return;
-  }
-  if (shouldUseDuoControllerLeave(room)) {
-    const leaving = findRoomParticipantForSocket(room, socketId, clientId);
-    const controllerId = leaving?.controllerId ?? (room.controllerTurnOrder?.includes(socketId) ? socketId : undefined);
-    if (!controllerId) return;
-    const nickname = getDuoControllerDisplayName(room, controllerId);
-    removeDuoControllerFromRoom(room, controllerId);
-    if (shouldCleanupDuoRoom(room)) {
-      deleteRoomAndUnbindSockets(room.id);
-      broadcastRoomList();
-      return;
-    }
-    const event = addEvent(room, "system", `${nickname} 离开了房间`);
-    refreshRoomEmptySince(room);
-    broadcastRoom(room, [event]);
-    broadcastRoomList();
-    return;
-  }
-
-  const leaving = room.players.find((player) => player.clientId === clientId);
-  room.players = room.players.filter((player) => player.clientId !== clientId);
-  if (leaving) {
-    room.rematchReadyPlayerIds = room.rematchReadyPlayerIds.filter((playerId) => playerId !== leaving.id);
-    room.duoSlots = room.duoSlots?.filter((slot) => slot.controllerId !== leaving.id);
-  }
-
-  if (room.players.length === 0) {
-    rooms.delete(roomId);
-    broadcastRoomList();
-    return;
-  }
-
-  if (room.hostId === socketId && leaving) {
-    room.hostId = room.players[0].id;
-    room.players[0].isHost = true;
-  }
-
-  if (room.activePlayerIndex >= room.players.length) {
-    room.activePlayerIndex = 0;
-  }
-  ensureDuoSlots(room);
-
-  const event = addEvent(room, "system", `${leaving?.nickname ?? "玩家"} 离开了房间`);
-  refreshRoomEmptySince(room);
-  broadcastRoom(room, [event]);
-  broadcastRoomList();
-}
+const removePlayerFromRoom = _removePlayerFromRoom;
 
 function removeClientFromRooms(clientId: string): void {
   let changed = false;
@@ -3028,19 +2823,7 @@ function refreshRoomEmptySince(room: Room, now = Date.now()): void {
   room.emptySince = undefined;
 }
 
-function cleanupExpiredEmptyRooms(now = Date.now()): boolean {
-  let removed = false;
-
-  for (const [roomId, room] of Array.from(rooms.entries())) {
-    refreshRoomEmptySince(room, now);
-    if (room.emptySince !== undefined && now - room.emptySince >= EMPTY_ROOM_TTL_MS && getRoomOnlineCount(room) === 0) {
-      rooms.delete(roomId);
-      removed = true;
-    }
-  }
-
-  return removed;
-}
+const cleanupExpiredEmptyRooms = _cleanupExpiredEmptyRooms;
 
 function rebindPlayerReferences(room: Room, previousId: string, nextId: string): void {
   if (previousId === nextId) return;

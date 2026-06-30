@@ -512,8 +512,8 @@ function getTransportName(transport: unknown): string {
 </script>
 
 <template>
-  <main class="app-shell">
-    <header class="top-bar">
+  <main class="app-shell" :class="{ 'app-shell--home': route.name === 'home' }">
+    <header class="top-bar" :class="{ 'top-bar--home': route.name === 'home' }">
       <div>
         <h1>职业互怼</h1>
       </div>
@@ -530,7 +530,7 @@ function getTransportName(transport: unknown): string {
 
     <p v-if="errorMessage" class="toast">{{ errorMessage }}</p>
 
-    <aside v-if="isDev" class="net-diagnostics" aria-live="polite" title="联机延迟诊断">
+    <aside v-if="isDev && route.name !== 'home'" class="net-diagnostics" aria-live="polite" title="联机延迟诊断">
       <span>连接：{{ connectionStatusText }}</span>
       <span>延迟：{{ latencyText }}</span>
       <span>transport：{{ transportText }}</span>
@@ -624,6 +624,58 @@ function getTransportName(transport: unknown): string {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.app-shell--home {
+  position: relative;
+  overflow: hidden;
+  gap: 6px;
+  min-height: 100svh;
+  max-width: min(100%, 680px);
+  padding: 6px 10px 8px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(117, 74, 30, 0.16), transparent 36%),
+    linear-gradient(180deg, rgba(54, 31, 15, 0.06), rgba(54, 31, 15, 0)) !important;
+  background-size: auto !important;
+}
+
+.top-bar--home {
+  min-height: 40px;
+  border: 1px solid rgba(255, 229, 159, 0.28);
+  border-radius: 14px;
+  padding: 5px 9px 5px 12px;
+  background:
+    linear-gradient(180deg, rgba(45, 27, 13, 0.86), rgba(27, 17, 10, 0.82)),
+    rgba(26, 17, 10, 0.82);
+  box-shadow: 0 8px 24px rgba(40, 23, 11, 0.22), inset 0 1px 0 rgba(255, 247, 220, 0.14);
+  backdrop-filter: blur(8px);
+}
+
+.top-bar--home h1 {
+  color: #fff3c2;
+  font-size: 19px;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.36);
+}
+
+.top-bar--home .user-nickname {
+  max-width: 96px;
+  border: 1px solid rgba(255, 229, 159, 0.30);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(255, 247, 220, 0.10);
+  color: #fff3c2;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.top-bar--home .secondary-btn.small-btn {
+  min-height: 30px;
+  border-color: rgba(255, 229, 159, 0.36) !important;
+  border-radius: 999px !important;
+  background: rgba(255, 247, 220, 0.12) !important;
+  color: #fff3c2 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
 }
 
 .user-nickname {

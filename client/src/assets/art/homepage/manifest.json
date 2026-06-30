@@ -1,0 +1,164 @@
+{
+  "tavern_table": {
+    "file": "tavern_table.webp",
+    "width": 526,
+    "height": 758,
+    "bytes": 114278
+  },
+  "card_rogue": {
+    "file": "card_rogue.png",
+    "width": 188,
+    "height": 153,
+    "bytes": 75970
+  },
+  "card_versus": {
+    "file": "card_versus.png",
+    "width": 188,
+    "height": 153,
+    "bytes": 75286
+  },
+  "card_training": {
+    "file": "card_training.png",
+    "width": 188,
+    "height": 153,
+    "bytes": 75596
+  },
+  "dice_1": {
+    "file": "dice_1.png",
+    "width": 128,
+    "height": 128,
+    "bytes": 19405
+  },
+  "dice_2": {
+    "file": "dice_2.png",
+    "width": 128,
+    "height": 128,
+    "bytes": 19965
+  },
+  "dice_3": {
+    "file": "dice_3.png",
+    "width": 128,
+    "height": 128,
+    "bytes": 19583
+  },
+  "dice_4": {
+    "file": "dice_4.png",
+    "width": 128,
+    "height": 128,
+    "bytes": 18891
+  },
+  "dice_5": {
+    "file": "dice_5.png",
+    "width": 128,
+    "height": 128,
+    "bytes": 18602
+  },
+  "dice_6": {
+    "file": "dice_6.png",
+    "width": 128,
+    "height": 128,
+    "bytes": 19095
+  },
+  "prop_candle": {
+    "file": "prop_candle.png",
+    "width": 70,
+    "height": 104,
+    "bytes": 18740
+  },
+  "prop_tankard": {
+    "file": "prop_tankard.png",
+    "width": 84,
+    "height": 99,
+    "bytes": 24102
+  },
+  "prop_bulletin_board": {
+    "file": "prop_bulletin_board.png",
+    "width": 92,
+    "height": 107,
+    "bytes": 28918
+  },
+  "prop_coin_pouch": {
+    "file": "prop_coin_pouch.png",
+    "width": 65,
+    "height": 87,
+    "bytes": 15962
+  },
+  "prop_wooden_sign": {
+    "file": "prop_wooden_sign.png",
+    "width": 93,
+    "height": 100,
+    "bytes": 24450
+  },
+  "node_battle": {
+    "file": "node_battle.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 10999
+  },
+  "node_elite": {
+    "file": "node_elite.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 11880
+  },
+  "node_boss": {
+    "file": "node_boss.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 11717
+  },
+  "node_event": {
+    "file": "node_event.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 11791
+  },
+  "node_shop": {
+    "file": "node_shop.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 12198
+  },
+  "node_rest": {
+    "file": "node_rest.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 12096
+  },
+  "node_reward": {
+    "file": "node_reward.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 12253
+  },
+  "node_fate": {
+    "file": "node_fate.png",
+    "width": 64,
+    "height": 64,
+    "bytes": 11666
+  },
+  "roguelite_object": {
+    "file": "roguelite_object.png",
+    "width": 320,
+    "height": 320,
+    "bytes": 213318
+  },
+  "ring_gold": {
+    "file": "ring_gold.png",
+    "width": 160,
+    "height": 160,
+    "bytes": 24913
+  },
+  "ring_blue": {
+    "file": "ring_blue.png",
+    "width": 160,
+    "height": 160,
+    "bytes": 18203
+  },
+  "ring_green": {
+    "file": "ring_green.png",
+    "width": 160,
+    "height": 160,
+    "bytes": 20230
+  }
+}

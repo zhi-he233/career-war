@@ -9,6 +9,20 @@ const isAuthenticated = isLoggedIn; // alias
 const isLoading = loading; // alias
 const displayName = computed(() => currentUser.value?.username ?? "游客");
 let initPromise = null;
+async function readJsonSafely(response) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json"))
+        return null;
+    return response.json();
+}
+function getErrorMessage(data, fallback) {
+    if (data && typeof data === "object" && "error" in data) {
+        const error = data.error;
+        if (typeof error === "string" && error.trim())
+            return error;
+    }
+    return fallback;
+}
 async function fetchMe() {
     try {
         const res = await fetch("/api/me", { credentials: "same-origin" });
@@ -41,12 +55,12 @@ async function register(username, password) {
             credentials: "same-origin",
             body: JSON.stringify({ username, password }),
         });
-        const data = await res.json();
+        const data = await readJsonSafely(res);
         if (!res.ok) {
-            return { ok: false, error: data.error ?? "注册失败" };
+            return { ok: false, error: getErrorMessage(data, `注册失败（${res.status}）`) };
         }
         currentUser.value = data;
-        return { ok: true, data };
+        return { ok: true, data: data };
     }
     catch {
         return { ok: false, error: "网络错误，请稍后再试" };
@@ -60,12 +74,12 @@ async function login(username, password) {
             credentials: "same-origin",
             body: JSON.stringify({ username, password }),
         });
-        const data = await res.json();
+        const data = await readJsonSafely(res);
         if (!res.ok) {
-            return { ok: false, error: data.error ?? "登录失败" };
+            return { ok: false, error: getErrorMessage(data, `登录失败（${res.status}）`) };
         }
         currentUser.value = data;
-        return { ok: true, data };
+        return { ok: true, data: data };
     }
     catch {
         return { ok: false, error: "网络错误，请稍后再试" };
@@ -90,12 +104,12 @@ async function updateProfile(patch) {
             credentials: "same-origin",
             body: JSON.stringify(patch),
         });
-        const data = await res.json();
+        const data = await readJsonSafely(res);
         if (!res.ok) {
-            return { ok: false, error: data.error ?? "更新失败" };
+            return { ok: false, error: getErrorMessage(data, `更新失败（${res.status}）`) };
         }
         currentUser.value = data;
-        return { ok: true, data };
+        return { ok: true, data: data };
     }
     catch {
         return { ok: false, error: "网络错误" };

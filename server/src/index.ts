@@ -32,8 +32,10 @@ import {
   ROGUELITE_ROOM_TYPES,
   ROGUELITE_MAX_STAGE,
   ROGUELITE_PLAYER_START,
+  ROGUELITE_REST_SITE_ACTIONS,
   ROGUELITE_REWARD_RHYTHM,
   ROGUELITE_STAGE_SCALING,
+  getRogueliteShopItemsForStage,
   beginControllerGuardCheckIfNeeded,
   characterList,
   chooseCharacter,
@@ -1183,6 +1185,20 @@ io.on("connection", (socket) => {
         rememberRogueliteMapNode(roguelite, mapNode);
         consumeRogueliteMapNode(roguelite, mapNode);
         roguelite.currentMapNode = mapNode;
+        if (mapNode.type === "shop") {
+          roguelite.shopPurchasedIds = []; // reset per-visit purchase tracking
+          room.phase = "roguelite_shop";
+          const event = addEvent(room, "system", `${player.nickname} 进入第 ${mapNode.stage} 关 · 商店`);
+          broadcastRoom(room, [event]);
+          return { ok: true };
+        }
+        if (mapNode.type === "rest") {
+          room.phase = "roguelite_rest";
+          const event = addEvent(room, "system", `${player.nickname} 进入第 ${mapNode.stage} 关 · 休息点`);
+          broadcastRoom(room, [event]);
+          return { ok: true };
+        }
+        // reward nodes still skip
         roguelite.stage += 1;
         room.phase = "roguelite_continue";
         const event = addEvent(room, "system", `${player.nickname} 完成第 ${mapNode.stage} 关 · ${ROGUELITE_ROOM_TYPES[mapNode.type].label}，请选择第 ${roguelite.stage} 关路线`);
@@ -1195,6 +1211,122 @@ io.on("connection", (socket) => {
       const event = addEvent(room, "system", `${player.nickname} 继续挑战，进入第 ${mapNode.stage} 关 · ${ROGUELITE_ROOM_TYPES[mapNode.type].label}`);
       broadcastRoom(room, [event]);
       scheduleBotTurnIfNeeded(room);
+      return { ok: true };
+    });
+  });
+
+  // ── Roguelite shop ──
+  socket.on("buyRogueliteShopItem", (payload: { itemId?: unknown }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (ensureRoomGameMode(room) !== "pve_roguelite") throw new Error("当前房间不是肉鸽挑战");
+      if (room.phase !== "roguelite_shop") throw new Error("当前不在商店阶段");
+      const player = room.players.find((p) => p.id === socket.id && !p.isBot);
+      if (!player) throw new Error("玩家不存在");
+      const roguelite = ensureRogueliteState(room);
+      const itemId = typeof payload?.itemId === "string" ? payload.itemId : "";
+      // Validate item against stage filter + active whitelist, not raw list
+      const availableItems = getRogueliteShopItemsForStage(roguelite.stage);
+      const item = availableItems.find((i) => i.id === itemId);
+      if (!item) throw new Error("商品不存在或当前阶段不可购买");
+
+      // Per-visit purchase limit: "每次商店 1 次" items can only be bought once
+      roguelite.shopPurchasedIds ??= [];
+      if (item.limit.includes("1 次") && roguelite.shopPurchasedIds.includes(itemId)) {
+        throw new Error("该商品本次商店已购买过");
+      }
+
+      const gold = roguelite.runGold ?? 0;
+      if (gold < item.price) throw new Error(`金币不足（需要 ${item.price}，当前 ${gold}）`);
+
+      roguelite.runGold = gold - item.price;
+      roguelite.shopPurchasedIds.push(itemId);
+      addEvent(room, "system", `${player.nickname} 花费 ${item.price} 金币购买了「${item.name}」：${item.effect}`);
+
+      // Apply item effect
+      if (item.type === "heal") {
+        const healAmt = item.id === "large_healing_potion" ? 14 : 6;
+        const healed = Math.min(player.maxHp - player.hp, healAmt);
+        if (healed > 0) {
+          player.hp += healed;
+          const ev = addEvent(room, "heal", `${player.nickname} 使用${item.name}回复 ${healed} 生命`);
+          ev.playerId = player.id;
+          ev.healing = healed;
+        }
+      } else if (item.type === "relic") {
+        if (item.id === "shield_patch") {
+          roguelite.nextBattleShieldBonus = (roguelite.nextBattleShieldBonus ?? 0) + 6;
+        }
+        addEvent(room, "system", `${player.nickname} 获得遗物「${item.name}」：${item.effect}`);
+      } else if (item.type === "perk" || item.type === "skill") {
+        addEvent(room, "system", `${player.nickname} 购买「${item.name}」：${item.effect}（占位效果）`);
+      }
+
+      broadcastRoom(room, []);
+      return { ok: true };
+    });
+  });
+
+  socket.on("leaveRogueliteRoom", (_payload: unknown, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (ensureRoomGameMode(room) !== "pve_roguelite") throw new Error("当前房间不是肉鸽挑战");
+      if (room.phase !== "roguelite_shop") throw new Error("当前不在商店阶段");
+      const player = room.players.find((p) => p.id === socket.id && !p.isBot);
+      if (!player) throw new Error("玩家不存在");
+      const roguelite = ensureRogueliteState(room);
+      roguelite.stage += 1;
+      room.phase = "roguelite_continue";
+      const event = addEvent(room, "system", `${player.nickname} 离开，请选择第 ${roguelite.stage} 关路线`);
+      broadcastRoom(room, [event]);
+      return { ok: true };
+    });
+  });
+
+  // ── Roguelite rest ──
+  socket.on("useRogueliteRestAction", (payload: { actionId?: unknown }, reply?: Ack) => {
+    handle(socket.id, reply, () => {
+      const room = getSocketRoom(socket.id);
+      if (ensureRoomGameMode(room) !== "pve_roguelite") throw new Error("当前房间不是肉鸽挑战");
+      if (room.phase !== "roguelite_rest") throw new Error("当前不在休息阶段");
+      const player = room.players.find((p) => p.id === socket.id && !p.isBot);
+      if (!player) throw new Error("玩家不存在");
+      const roguelite = ensureRogueliteState(room);
+      const actionId = typeof payload?.actionId === "string" ? payload.actionId : "";
+      const action = ROGUELITE_REST_SITE_ACTIONS.find((a) => a.id === actionId);
+      if (!action) throw new Error("休息动作不存在");
+
+      if (actionId === "campfire_heal") {
+        const healAmt = Math.floor(player.maxHp * 0.25);
+        const healed = Math.min(player.maxHp - player.hp, healAmt);
+        if (healed > 0) { player.hp += healed; addEvent(room, "heal", `${player.nickname} 在篝火旁回复 ${healed} 生命`); }
+        else { addEvent(room, "system", `${player.nickname} 生命已满，篝火未生效`); }
+      } else if (actionId === "weapon_drill") {
+        roguelite.nextBattleDamageBonus = (roguelite.nextBattleDamageBonus ?? 0) + 3;
+        addEvent(room, "system", `${player.nickname} 磨砺武器，下一场战斗伤害 +3`);
+      } else if (actionId === "shield_repair") {
+        roguelite.nextBattleShieldBonus = (roguelite.nextBattleShieldBonus ?? 0) + 5;
+        addEvent(room, "system", `${player.nickname} 修补护盾，下一场战斗开始获得 5 护盾`);
+      } else if (actionId === "blood_meditation") {
+        const healAmt = Math.floor(player.maxHp * 0.15);
+        player.hp = Math.min(player.maxHp, player.hp + healAmt);
+        roguelite.nextBattleDamageBonus = (roguelite.nextBattleDamageBonus ?? 0) + 1;
+        addEvent(room, "system", `${player.nickname} 血之冥想：回复 ${healAmt} 生命，下场伤害 +1`);
+      } else if (actionId === "dice_prayer") {
+        addEvent(room, "system", `${player.nickname} 向骰子祈祷——命运筹码 +2（占位效果）`);
+      } else if (actionId === "sharpen_first_hit") {
+        addEvent(room, "system", `${player.nickname} 磨利首击——下一场战斗首次攻击伤害 +4（占位效果）`);
+      } else if (actionId === "reinforce_armor") {
+        addEvent(room, "system", `${player.nickname} 强化护甲——本局获得 1 层护甲（占位效果）`);
+      } else {
+        addEvent(room, "system", `${player.nickname} 执行「${action.name}」——${action.effect}（占位效果）`);
+      }
+
+      // Rest actions consume the rest site
+      roguelite.stage += 1;
+      room.phase = "roguelite_continue";
+      const event = addEvent(room, "system", `${player.nickname} 休息完毕，请选择第 ${roguelite.stage} 关路线`);
+      broadcastRoom(room, [event]);
       return { ok: true };
     });
   });
@@ -1593,7 +1725,12 @@ function applyRogueliteEventOutcome(room: Room, player: Room["players"][number],
   }
 
   if (outcome.type === "start_battle") {
-    addEvent(room, "system", outcome.note ?? `TODO: 事件战斗「${outcome.enemyId ?? "未选择对象"}」暂未接入，已安全跳过`);
+    resetRogueliteBattleState(room, player);
+    ensurePveBot(room);
+    const bot = room.players.find((p) => p.isBot);
+    const enemyLabel = outcome.enemyId ?? (bot?.nickname ?? "敌人");
+    room.activePlayerIndex = room.players.findIndex((p) => !p.isBot);
+    addEvent(room, "system", `${player.nickname} 被卷入战斗！对手：${enemyLabel}`);
     return { opensRewardChoice: false, playerDied: false };
   }
 
@@ -1619,6 +1756,53 @@ const ROGUELITE_TAG_BIAS_STAGE_RANGE = (getRogueliteRewardRhythm("4-6")?.stage ?
 const ROGUELITE_TAG_BIAS_STAGE_START = ROGUELITE_TAG_BIAS_STAGE_RANGE[0] ?? 4;
 const ROGUELITE_TAG_BIAS_STAGE_END = ROGUELITE_TAG_BIAS_STAGE_RANGE[1] ?? ROGUELITE_TAG_BIAS_STAGE_START;
 const BASIC_REWARD_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogueliteRewardRhythm("1")?.rewardTypes ?? [];
+
+function resetRogueliteBattleState(room: Room, player: Room["players"][number]): void {
+  const roguelite = ensureRogueliteState(room);
+  room.phase = "battle";
+  room.effects = [];
+  room.snapshots = [];
+  room.previousFinalDamage = 0;
+  room.pendingRoll = undefined;
+  room.pendingRollDecision = undefined;
+  room.pendingGuardCheck = undefined;
+  room.guardCheckCompletedForActorId = undefined;
+  room.winnerId = undefined;
+  room.winnerTeamId = undefined;
+  room.highlight = undefined;
+  room.skillHints = undefined;
+  roguelite.battleRound = 1;
+  roguelite.fatigueBonus = 0;
+  roguelite.fatigueAnnouncedBonus = 0;
+  player.isDead = false;
+  player.isOnline = true;
+  player.selectedTargetId = undefined;
+  player.guarding = false;
+  player.flameMarks = 0;
+  player.zhaoZilongHitCount = 0;
+  player.summonerSkillId = undefined;
+  player.summonerSkillCooldown = 0;
+  player.rogueliteSummonerCooldownReduction = 0;
+
+  const nextBattleShieldBonus = roguelite.nextBattleShieldBonus ?? 0;
+  player.shield = (player.rogueliteStartShield ?? 0) + nextBattleShieldBonus;
+  if (nextBattleShieldBonus > 0) {
+    addEvent(room, "system", `事件护盾生效：${player.nickname} 获得 ${nextBattleShieldBonus} 护盾`);
+    roguelite.nextBattleShieldBonus = 0;
+  }
+
+  const nextBattleDamageBonus = roguelite.nextBattleDamageBonus ?? 0;
+  if (nextBattleDamageBonus > 0) {
+    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + nextBattleDamageBonus;
+    addEvent(room, "system", `事件伤害生效：${player.nickname} 获得 ${nextBattleDamageBonus} 伤害加成`);
+    roguelite.nextBattleDamageBonus = 0;
+  }
+
+  // Reset per-stage abilities.
+  player.rogueliteShieldOverloadUsed = false;
+  player.rogueliteLowRollCharge = 0;
+  player.rogueliteConsecutiveLowRolls = 0;
+}
 const ARCHETYPE_STARTER_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogueliteRewardRhythm("2")?.rewardTypes ?? [];
 const CORE_REWARD_TYPES: ReadonlyArray<RogueliteReward["type"]> = getRogueliteRewardRhythm("3")?.rewardTypes ?? [];
 
@@ -1901,46 +2085,7 @@ function prepareNextRogueliteStage(room: Room, player: Room["players"][number], 
     rememberRogueliteMapNode(roguelite, roguelite.currentMapNode);
     consumeRogueliteMapNode(roguelite, roguelite.currentMapNode);
   }
-  room.phase = "battle";
-  room.effects = [];
-  room.snapshots = [];
-  room.previousFinalDamage = 0;
-  room.pendingRoll = undefined;
-  room.pendingRollDecision = undefined;
-  room.pendingGuardCheck = undefined;
-  room.guardCheckCompletedForActorId = undefined;
-  room.winnerId = undefined;
-  room.winnerTeamId = undefined;
-  room.highlight = undefined;
-  room.skillHints = undefined;
-  roguelite.battleRound = 1;
-  roguelite.fatigueBonus = 0;
-  roguelite.fatigueAnnouncedBonus = 0;
-  player.isDead = false;
-  player.isOnline = true;
-  player.selectedTargetId = undefined;
-  player.guarding = false;
-  player.flameMarks = 0;
-  player.zhaoZilongHitCount = 0;
-  player.summonerSkillId = undefined;
-  player.summonerSkillCooldown = 0;
-  player.rogueliteSummonerCooldownReduction = 0;
-  const nextBattleShieldBonus = roguelite.nextBattleShieldBonus ?? 0;
-  player.shield = (player.rogueliteStartShield ?? 0) + nextBattleShieldBonus;
-  if (nextBattleShieldBonus > 0) {
-    addEvent(room, "system", `事件护盾生效：${player.nickname} 获得 ${nextBattleShieldBonus} 护盾`);
-    roguelite.nextBattleShieldBonus = 0;
-  }
-  const nextBattleDamageBonus = roguelite.nextBattleDamageBonus ?? 0;
-  if (nextBattleDamageBonus > 0) {
-    player.rogueliteDamageBonus = (player.rogueliteDamageBonus ?? 0) + nextBattleDamageBonus;
-    addEvent(room, "system", `事件伤害生效：${player.nickname} 获得 ${nextBattleDamageBonus} 伤害加成`);
-    roguelite.nextBattleDamageBonus = 0;
-  }
-  // Reset per-stage abilities
-  player.rogueliteShieldOverloadUsed = false;
-  player.rogueliteLowRollCharge = 0;
-  player.rogueliteConsecutiveLowRolls = 0;
+  resetRogueliteBattleState(room, player);
   ensurePveBot(room);
   const playerIndex = room.players.findIndex((item) => item.id === player.id);
   room.activePlayerIndex = Math.max(0, playerIndex);
@@ -2523,7 +2668,7 @@ function startDuoGameV0(room: Room): GameEvent[] {
 
 function mapRoomPhase(phase: Room["phase"]): RoomListStatus {
   if (phase === "lobby") return "waiting";
-  if (phase === "battle" || phase === "reward" || phase === "roguelite_event" || phase === "roguelite_continue") return "playing";
+  if (phase === "battle" || phase === "reward" || phase === "roguelite_event" || phase === "roguelite_shop" || phase === "roguelite_rest" || phase === "roguelite_continue") return "playing";
   return "ended";
 }
 

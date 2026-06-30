@@ -1,20 +1,52 @@
 <script setup lang="ts">
+import { ref } from "vue";
+import { socket } from "../../socket";
 import {
-  ROGUELITE_EVENTS,
+  getRogueliteShopItemsForStage,
   ROGUELITE_ROOM_TYPE_LABELS,
-  ROGUELITE_SHOP_ITEMS,
   ROGUELITE_SHOP_RULES,
+  ROGUELITE_REST_SITE_ACTIONS,
 } from "@career-war/shared";
 import type { RogueliteMapRoomType } from "@career-war/shared";
 
 const props = defineProps<{ type: Exclude<RogueliteMapRoomType, "normal" | "elite" | "boss">; stage: number }>();
-const emit = defineEmits<{ complete: [result: { type: RogueliteMapRoomType; action: string }]; close: [] }>();
+const emit = defineEmits<{ close: [] }>();
 
-const firstEvent = ROGUELITE_EVENTS[0];
-const shopItems = ROGUELITE_SHOP_ITEMS.slice(0, ROGUELITE_SHOP_RULES.itemsPerVisit);
+const shopItems = getRogueliteShopItemsForStage(props.stage).slice(0, ROGUELITE_SHOP_RULES.itemsPerVisit);
+const restActions = ROGUELITE_REST_SITE_ACTIONS;
+const busy = ref(false);
 
-function complete(action: string): void {
-  emit("complete", { type: props.type, action });
+function buyItem(itemId: string): void {
+  if (busy.value) return;
+  busy.value = true;
+  socket.emit("buyRogueliteShopItem", { itemId }, (res: { ok?: boolean; error?: string } | null) => {
+    busy.value = false;
+    if (res?.error) {
+      alert(res.error);
+    }
+  });
+}
+
+function doRestAction(actionId: string): void {
+  if (busy.value) return;
+  busy.value = true;
+  socket.emit("useRogueliteRestAction", { actionId }, (res: { ok?: boolean; error?: string } | null) => {
+    busy.value = false;
+    if (res?.error) {
+      alert(res.error);
+    }
+  });
+}
+
+function leaveRoom(): void {
+  if (busy.value) return;
+  busy.value = true;
+  socket.emit("leaveRogueliteRoom", {}, (res: { ok?: boolean; error?: string } | null) => {
+    busy.value = false;
+    if (res?.error) {
+      alert(res.error);
+    }
+  });
 }
 </script>
 
@@ -26,49 +58,43 @@ function complete(action: string): void {
         <button class="room-close" type="button" @click.stop.prevent="emit('close')">返回地图</button>
       </header>
 
-      <section v-if="type === 'event'" class="room-body">
-        <h2>{{ firstEvent?.name ?? "问号事件" }}</h2>
-        <p>{{ firstEvent?.description ?? "你遇到了一个还在策划中的职场事件。" }}</p>
-        <button
-          v-for="choice in firstEvent?.choices ?? []"
-          :key="choice.label"
-          class="room-action"
-          type="button"
-          @click.stop.prevent="complete(choice.label)"
-        >
-          <strong>{{ choice.label }}</strong>
-          <span>{{ choice.effect }}；代价：{{ choice.cost }}</span>
-        </button>
-      </section>
-
-      <section v-else-if="type === 'shop'" class="room-body">
-        <h2>临时商店</h2>
-        <p>商店系统占位中，先验证流程：购买不会进入战斗。</p>
+      <!-- ═══ SHOP ═══ -->
+      <section v-if="type === 'shop'" class="room-body">
+        <h2>🏪 临时商店</h2>
+        <p>选好装备，然后离开继续前进。</p>
         <div class="shop-list">
           <article v-for="item in shopItems" :key="item.id" class="shop-item">
             <strong>{{ item.name }}</strong>
-            <span>{{ item.price }} 金币 · {{ item.effect }}</span>
-            <button type="button" @click.stop.prevent>购买</button>
+            <span>🪙{{ item.price }} · {{ item.effect }}</span>
+            <button type="button" :disabled="busy" @click.stop.prevent="buyItem(item.id)">购买</button>
           </article>
         </div>
-        <button class="room-action primary" type="button" @click.stop.prevent="complete('leave_shop')">离开商店</button>
+        <button class="room-action primary" type="button" :disabled="busy" @click.stop.prevent="leaveRoom">离开商店</button>
       </section>
 
+      <!-- ═══ REST ═══ -->
       <section v-else-if="type === 'rest'" class="room-body">
-        <h2>休息点</h2>
-        <p>选择一个休息行为后回到地图。</p>
-        <button class="room-action" type="button" @click.stop.prevent="complete('heal')">
-          <strong>回复生命</strong><span>回复少量生命，占位效果。</span>
-        </button>
-        <button class="room-action" type="button" @click.stop.prevent="complete('upgrade')">
-          <strong>强化成长</strong><span>强化一个成长，占位效果。</span>
+        <h2>🔥 休息点</h2>
+        <p>选一个动作，休息后自动回到地图。</p>
+        <button
+          v-for="act in restActions" :key="act.id"
+          class="room-action" type="button" :disabled="busy"
+          @click.stop.prevent="doRestAction(act.id)"
+        >
+          <strong>{{ act.name }}</strong><span>{{ act.effect }}</span>
         </button>
       </section>
 
+      <!-- ═══ EVENT (preview only, real events use full-screen dialog) ═══ -->
+      <section v-else-if="type === 'event'" class="room-body">
+        <h2>❓ 问号事件</h2>
+        <p>事件将在进入房间后触发。请在地图上选择事件节点进入。</p>
+      </section>
+
+      <!-- ═══ REWARD ═══ -->
       <section v-else class="room-body">
-        <h2>奖励房</h2>
-        <p>奖励流程占位中，领取后回到地图并解锁下一层。</p>
-        <button class="room-action primary" type="button" @click.stop.prevent="complete('take_reward')">领取奖励</button>
+        <h2>🎁 奖励房</h2>
+        <p>奖励在战斗胜利后自动发放。</p>
       </section>
     </div>
   </section>
@@ -87,9 +113,11 @@ function complete(action: string): void {
 .room-action strong { font-size:14px; }
 .room-action span { font-size:12px; color:#806545; }
 .room-action.primary { align-items:center; text-align:center; background:linear-gradient(180deg,#ffe59b,#ffc45c); border-color:#edb84f; font-weight:900; }
+.room-action:disabled { opacity:0.5; cursor:not-allowed; }
 .shop-list { display:flex; flex-direction:column; gap:8px; }
 .shop-item { display:grid; grid-template-columns:1fr auto; gap:4px 8px; align-items:center; padding:10px; border-radius:12px; background:#fff; border:1px solid #ead7aa; }
 .shop-item strong { font-size:13px; color:#4b3518; }
 .shop-item span { grid-column:1; font-size:12px; color:#806545; }
 .shop-item button { grid-column:2; grid-row:1 / span 2; border:0; border-radius:10px; background:#f2c56a; color:#5d3e11; font-weight:900; padding:7px 10px; cursor:pointer; }
+.shop-item button:disabled { opacity:0.4; cursor:not-allowed; }
 </style>

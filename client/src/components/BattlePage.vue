@@ -145,7 +145,10 @@ const isPveMode = computed(() => room.value.gameMode === "pve_1v1");
 const isRogueliteMode = computed(() => room.value.gameMode === "pve_roguelite");
 const showRogueliteMap = computed(() =>
   isRogueliteMode.value &&
-  (rogueliteMapGateVisible.value || room.value.phase === "roguelite_continue")
+  (rogueliteMapGateVisible.value ||
+   room.value.phase === "roguelite_continue" ||
+   room.value.phase === "roguelite_shop" ||
+   room.value.phase === "roguelite_rest")
 );
 const isSinglePlayerPveMode = computed(() => isPveMode.value || isRogueliteMode.value);
 const isBotTurn = computed(() => isSinglePlayerPveMode.value && Boolean(activePlayer.value?.isBot) && room.value.phase === "battle");

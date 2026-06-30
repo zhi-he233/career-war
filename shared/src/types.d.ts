@@ -1,6 +1,6 @@
 import type { RogueliteMapNodeSelection } from "./data/rogueliteRoomTypes.js";
 export type CharacterId = string;
-export type RoomPhase = "lobby" | "battle" | "reward" | "roguelite_event" | "roguelite_continue" | "gameOver";
+export type RoomPhase = "lobby" | "battle" | "reward" | "roguelite_event" | "roguelite_shop" | "roguelite_rest" | "roguelite_continue" | "gameOver";
 export type RoomListStatus = "waiting" | "playing" | "ended";
 export type GameMode = "classic" | "duo_2v2" | "pve_1v1" | "pve_roguelite";
 export type TeamId = "A" | "B";
@@ -188,6 +188,7 @@ export interface RogueliteRunState {
     currentMapNode?: RogueliteMapNodeSelection;
     mapRoute?: Record<number, string>;
     consumedMapNodeIds?: string[];
+    shopPurchasedIds?: string[];
     battleRound?: number;
     fatigueBonus?: number;
     fatigueAnnouncedBonus?: number;

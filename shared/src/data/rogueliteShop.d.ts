@@ -24,3 +24,7 @@ export interface RogueliteShopRules {
 export declare const ROGUELITE_SHOP_RULES: RogueliteShopRules;
 export declare const ROGUELITE_SHOP_ITEMS: readonly RogueliteShopItemDraft[];
 export declare const ROGUELITE_ACTIVE_SHOP_ITEM_IDS: readonly string[];
+/** Map stage number to shop stage tier for item filtering. */
+export declare function getRogueliteShopStageTier(stage: number): RogueliteShopStage[];
+/** Filter shop items available at the given stage. */
+export declare function getRogueliteShopItemsForStage(stage: number): readonly RogueliteShopItemDraft[];

@@ -54,7 +54,7 @@ export declare const ROGUELITE_MAP_RULES: {
         nodeCount: 3;
         notes: string;
     })[];
-    readonly typePattern: ("normal" | "elite" | "boss" | "reward" | "event" | "shop" | "rest")[];
+    readonly typePattern: ("normal" | "elite" | "boss" | "event" | "shop" | "rest" | "reward")[];
     readonly cycleLayers: {
         1: "normal"[];
         2: ("normal" | "event")[];
@@ -67,12 +67,12 @@ export declare const ROGUELITE_MAP_RULES: {
         9: ("normal" | "event" | "rest")[];
         10: ("normal" | "elite")[];
         11: "boss"[];
-        12: ("reward" | "shop")[];
+        12: ("shop" | "reward")[];
         13: ("normal" | "elite" | "event")[];
-        14: ("reward" | "rest")[];
+        14: ("rest" | "reward")[];
         15: "boss"[];
     };
-    readonly routePools: (("normal" | "elite" | "shop")[] | ("normal" | "elite" | "event")[] | ("normal" | "elite" | "rest")[] | ("normal" | "reward" | "event")[] | ("normal" | "shop" | "rest")[])[];
+    readonly routePools: (("normal" | "elite" | "shop")[] | ("normal" | "elite" | "event")[] | ("normal" | "elite" | "rest")[] | ("normal" | "event" | "reward")[] | ("normal" | "shop" | "rest")[])[];
     readonly maxConnectionsFromNode: 2;
     readonly maxConnectionsBetweenLayers: 6;
 };

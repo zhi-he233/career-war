@@ -2,8 +2,25 @@
 import { computed } from "vue";
 import { ROGUELITE_ROOM_TYPE_LABELS } from "@career-war/shared";
 import type { RogueliteMapRoomType } from "@career-war/shared";
+import nodeBattleUrl from "../../assets/art/homepage/node_battle.png";
+import nodeEliteUrl from "../../assets/art/homepage/node_elite.png";
+import nodeBossUrl from "../../assets/art/homepage/node_boss.png";
+import nodeEventUrl from "../../assets/art/homepage/node_event.png";
+import nodeShopUrl from "../../assets/art/homepage/node_shop.png";
+import nodeRestUrl from "../../assets/art/homepage/node_rest.png";
+import nodeRewardUrl from "../../assets/art/homepage/node_reward.png";
 
 export type RoomType = RogueliteMapRoomType;
+
+const TOKEN_BY_TYPE: Record<string, string> = {
+  normal: nodeBattleUrl,
+  elite: nodeEliteUrl,
+  boss: nodeBossUrl,
+  event: nodeEventUrl,
+  shop: nodeShopUrl,
+  rest: nodeRestUrl,
+  reward: nodeRewardUrl,
+};
 
 export type NodeStatus =
   | "current" | "available" | "pending" | "preview" | "locked" | "cleared";
@@ -13,24 +30,7 @@ defineEmits<{ select: [] }>();
 
 const clickable = computed(() => props.status === "current" || props.status === "available" || props.status === "pending");
 
-const iconClass = computed(() => {
-  switch (props.type) {
-    case "elite":
-      return "cw-icon-shield";
-    case "boss":
-      return "cw-icon-boss";
-    case "event":
-      return "cw-icon-rune";
-    case "shop":
-    case "reward":
-      return "cw-icon-chest";
-    case "rest":
-      return "cw-icon-fire";
-    case "normal":
-    default:
-      return "cw-icon-swords";
-  }
-});
+const tokenSrc = computed(() => TOKEN_BY_TYPE[props.type]);
 
 const typeName = computed(() => {
   return props.label || ROGUELITE_ROOM_TYPE_LABELS[props.type] || "";
@@ -56,7 +56,9 @@ const showTypeLabel = computed(() => props.status !== "current" && props.status 
     <span class="node-glow"></span>
     <span class="node-card">
       <span class="node-band"></span>
-      <span class="node-icon"><span class="cw-icon" :class="iconClass"></span></span>
+      <span class="node-icon node-icon--img">
+        <img class="node-token" :src="tokenSrc" :alt="typeName" />
+      </span>
       <span v-if="showTypeLabel" class="lbl">{{ typeName }}</span>
     </span>
 
@@ -179,4 +181,39 @@ const showTypeLabel = computed(() => props.status !== "current" && props.status 
 .s-base .node-card{width:72px;min-height:82px} .s-base .node-icon{width:38px;height:38px;font-size:24px}
 .s-md   .node-card{width:78px;min-height:88px} .s-md   .node-icon{width:42px;height:42px;font-size:25px}
 .s-lg   { width:100px; height:112px; } .s-lg .node-card{width:92px;min-height:98px} .s-lg .node-icon{width:48px;height:48px;font-size:28px}
+
+/* ══════ TOKEN IMG ══════ */
+.node-icon--img {
+  border: 0;
+  background: transparent;
+  width: 44px;
+  height: 44px;
+}
+
+.node-token {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 0 rgba(45, 36, 21, 0.28));
+}
+
+/* token sizes per node tier */
+.s-base .node-icon--img { width: 44px; height: 44px; }
+.s-md   .node-icon--img { width: 50px; height: 50px; }
+.s-lg   .node-icon--img { width: 58px; height: 58px; }
+
+/* cleared: slightly muted */
+.st-cleared .node-token {
+  filter: saturate(0.72) brightness(0.88) drop-shadow(0 2px 0 rgba(45, 36, 21, 0.18));
+}
+
+.st-preview .node-token {
+  filter: grayscale(0.30) opacity(0.68);
+}
+
+.st-locked .node-token {
+  filter: grayscale(0.55) opacity(0.48);
+}
 </style>

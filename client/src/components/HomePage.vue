@@ -6,10 +6,14 @@ import RuleGuideDialog from "./RuleGuideDialog.vue";
 import cardRogueUrl from "../assets/art/homepage/card_rogue.png";
 import cardTrainingUrl from "../assets/art/homepage/card_training.png";
 import cardVersusUrl from "../assets/art/homepage/card_versus.png";
-import diceOneUrl from "../assets/art/homepage/dice_1.png";
+import dice1Url from "../assets/art/homepage/dice_1.png";
+import dice2Url from "../assets/art/homepage/dice_2.png";
+import dice3Url from "../assets/art/homepage/dice_3.png";
+import dice4Url from "../assets/art/homepage/dice_4.png";
+import dice5Url from "../assets/art/homepage/dice_5.png";
+import dice6Url from "../assets/art/homepage/dice_6.png";
 import propCandleUrl from "../assets/art/homepage/prop_candle.png";
 import propTankardUrl from "../assets/art/homepage/prop_tankard.png";
-import rogueliteObjectUrl from "../assets/art/homepage/roguelite_object.png";
 import tavernTableUrl from "../assets/art/homepage/tavern_table.webp";
 
 defineProps<{
@@ -30,8 +34,12 @@ const emit = defineEmits<{
 
 const showRules = ref(false);
 const showDevTools = ref(false);
+
+const diceFaces = [dice1Url, dice2Url, dice3Url, dice4Url, dice5Url, dice6Url];
+const currentDiceFace = ref(dice1Url);
 const isRolling = ref(false);
-let rollingTimer: number | undefined;
+let rollTimers: number[] = [];
+
 const rogueliteStartCharacter = characterList.find((item) => item.id === ROGUELITE_PLAYER_START.characterId);
 const rogueliteStartHp = rogueliteStartCharacter?.maxHp ?? 20;
 const rogueliteStartName = rogueliteStartCharacter?.name ?? "拳手";
@@ -44,21 +52,59 @@ const homepageArtVars = {
   "--home-card-training": `url(${cardTrainingUrl})`,
 };
 
+function preloadDiceFaces() {
+  diceFaces.forEach((src) => {
+    const img = new Image();
+    img.src = src;
+  });
+}
+
+function clearRollTimers() {
+  rollTimers.forEach((id) => window.clearTimeout(id));
+  rollTimers = [];
+}
+
+function pickRandomFace(except?: string) {
+  const pool = except ? diceFaces.filter((face) => face !== except) : diceFaces;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function handleDiceClick() {
   if (isRolling.value) return;
 
   isRolling.value = true;
-  rollingTimer = window.setTimeout(() => {
-    isRolling.value = false;
-    rollingTimer = undefined;
-    emit("selectRoguelite");
-  }, 850);
+  clearRollTimers();
+
+  const intervals = [60, 65, 70, 80, 95, 120, 160, 220, 300];
+  let elapsed = 0;
+
+  intervals.forEach((delay, index) => {
+    elapsed += delay;
+    const timer = window.setTimeout(() => {
+      const isLast = index === intervals.length - 1;
+
+      if (isLast) {
+        currentDiceFace.value = diceFaces[Math.floor(Math.random() * diceFaces.length)];
+
+        window.setTimeout(() => {
+          isRolling.value = false;
+          emit("selectRoguelite");
+        }, 180);
+
+        return;
+      }
+
+      currentDiceFace.value = pickRandomFace(currentDiceFace.value);
+    }, elapsed);
+
+    rollTimers.push(timer);
+  });
 }
 
+preloadDiceFaces();
+
 onUnmounted(() => {
-  if (rollingTimer !== undefined) {
-    window.clearTimeout(rollingTimer);
-  }
+  clearRollTimers();
 });
 </script>
 
@@ -78,7 +124,7 @@ onUnmounted(() => {
         <div class="home-cover-tools">
           <button class="ghost-btn home-rule-chip" type="button" @click="showRules = true">规则</button>
           <span class="home-dice-mark" aria-hidden="true">
-            <img :src="diceOneUrl" alt="" />
+            <img :src="dice1Url" alt="" />
           </span>
         </div>
       </div>
@@ -95,7 +141,7 @@ onUnmounted(() => {
         :disabled="isRolling"
         @click="handleDiceClick"
       >
-        <img class="home-main-object" :src="rogueliteObjectUrl" alt="" />
+        <img class="home-fate-dice" :class="{ 'is-rolling': isRolling }" :src="currentDiceFace" alt="命运骰" />
         <img class="home-prop home-prop-candle" :src="propCandleUrl" alt="" />
         <img class="home-prop home-prop-tankard" :src="propTankardUrl" alt="" />
         <span class="home-table-hint">点击命运骰，接下这局冒险</span>
@@ -316,10 +362,11 @@ onUnmounted(() => {
   border: 0;
   border-radius: 18px;
   padding: 0;
-  background: radial-gradient(circle at 50% 54%, rgba(255, 200, 86, 0.20), transparent 47%);
+  background: transparent;
   cursor: pointer;
   overflow: hidden;
   outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .home-table-focus::before {
@@ -330,23 +377,9 @@ onUnmounted(() => {
   width: min(44vw, 164px);
   height: min(44vw, 164px);
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(255, 207, 96, 0.24), transparent 64%);
+  background: radial-gradient(circle, rgba(255, 207, 96, 0.20), transparent 62%);
   transform: translate(-50%, -50%);
-  animation: homeDicePulse 2.8s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.home-table-focus::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 66%;
-  width: min(34vw, 142px);
-  height: min(9vw, 34px);
-  border: 2px solid rgba(255, 217, 108, 0.0);
-  border-radius: 999px;
-  box-shadow: 0 0 0 rgba(255, 217, 108, 0);
-  transform: translate(-50%, -50%);
+  animation: dice-ring-pulse 2.8s ease-in-out infinite;
   pointer-events: none;
 }
 
@@ -354,47 +387,46 @@ onUnmounted(() => {
   cursor: wait;
 }
 
-.home-table-focus:focus-visible {
-  box-shadow: 0 0 0 3px rgba(255, 231, 162, 0.45);
-}
-
-.home-main-object {
+/* ── fate dice: single element, amber-warmed to match tavern ── */
+.home-fate-dice {
   position: absolute;
   left: 50%;
-  top: 48%;
-  width: min(36vw, 150px);
-  max-width: 42%;
+  top: 44%;
+  width: min(26vw, 110px);
+  max-width: 36%;
   transform: translate(-50%, -50%);
-  filter:
-    drop-shadow(0 4px 0 rgba(0, 0, 0, 0.55))
-    drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35));
   image-rendering: pixelated;
-  transition: transform 150ms ease, filter 150ms ease;
-}
-
-.fate-dice-cta .home-main-object {
-  animation: homeDiceBreath 2.8s ease-in-out infinite;
-}
-
-.home-table-focus:hover .home-main-object,
-.home-table-focus:focus-visible .home-main-object {
-  transform: translate(-50%, -52%) scale(1.04);
   filter:
-    drop-shadow(0 4px 0 rgba(0, 0, 0, 0.55))
+    sepia(0.45)
+    saturate(1.6)
+    brightness(1.15)
+    drop-shadow(0 4px 0 rgba(0, 0, 0, 0.52))
+    drop-shadow(0 2px 0 rgba(0, 0, 0, 0.30));
+  transition: transform 180ms ease, filter 180ms ease;
+  animation: dice-idle-glow 2.8s ease-in-out infinite;
+}
+
+.home-fate-dice:hover,
+.home-table-focus:focus-visible .home-fate-dice {
+  filter:
+    sepia(0.40)
+    saturate(1.7)
+    brightness(1.22)
+    drop-shadow(0 4px 0 rgba(0, 0, 0, 0.52))
+    drop-shadow(0 2px 0 rgba(0, 0, 0, 0.30))
+    drop-shadow(0 0 16px rgba(255, 205, 90, 0.88));
+  transform: translate(-50%, -54%) scale(1.06);
+}
+
+/* rolling: face-switching via JS, CSS only adds body shake + heavy glow */
+.home-fate-dice.is-rolling {
+  animation: dice-roll-body 0.9s ease-in-out both;
+  filter:
+    sepia(0.35)
+    saturate(1.8)
+    brightness(1.25)
     drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35))
-    drop-shadow(0 0 14px rgba(255, 195, 80, 0.85));
-}
-
-.fate-dice-cta.is-rolling::before {
-  animation: homeDicePulse 0.85s ease-in-out forwards;
-}
-
-.fate-dice-cta.is-rolling::after {
-  animation: homeDiceRing 0.85s ease-in-out forwards;
-}
-
-.fate-dice-cta.is-rolling .home-main-object {
-  animation: fateDiceRoll 0.85s ease-in-out forwards;
+    drop-shadow(0 0 28px rgba(255, 215, 90, 1));
 }
 
 .home-prop {
@@ -544,81 +576,51 @@ onUnmounted(() => {
   --mode-card-bg: var(--home-card-training);
 }
 
-@keyframes homeDicePulse {
+@keyframes dice-ring-pulse {
   0%,
   100% {
-    opacity: 0.54;
+    opacity: 0.48;
     transform: translate(-50%, -50%) scale(0.94);
   }
-
   50% {
-    opacity: 0.92;
+    opacity: 0.88;
     transform: translate(-50%, -50%) scale(1.06);
   }
 }
 
-@keyframes homeDiceBreath {
+@keyframes dice-idle-glow {
   0%,
   100% {
     filter:
-      drop-shadow(0 4px 0 rgba(0, 0, 0, 0.55))
-      drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35))
+      sepia(0.45) saturate(1.6) brightness(1.15)
+      drop-shadow(0 4px 0 rgba(0, 0, 0, 0.52))
+      drop-shadow(0 2px 0 rgba(0, 0, 0, 0.30))
       drop-shadow(0 0 8px rgba(255, 196, 76, 0.36));
   }
-
   50% {
     filter:
-      drop-shadow(0 4px 0 rgba(0, 0, 0, 0.55))
-      drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35))
-      drop-shadow(0 0 15px rgba(255, 204, 88, 0.62));
+      sepia(0.45) saturate(1.6) brightness(1.15)
+      drop-shadow(0 4px 0 rgba(0, 0, 0, 0.52))
+      drop-shadow(0 2px 0 rgba(0, 0, 0, 0.30))
+      drop-shadow(0 0 16px rgba(255, 204, 88, 0.66));
   }
 }
 
-@keyframes fateDiceRoll {
+@keyframes dice-roll-body {
   0% {
     transform: translate(-50%, -50%) rotate(0deg) scale(1);
-    filter: drop-shadow(0 0 10px rgba(255, 190, 80, 0.60));
   }
-
   20% {
-    transform: translate(-50%, -53%) rotate(-12deg) scale(1.08);
+    transform: translate(-50%, -53%) rotate(-5deg) scale(1.04);
   }
-
   45% {
-    transform: translate(-50%, -50%) rotate(18deg) scale(1.12);
-    filter: drop-shadow(0 0 26px rgba(255, 215, 100, 1));
+    transform: translate(-50%, -48%) rotate(6deg) scale(1.08);
   }
-
   70% {
-    transform: translate(-50%, -52%) rotate(-8deg) scale(1.06);
+    transform: translate(-50%, -51%) rotate(-3deg) scale(1.04);
   }
-
   100% {
     transform: translate(-50%, -50%) rotate(0deg) scale(1);
-    filter: drop-shadow(0 0 34px rgba(255, 225, 120, 1));
-  }
-}
-
-@keyframes homeDiceRing {
-  0% {
-    border-color: rgba(255, 217, 108, 0);
-    box-shadow: 0 0 0 rgba(255, 217, 108, 0);
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.84);
-  }
-
-  45% {
-    border-color: rgba(255, 225, 120, 0.80);
-    box-shadow: 0 0 22px rgba(255, 211, 91, 0.80);
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.04);
-  }
-
-  100% {
-    border-color: rgba(255, 225, 120, 0.36);
-    box-shadow: 0 0 32px rgba(255, 211, 91, 0.56);
-    opacity: 0.72;
-    transform: translate(-50%, -50%) scale(1);
   }
 }
 
@@ -638,8 +640,8 @@ onUnmounted(() => {
     min-height: clamp(104px, 18vh, 124px);
   }
 
-  .home-main-object {
-    width: min(31vw, 118px);
+  .home-fate-dice {
+    width: min(22vw, 86px);
   }
 
   .home-prop {

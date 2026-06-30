@@ -13,8 +13,7 @@
     "start": "npm run start -w server",
     "test": "npm run test -w shared",
     "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
-    "process:character-art": "node scripts/process-character-art.js",
-    "process:home-scene-art": "node scripts/process-home-scene-art.js"
+    "process:character-art": "node scripts/process-character-art.js"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

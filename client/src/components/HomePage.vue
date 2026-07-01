@@ -32,15 +32,7 @@ const showRules = ref(false);
 const showDevTools = ref(false);
 const isRolling = ref(false);
 const tappedProp = ref<"candle" | "mug" | "coin" | null>(null);
-const currentDiceImage = ref(tabletopDiceUrl);
-const diceRollFrameModules = import.meta.glob("../assets/art/homepage/tabletop_dice_roll_*.png", {
-  eager: true,
-  import: "default",
-}) as Record<string, string>;
-const diceRollFrames = Object.entries(diceRollFrameModules)
-  .sort(([a], [b]) => a.localeCompare(b, "zh-CN", { numeric: true, sensitivity: "base" }))
-  .map(([, src]) => src);
-let rollTimers: number[] = [];
+let rollingTimer: number | undefined;
 let propTapTimer: number | undefined;
 
 const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
@@ -49,36 +41,15 @@ const homepageArtVars = {
   "--home-tabletop-table": `url(${tabletopTableUrl})`,
 };
 
-diceRollFrames.forEach((src) => {
-  const image = new Image();
-  image.src = src;
-});
-
 function handleDiceClick() {
   if (isRolling.value) return;
 
   isRolling.value = true;
-  clearRollTimers();
-
-  const frames = diceRollFrames.length > 0 ? diceRollFrames : [tabletopDiceUrl];
-  frames.forEach((frame, index) => {
-    const timer = window.setTimeout(() => {
-      currentDiceImage.value = frame;
-    }, index * 82);
-    rollTimers.push(timer);
-  });
-
-  const finishTimer = window.setTimeout(() => {
-    currentDiceImage.value = tabletopDiceUrl;
+  rollingTimer = window.setTimeout(() => {
     isRolling.value = false;
+    rollingTimer = undefined;
     emit("selectRoguelite");
-  }, frames.length * 82 + 140);
-  rollTimers.push(finishTimer);
-}
-
-function clearRollTimers() {
-  rollTimers.forEach((id) => window.clearTimeout(id));
-  rollTimers = [];
+  }, 760);
 }
 
 function handlePropTap(prop: "candle" | "mug" | "coin") {
@@ -95,7 +66,9 @@ function handlePropTap(prop: "candle" | "mug" | "coin") {
 }
 
 onUnmounted(() => {
-  clearRollTimers();
+  if (rollingTimer !== undefined) {
+    window.clearTimeout(rollingTimer);
+  }
 
   if (propTapTimer !== undefined) {
     window.clearTimeout(propTapTimer);
@@ -129,7 +102,7 @@ onUnmounted(() => {
         :disabled="isRolling"
         @click="handleDiceClick"
       >
-        <img class="home-dice-img" :src="currentDiceImage" alt="命运骰" />
+        <img class="home-dice-img" :src="tabletopDiceUrl" alt="命运骰" />
       </button>
 
       <button class="home-table-object home-card-entry home-card-entry--pvp" type="button" @click="emit('selectPvp')">
@@ -146,7 +119,6 @@ onUnmounted(() => {
 
       <button class="home-table-object home-rulebook" type="button" aria-label="查看规则" @click="showRules = true">
         <img :src="tabletopRulebookUrl" alt="" />
-        <span>规则</span>
       </button>
 
       <button
@@ -390,6 +362,9 @@ onUnmounted(() => {
   position: relative;
   z-index: 1;
   filter:
+    drop-shadow(1px 0 0 rgba(47, 27, 10, 0.72))
+    drop-shadow(-1px 0 0 rgba(47, 27, 10, 0.72))
+    drop-shadow(0 1px 0 rgba(47, 27, 10, 0.62))
     drop-shadow(0 8px 7px rgba(0, 0, 0, 0.38))
     drop-shadow(0 3px 0 rgba(0, 0, 0, 0.28))
     drop-shadow(0 0 12px rgba(255, 198, 77, 0.40));
@@ -399,8 +374,11 @@ onUnmounted(() => {
 
 .home-dice-cta:hover .home-dice-img,
 .home-dice-cta:focus-visible .home-dice-img {
-  transform: translateY(-5px) scale(1.04);
+  transform: translateY(-3px);
   filter:
+    drop-shadow(1px 0 0 rgba(47, 27, 10, 0.72))
+    drop-shadow(-1px 0 0 rgba(47, 27, 10, 0.72))
+    drop-shadow(0 1px 0 rgba(47, 27, 10, 0.62))
     drop-shadow(0 8px 7px rgba(0, 0, 0, 0.38))
     drop-shadow(0 3px 0 rgba(0, 0, 0, 0.28))
     drop-shadow(0 0 22px rgba(255, 210, 91, 0.85));
@@ -411,8 +389,11 @@ onUnmounted(() => {
 }
 
 .home-dice-cta.is-rolling .home-dice-img {
-  animation: dice-roll-body 0.9s ease-in-out both;
+  animation: dice-tremble-body 0.76s linear both;
   filter:
+    drop-shadow(1px 0 0 rgba(47, 27, 10, 0.72))
+    drop-shadow(-1px 0 0 rgba(47, 27, 10, 0.72))
+    drop-shadow(0 1px 0 rgba(47, 27, 10, 0.62))
     drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35))
     drop-shadow(0 0 28px rgba(255, 215, 90, 1));
 }
@@ -424,6 +405,9 @@ onUnmounted(() => {
 
 .home-card-entry img {
   filter:
+    drop-shadow(1px 0 0 rgba(49, 27, 8, 0.78))
+    drop-shadow(-1px 0 0 rgba(49, 27, 8, 0.78))
+    drop-shadow(0 1px 0 rgba(49, 27, 8, 0.66))
     drop-shadow(0 4px 0 rgba(0, 0, 0, 0.30))
     drop-shadow(0 10px 16px rgba(0, 0, 0, 0.18));
   transition: transform 150ms ease, filter 150ms ease;
@@ -432,6 +416,9 @@ onUnmounted(() => {
 .home-card-entry:hover img,
 .home-card-entry:focus-visible img {
   filter:
+    drop-shadow(1px 0 0 rgba(49, 27, 8, 0.78))
+    drop-shadow(-1px 0 0 rgba(49, 27, 8, 0.78))
+    drop-shadow(0 1px 0 rgba(49, 27, 8, 0.66))
     drop-shadow(0 4px 0 rgba(0, 0, 0, 0.30))
     drop-shadow(0 0 16px rgba(255, 219, 128, 0.64));
   transform: translateY(-4px);
@@ -464,25 +451,20 @@ onUnmounted(() => {
 }
 
 .home-rulebook img {
-  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.24));
+  filter:
+    drop-shadow(1px 0 0 rgba(47, 27, 10, 0.70))
+    drop-shadow(-1px 0 0 rgba(47, 27, 10, 0.70))
+    drop-shadow(0 1px 0 rgba(47, 27, 10, 0.60))
+    drop-shadow(0 6px 8px rgba(0, 0, 0, 0.24));
   transition: transform 150ms ease, filter 150ms ease;
-}
-
-.home-rulebook span {
-  position: absolute;
-  left: 47%;
-  top: 50%;
-  color: #ffb85d;
-  font-size: clamp(14px, 3.8vw, 21px);
-  font-weight: 1000;
-  text-shadow: 0 2px 0 rgba(40, 19, 4, 0.74);
-  transform: translate(-50%, -50%) rotate(2deg);
-  pointer-events: none;
 }
 
 .home-rulebook:hover img,
 .home-rulebook:focus-visible img {
   filter:
+    drop-shadow(1px 0 0 rgba(47, 27, 10, 0.70))
+    drop-shadow(-1px 0 0 rgba(47, 27, 10, 0.70))
+    drop-shadow(0 1px 0 rgba(47, 27, 10, 0.60))
     drop-shadow(0 6px 8px rgba(0, 0, 0, 0.24))
     drop-shadow(0 0 14px rgba(255, 199, 93, 0.60));
   transform: translateY(-3px);
@@ -493,7 +475,11 @@ onUnmounted(() => {
 }
 
 .home-prop-img {
-  filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.24));
+  filter:
+    drop-shadow(1px 0 0 rgba(39, 23, 10, 0.68))
+    drop-shadow(-1px 0 0 rgba(39, 23, 10, 0.68))
+    drop-shadow(0 1px 0 rgba(39, 23, 10, 0.58))
+    drop-shadow(0 5px 8px rgba(0, 0, 0, 0.24));
   transition: transform 150ms ease, filter 150ms ease;
 }
 
@@ -501,6 +487,9 @@ onUnmounted(() => {
 .home-prop-button:focus-visible .home-prop-img {
   transform: translateY(-3px);
   filter:
+    drop-shadow(1px 0 0 rgba(39, 23, 10, 0.68))
+    drop-shadow(-1px 0 0 rgba(39, 23, 10, 0.68))
+    drop-shadow(0 1px 0 rgba(39, 23, 10, 0.58))
     drop-shadow(0 5px 8px rgba(0, 0, 0, 0.24))
     drop-shadow(0 0 12px rgba(255, 210, 104, 0.50));
 }
@@ -549,33 +538,57 @@ onUnmounted(() => {
   0%,
   100% {
     filter:
+      drop-shadow(1px 0 0 rgba(47, 27, 10, 0.72))
+      drop-shadow(-1px 0 0 rgba(47, 27, 10, 0.72))
+      drop-shadow(0 1px 0 rgba(47, 27, 10, 0.62))
       drop-shadow(0 8px 7px rgba(0, 0, 0, 0.38))
       drop-shadow(0 3px 0 rgba(0, 0, 0, 0.28))
       drop-shadow(0 0 8px rgba(255, 196, 76, 0.36));
   }
   50% {
     filter:
+      drop-shadow(1px 0 0 rgba(47, 27, 10, 0.72))
+      drop-shadow(-1px 0 0 rgba(47, 27, 10, 0.72))
+      drop-shadow(0 1px 0 rgba(47, 27, 10, 0.62))
       drop-shadow(0 8px 7px rgba(0, 0, 0, 0.38))
       drop-shadow(0 3px 0 rgba(0, 0, 0, 0.28))
       drop-shadow(0 0 16px rgba(255, 204, 88, 0.66));
   }
 }
 
-@keyframes dice-roll-body {
+@keyframes dice-tremble-body {
   0% {
-    transform: rotate(0deg) scale(1);
+    transform: translate(0, 0) rotate(0deg);
+  }
+  10% {
+    transform: translate(-3px, 1px) rotate(-3deg);
   }
   20% {
-    transform: rotate(-12deg) scale(1.08) translateY(-5px);
+    transform: translate(3px, -1px) rotate(3deg);
   }
-  45% {
-    transform: rotate(18deg) scale(1.12) translateY(2px);
+  30% {
+    transform: translate(-2px, 1px) rotate(-2deg);
+  }
+  40% {
+    transform: translate(2px, 0) rotate(2deg);
+  }
+  50% {
+    transform: translate(-3px, -1px) rotate(-3deg);
+  }
+  60% {
+    transform: translate(3px, 1px) rotate(3deg);
   }
   70% {
-    transform: rotate(-8deg) scale(1.06) translateY(-3px);
+    transform: translate(-2px, 0) rotate(-2deg);
+  }
+  82% {
+    transform: translate(2px, -1px) rotate(2deg);
+  }
+  92% {
+    transform: translate(-1px, 0) rotate(-1deg);
   }
   100% {
-    transform: rotate(0deg) scale(1);
+    transform: translate(0, 0) rotate(0deg);
   }
 }
 
@@ -586,6 +599,9 @@ onUnmounted(() => {
   35% {
     transform: translateY(-6px) rotate(-4deg) scale(1.06);
     filter:
+      drop-shadow(1px 0 0 rgba(39, 23, 10, 0.68))
+      drop-shadow(-1px 0 0 rgba(39, 23, 10, 0.68))
+      drop-shadow(0 1px 0 rgba(39, 23, 10, 0.58))
       drop-shadow(0 5px 8px rgba(0, 0, 0, 0.24))
       drop-shadow(0 0 16px rgba(255, 218, 113, 0.72));
   }

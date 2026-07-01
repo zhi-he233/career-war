@@ -13,7 +13,7 @@ Art assets for the Career War tabletop card game.
 - Tabletop scene: `tabletop_table.webp`.
 - Tabletop interactive props: `tabletop_dice.png`, `tabletop_rulebook.png`.
 - Tabletop mode cards: `tabletop_card_pvp.png`, `tabletop_card_pve.png`, `tabletop_card_profile.png`.
-- Tabletop dice roll frames: `tabletop_dice_roll_01.png` through `tabletop_dice_roll_08.png`.
+- Tabletop dice roll frames: `tabletop_dice_roll_01.png` through `tabletop_dice_roll_08.png` are generated for experiments but are not used by the current home scene.
 - Tabletop decorative props: `tabletop_candle.png`, `tabletop_mug.png`, `tabletop_coin_pouch.png`.
 - Legacy compact scene: `tavern_table.webp`.
 - Legacy main CTA: `roguelite_object.png`.
@@ -37,7 +37,7 @@ Art assets for the Career War tabletop card game.
 
 ## Runtime Usage
 
-- Home scene uses `tabletop_table.webp`, `tabletop_dice.png`, `tabletop_card_pvp.png`, `tabletop_card_pve.png`, `tabletop_card_profile.png`, `tabletop_rulebook.png`, `tabletop_candle.png`, `tabletop_mug.png`, `tabletop_coin_pouch.png`, and the `tabletop_dice_roll_*` frame sequence.
+- Home scene uses `tabletop_table.webp`, `tabletop_dice.png`, `tabletop_card_pvp.png`, `tabletop_card_pve.png`, `tabletop_card_profile.png`, `tabletop_rulebook.png`, `tabletop_candle.png`, `tabletop_mug.png`, and `tabletop_coin_pouch.png`.
 - Battle dice panel uses `dice_1.png` through `dice_6.png`.
 - Roguelite map nodes use `node_*` token sprites.
 

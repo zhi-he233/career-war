@@ -4,6 +4,7 @@ const sharp = require("sharp");
 
 const root = process.cwd();
 const input = path.join(root, "art-source/homepage/raw-ai/ui汇总.png");
+const tabletopDir = path.join(root, "art-source/homepage");
 const outDir = path.join(root, "client/src/assets/art/homepage");
 
 const crops = [
@@ -41,6 +42,23 @@ const crops = [
   { id: "ring_green", file: "ring_green.png", x: 929, y: 1111, w: 183, h: 181, kind: "glow", target: 160 },
 ];
 
+const tabletopAssets = [
+  {
+    id: "tabletop_table",
+    source: "空白桌面.png",
+    file: "tabletop_table.webp",
+    kind: "opaque",
+    width: 760,
+    quality: 86,
+  },
+  { id: "tabletop_dice", source: "骰子.png", file: "tabletop_dice.png", kind: "cutout", target: 300 },
+  { id: "tabletop_card", source: "卡片.png", file: "tabletop_card.png", kind: "cutout", target: 320 },
+  { id: "tabletop_mug", source: "杯子.png", file: "tabletop_mug.png", kind: "cutout", target: 240 },
+  { id: "tabletop_candle", source: "蜡烛.png", file: "tabletop_candle.png", kind: "cutout", target: 240 },
+  { id: "tabletop_rulebook", source: "规则书.png", file: "tabletop_rulebook.png", kind: "cutout", target: 260 },
+  { id: "tabletop_coin_pouch", source: "钱袋.png", file: "tabletop_coin_pouch.png", kind: "cutout", target: 220 },
+];
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -62,6 +80,25 @@ function alphaForGlowCheckerboard(r, g, b) {
   if (avg > 232 && chroma < 34) return 0;
   if (avg > 206 && chroma < 18) return 0;
   return 255;
+}
+
+function defringeColor(r, g, b, alpha) {
+  if (alpha >= 245) return [r, g, b];
+
+  const avg = (r + g + b) / 3;
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+
+  if (avg < 150 || chroma > 55) return [r, g, b];
+
+  const edge = (245 - alpha) / 245;
+  const strength = clamp(edge * 0.70, 0, 0.70);
+  const target = { r: 128, g: 88, b: 44 };
+
+  return [
+    Math.round(r * (1 - strength) + target.r * strength),
+    Math.round(g * (1 - strength) + target.g * strength),
+    Math.round(b * (1 - strength) + target.b * strength),
+  ];
 }
 
 async function normalizeToSquare(image, width, height, target) {
@@ -105,10 +142,11 @@ async function makeCutout(buffer, width, height, mode, target) {
       const g = data[source + 1];
       const b = data[source + 2];
       const alpha = mode === "glow" ? alphaForGlowCheckerboard(r, g, b) : alphaForCheckerboard(r, g, b);
+      const [cleanR, cleanG, cleanB] = mode === "glow" ? [r, g, b] : defringeColor(r, g, b, alpha);
 
-      rgba[target] = r;
-      rgba[target + 1] = g;
-      rgba[target + 2] = b;
+      rgba[target] = cleanR;
+      rgba[target + 1] = cleanG;
+      rgba[target + 2] = cleanB;
       rgba[target + 3] = alpha;
 
       if (alpha > 12) {
@@ -156,12 +194,47 @@ async function processCrop(crop) {
   return { id: crop.id, file: crop.file, width: cutout.width, height: cutout.height, bytes: result.size };
 }
 
+async function processTabletopAsset(asset) {
+  const source = path.join(tabletopDir, asset.source);
+  const output = path.join(outDir, asset.file);
+
+  if (asset.kind === "opaque") {
+    const result = await sharp(source)
+      .resize({ width: asset.width, withoutEnlargement: true })
+      .webp({ quality: asset.quality ?? 86, effort: 5, smartSubsample: true })
+      .toFile(output);
+    return { id: asset.id, file: asset.file, width: result.width, height: result.height, bytes: result.size };
+  }
+
+  const { data, info } = await sharp(source).toBuffer({ resolveWithObject: true });
+  const cutout = await makeCutout(data, info.width, info.height, asset.kind, asset.target);
+  const result = await cutout.image.png({ compressionLevel: 9, palette: false }).toFile(output);
+  return { id: asset.id, file: asset.file, width: cutout.width, height: cutout.height, bytes: result.size };
+}
+
 async function main() {
   await fs.mkdir(outDir, { recursive: true });
   const manifest = {};
 
   for (const crop of crops) {
     const result = await processCrop(crop);
+    manifest[result.id] = {
+      file: result.file,
+      width: result.width,
+      height: result.height,
+      bytes: result.bytes,
+    };
+    console.log(`${result.id}: ${result.width}x${result.height}, ${Math.round(result.bytes / 1024)}KB`);
+  }
+
+  for (const asset of tabletopAssets) {
+    try {
+      await fs.access(path.join(tabletopDir, asset.source));
+    } catch {
+      continue;
+    }
+
+    const result = await processTabletopAsset(asset);
     manifest[result.id] = {
       file: result.file,
       width: result.width,

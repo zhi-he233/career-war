@@ -57,7 +57,12 @@ const tabletopAssets = [
   { id: "tabletop_candle", source: "蜡烛.png", file: "tabletop_candle.png", kind: "cutout", target: 240 },
   { id: "tabletop_rulebook", source: "规则书.png", file: "tabletop_rulebook.png", kind: "cutout", target: 260 },
   { id: "tabletop_coin_pouch", source: "钱袋.png", file: "tabletop_coin_pouch.png", kind: "cutout", target: 220 },
+  { id: "tabletop_card_pvp", source: "经典对战卡片.png", file: "tabletop_card_pvp.png", kind: "cutout", target: 320 },
+  { id: "tabletop_card_pve", source: "人机练习卡片.png", file: "tabletop_card_pve.png", kind: "cutout", target: 320 },
+  { id: "tabletop_card_profile", source: "玩家档案卡片.png", file: "tabletop_card_profile.png", kind: "cutout", target: 320 },
 ];
+
+const diceFrameDir = path.join(tabletopDir, "骰子帧动画");
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -79,6 +84,16 @@ function alphaForGlowCheckerboard(r, g, b) {
 
   if (avg > 232 && chroma < 34) return 0;
   if (avg > 206 && chroma < 18) return 0;
+  return 255;
+}
+
+function alphaForLightBackground(r, g, b) {
+  const avg = (r + g + b) / 3;
+  const warmDiff = r - b;
+
+  if (avg > 238 && g > 222 && b > 196) return 0;
+  if (avg > 224 && g > 210 && b > 176 && warmDiff < 58) return 0;
+  if (avg > 214 && g > 200 && b > 164 && warmDiff < 66) return clamp((224 - avg) * 16, 0, 140);
   return 255;
 }
 
@@ -141,7 +156,11 @@ async function makeCutout(buffer, width, height, mode, target) {
       const r = data[source];
       const g = data[source + 1];
       const b = data[source + 2];
-      const alpha = mode === "glow" ? alphaForGlowCheckerboard(r, g, b) : alphaForCheckerboard(r, g, b);
+      const alpha = mode === "glow"
+        ? alphaForGlowCheckerboard(r, g, b)
+        : mode === "light-bg"
+          ? alphaForLightBackground(r, g, b)
+          : alphaForCheckerboard(r, g, b);
       const [cleanR, cleanG, cleanB] = mode === "glow" ? [r, g, b] : defringeColor(r, g, b, alpha);
 
       rgba[target] = cleanR;
@@ -212,6 +231,35 @@ async function processTabletopAsset(asset) {
   return { id: asset.id, file: asset.file, width: cutout.width, height: cutout.height, bytes: result.size };
 }
 
+function sortDiceFrames(files) {
+  return files.sort((a, b) => a.localeCompare(b, "zh-CN", { numeric: true, sensitivity: "base" }));
+}
+
+async function processDiceFrames() {
+  let entries = [];
+  try {
+    entries = await fs.readdir(diceFrameDir);
+  } catch {
+    return [];
+  }
+
+  const files = sortDiceFrames(entries.filter((file) => file.toLowerCase().endsWith(".png")));
+  const results = [];
+
+  for (let index = 0; index < files.length; index += 1) {
+    const source = path.join(diceFrameDir, files[index]);
+    const id = `tabletop_dice_roll_${String(index + 1).padStart(2, "0")}`;
+    const file = `${id}.png`;
+    const output = path.join(outDir, file);
+    const { data, info } = await sharp(source).toBuffer({ resolveWithObject: true });
+    const cutout = await makeCutout(data, info.width, info.height, "light-bg", 300);
+    const result = await cutout.image.png({ compressionLevel: 9, palette: false }).toFile(output);
+    results.push({ id, file, width: cutout.width, height: cutout.height, bytes: result.size });
+  }
+
+  return results;
+}
+
 async function main() {
   await fs.mkdir(outDir, { recursive: true });
   const manifest = {};
@@ -235,6 +283,16 @@ async function main() {
     }
 
     const result = await processTabletopAsset(asset);
+    manifest[result.id] = {
+      file: result.file,
+      width: result.width,
+      height: result.height,
+      bytes: result.bytes,
+    };
+    console.log(`${result.id}: ${result.width}x${result.height}, ${Math.round(result.bytes / 1024)}KB`);
+  }
+
+  for (const result of await processDiceFrames()) {
     manifest[result.id] = {
       file: result.file,
       width: result.width,

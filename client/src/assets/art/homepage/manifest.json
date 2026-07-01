@@ -202,5 +202,71 @@
     "width": 220,
     "height": 220,
     "bytes": 80711
+  },
+  "tabletop_card_pvp": {
+    "file": "tabletop_card_pvp.png",
+    "width": 320,
+    "height": 320,
+    "bytes": 155475
+  },
+  "tabletop_card_pve": {
+    "file": "tabletop_card_pve.png",
+    "width": 320,
+    "height": 320,
+    "bytes": 150902
+  },
+  "tabletop_card_profile": {
+    "file": "tabletop_card_profile.png",
+    "width": 320,
+    "height": 320,
+    "bytes": 160041
+  },
+  "tabletop_dice_roll_01": {
+    "file": "tabletop_dice_roll_01.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 130486
+  },
+  "tabletop_dice_roll_02": {
+    "file": "tabletop_dice_roll_02.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 132594
+  },
+  "tabletop_dice_roll_03": {
+    "file": "tabletop_dice_roll_03.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 142863
+  },
+  "tabletop_dice_roll_04": {
+    "file": "tabletop_dice_roll_04.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 135466
+  },
+  "tabletop_dice_roll_05": {
+    "file": "tabletop_dice_roll_05.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 132164
+  },
+  "tabletop_dice_roll_06": {
+    "file": "tabletop_dice_roll_06.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 140459
+  },
+  "tabletop_dice_roll_07": {
+    "file": "tabletop_dice_roll_07.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 135223
+  },
+  "tabletop_dice_roll_08": {
+    "file": "tabletop_dice_roll_08.png",
+    "width": 300,
+    "height": 300,
+    "bytes": 135218
   }
 }

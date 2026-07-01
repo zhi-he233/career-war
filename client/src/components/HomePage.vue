@@ -2,8 +2,10 @@
 import { onUnmounted, ref } from "vue";
 import { hasDoneRogueliteTutorial } from "../tutorial/rogueliteTutorial";
 import RuleGuideDialog from "./RuleGuideDialog.vue";
+import tabletopCardPveUrl from "../assets/art/homepage/tabletop_card_pve.png";
+import tabletopCardProfileUrl from "../assets/art/homepage/tabletop_card_profile.png";
+import tabletopCardPvpUrl from "../assets/art/homepage/tabletop_card_pvp.png";
 import tabletopCandleUrl from "../assets/art/homepage/tabletop_candle.png";
-import tabletopCardUrl from "../assets/art/homepage/tabletop_card.png";
 import tabletopCoinPouchUrl from "../assets/art/homepage/tabletop_coin_pouch.png";
 import tabletopDiceUrl from "../assets/art/homepage/tabletop_dice.png";
 import tabletopMugUrl from "../assets/art/homepage/tabletop_mug.png";
@@ -29,7 +31,17 @@ const emit = defineEmits<{
 const showRules = ref(false);
 const showDevTools = ref(false);
 const isRolling = ref(false);
-let rollingTimer: number | undefined;
+const tappedProp = ref<"candle" | "mug" | "coin" | null>(null);
+const currentDiceImage = ref(tabletopDiceUrl);
+const diceRollFrameModules = import.meta.glob("../assets/art/homepage/tabletop_dice_roll_*.png", {
+  eager: true,
+  import: "default",
+}) as Record<string, string>;
+const diceRollFrames = Object.entries(diceRollFrameModules)
+  .sort(([a], [b]) => a.localeCompare(b, "zh-CN", { numeric: true, sensitivity: "base" }))
+  .map(([, src]) => src);
+let rollTimers: number[] = [];
+let propTapTimer: number | undefined;
 
 const showRogueliteTutorialIntro = !hasDoneRogueliteTutorial();
 
@@ -37,20 +49,56 @@ const homepageArtVars = {
   "--home-tabletop-table": `url(${tabletopTableUrl})`,
 };
 
+diceRollFrames.forEach((src) => {
+  const image = new Image();
+  image.src = src;
+});
+
 function handleDiceClick() {
   if (isRolling.value) return;
 
   isRolling.value = true;
-  rollingTimer = window.setTimeout(() => {
+  clearRollTimers();
+
+  const frames = diceRollFrames.length > 0 ? diceRollFrames : [tabletopDiceUrl];
+  frames.forEach((frame, index) => {
+    const timer = window.setTimeout(() => {
+      currentDiceImage.value = frame;
+    }, index * 82);
+    rollTimers.push(timer);
+  });
+
+  const finishTimer = window.setTimeout(() => {
+    currentDiceImage.value = tabletopDiceUrl;
     isRolling.value = false;
-    rollingTimer = undefined;
     emit("selectRoguelite");
-  }, 850);
+  }, frames.length * 82 + 140);
+  rollTimers.push(finishTimer);
+}
+
+function clearRollTimers() {
+  rollTimers.forEach((id) => window.clearTimeout(id));
+  rollTimers = [];
+}
+
+function handlePropTap(prop: "candle" | "mug" | "coin") {
+  tappedProp.value = prop;
+
+  if (propTapTimer !== undefined) {
+    window.clearTimeout(propTapTimer);
+  }
+
+  propTapTimer = window.setTimeout(() => {
+    tappedProp.value = null;
+    propTapTimer = undefined;
+  }, 420);
 }
 
 onUnmounted(() => {
-  if (rollingTimer !== undefined) {
-    window.clearTimeout(rollingTimer);
+  clearRollTimers();
+
+  if (propTapTimer !== undefined) {
+    window.clearTimeout(propTapTimer);
   }
 });
 </script>
@@ -81,22 +129,19 @@ onUnmounted(() => {
         :disabled="isRolling"
         @click="handleDiceClick"
       >
-        <img class="home-dice-img" :src="tabletopDiceUrl" alt="命运骰" />
+        <img class="home-dice-img" :src="currentDiceImage" alt="命运骰" />
       </button>
 
       <button class="home-table-object home-card-entry home-card-entry--pvp" type="button" @click="emit('selectPvp')">
-        <img :src="tabletopCardUrl" alt="" />
-        <span>经典<br />对战</span>
+        <img :src="tabletopCardPvpUrl" alt="经典对战" />
       </button>
 
       <button class="home-table-object home-card-entry home-card-entry--pve" type="button" @click="emit('selectPve')">
-        <img :src="tabletopCardUrl" alt="" />
-        <span>人机<br />练习</span>
+        <img :src="tabletopCardPveUrl" alt="人机练习" />
       </button>
 
       <button class="home-table-object home-card-entry home-card-entry--profile" type="button" @click="emit('selectProfile')">
-        <img :src="tabletopCardUrl" alt="" />
-        <span>玩家<br />档案</span>
+        <img :src="tabletopCardProfileUrl" alt="玩家档案" />
       </button>
 
       <button class="home-table-object home-rulebook" type="button" aria-label="查看规则" @click="showRules = true">
@@ -104,9 +149,33 @@ onUnmounted(() => {
         <span>规则</span>
       </button>
 
-      <img class="home-table-object home-prop home-prop-candle" :src="tabletopCandleUrl" alt="" />
-      <img class="home-table-object home-prop home-prop-mug" :src="tabletopMugUrl" alt="" />
-      <img class="home-table-object home-prop home-prop-coin" :src="tabletopCoinPouchUrl" alt="" />
+      <button
+        class="home-table-object home-prop-button home-prop-candle"
+        :class="{ 'is-tapped': tappedProp === 'candle' }"
+        type="button"
+        aria-label="拨动蜡烛"
+        @click="handlePropTap('candle')"
+      >
+        <img class="home-prop-img" :src="tabletopCandleUrl" alt="" />
+      </button>
+      <button
+        class="home-table-object home-prop-button home-prop-mug"
+        :class="{ 'is-tapped': tappedProp === 'mug' }"
+        type="button"
+        aria-label="轻碰酒杯"
+        @click="handlePropTap('mug')"
+      >
+        <img class="home-prop-img" :src="tabletopMugUrl" alt="" />
+      </button>
+      <button
+        class="home-table-object home-prop-button home-prop-coin"
+        :class="{ 'is-tapped': tappedProp === 'coin' }"
+        type="button"
+        aria-label="摇晃钱袋"
+        @click="handlePropTap('coin')"
+      >
+        <img class="home-prop-img" :src="tabletopCoinPouchUrl" alt="" />
+      </button>
     </section>
 
     <RuleGuideDialog v-if="showRules" mode="roguelite" @close="showRules = false" />
@@ -360,22 +429,6 @@ onUnmounted(() => {
   transition: transform 150ms ease, filter 150ms ease;
 }
 
-.home-card-entry span {
-  position: absolute;
-  left: 50%;
-  top: 46%;
-  width: 72%;
-  color: #281606;
-  font-size: clamp(18px, 5vw, 29px);
-  font-weight: 1000;
-  line-height: 1.58;
-  letter-spacing: 0.05em;
-  text-align: center;
-  text-shadow: 0 1px 0 rgba(255, 235, 174, 0.62);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
 .home-card-entry:hover img,
 .home-card-entry:focus-visible img {
   filter:
@@ -435,9 +488,25 @@ onUnmounted(() => {
   transform: translateY(-3px);
 }
 
-.home-prop {
-  pointer-events: none;
+.home-prop-button {
+  cursor: pointer;
+}
+
+.home-prop-img {
   filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.24));
+  transition: transform 150ms ease, filter 150ms ease;
+}
+
+.home-prop-button:hover .home-prop-img,
+.home-prop-button:focus-visible .home-prop-img {
+  transform: translateY(-3px);
+  filter:
+    drop-shadow(0 5px 8px rgba(0, 0, 0, 0.24))
+    drop-shadow(0 0 12px rgba(255, 210, 104, 0.50));
+}
+
+.home-prop-button.is-tapped .home-prop-img {
+  animation: prop-table-tap 420ms ease both;
 }
 
 .home-prop-candle {
@@ -510,6 +579,24 @@ onUnmounted(() => {
   }
 }
 
+@keyframes prop-table-tap {
+  0% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  35% {
+    transform: translateY(-6px) rotate(-4deg) scale(1.06);
+    filter:
+      drop-shadow(0 5px 8px rgba(0, 0, 0, 0.24))
+      drop-shadow(0 0 16px rgba(255, 218, 113, 0.72));
+  }
+  70% {
+    transform: translateY(1px) rotate(3deg) scale(0.99);
+  }
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+}
+
 @keyframes dice-cast-ring {
   0% {
     border-color: rgba(255, 217, 108, 0);
@@ -555,10 +642,6 @@ onUnmounted(() => {
 
   .home-card-entry {
     width: clamp(82px, 23vw, 118px);
-  }
-
-  .home-card-entry span {
-    font-size: clamp(15px, 4.6vw, 22px);
   }
 
 }

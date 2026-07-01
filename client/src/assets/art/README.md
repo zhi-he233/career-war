@@ -11,7 +11,9 @@ Art assets for the Career War tabletop card game.
 ## Homepage Assets
 
 - Tabletop scene: `tabletop_table.webp`.
-- Tabletop interactive props: `tabletop_dice.png`, `tabletop_card.png`, `tabletop_rulebook.png`.
+- Tabletop interactive props: `tabletop_dice.png`, `tabletop_rulebook.png`.
+- Tabletop mode cards: `tabletop_card_pvp.png`, `tabletop_card_pve.png`, `tabletop_card_profile.png`.
+- Tabletop dice roll frames: `tabletop_dice_roll_01.png` through `tabletop_dice_roll_08.png`.
 - Tabletop decorative props: `tabletop_candle.png`, `tabletop_mug.png`, `tabletop_coin_pouch.png`.
 - Legacy compact scene: `tavern_table.webp`.
 - Legacy main CTA: `roguelite_object.png`.
@@ -25,7 +27,9 @@ Art assets for the Career War tabletop card game.
 ## Source Pipeline
 
 - Source sheet: `art-source/homepage/raw-ai/ui汇总.png`.
-- Tabletop source files: `art-source/homepage/空白桌面.png`, `骰子.png`, `卡片.png`, `规则书.png`, `蜡烛.png`, `杯子.png`, `钱袋.png`.
+- Tabletop source files: `art-source/homepage/空白桌面.png`, `骰子.png`, `规则书.png`, `蜡烛.png`, `杯子.png`, `钱袋.png`.
+- Tabletop card source files: `经典对战卡片.png`, `人机练习卡片.png`, `玩家档案卡片.png`.
+- Dice roll source frames: `art-source/homepage/骰子帧动画/*.png`.
 - Preview output: `art-source/homepage/processed-preview.png`.
 - Processor: `scripts/process-homepage-ui-art.js`.
 - Command: `npm run process:homepage-ui-art`.
@@ -33,7 +37,7 @@ Art assets for the Career War tabletop card game.
 
 ## Runtime Usage
 
-- Home scene uses `tabletop_table.webp`, `tabletop_dice.png`, `tabletop_card.png`, `tabletop_rulebook.png`, `tabletop_candle.png`, `tabletop_mug.png`, and `tabletop_coin_pouch.png`.
+- Home scene uses `tabletop_table.webp`, `tabletop_dice.png`, `tabletop_card_pvp.png`, `tabletop_card_pve.png`, `tabletop_card_profile.png`, `tabletop_rulebook.png`, `tabletop_candle.png`, `tabletop_mug.png`, `tabletop_coin_pouch.png`, and the `tabletop_dice_roll_*` frame sequence.
 - Battle dice panel uses `dice_1.png` through `dice_6.png`.
 - Roguelite map nodes use `node_*` token sprites.
 
